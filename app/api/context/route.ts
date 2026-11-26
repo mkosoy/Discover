@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { cameraEmbed, nearestPublicCameras } from '@/lib/cameras';
+import { cameraCoverage, cameraEmbed, nearestPublicCameras } from '@/lib/cameras';
 
 type Fact = { label: string; value: string; kind: 'observed' | 'verified' | 'interpretation' | 'prediction' | 'question' };
 
@@ -335,6 +335,7 @@ export async function GET(request: Request) {
       { label: 'Camera evidence', value: 'A location is required to rank public cameras.', kind: 'question' }
     ]);
     const cameras = nearestPublicCameras(lat, lon, 3);
+    const coverage = cameraCoverage();
     const best = cameras[0];
     const weather = await json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=cloud_cover,is_day&timezone=auto`);
     const current = weather?.current;
@@ -342,9 +343,11 @@ export async function GET(request: Request) {
       { label: 'Best public look-in', value: best ? `${best.title} · ${Math.round(best.distance)} km away` : 'No curated public camera available', kind: best ? 'verified' : 'question' },
       { label: 'Additional look-ins', value: cameras.length > 1 ? cameras.slice(1).map(camera => `${camera.title} (${Math.round(camera.distance)} km)`).join(' · ') : 'None in the curated registry', kind: cameras.length > 1 ? 'verified' : 'question' },
       { label: 'Local sky cover', value: current ? `${Math.round(current.cloud_cover)}% · ${current.is_day ? 'daylight' : 'dark now'}` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Camera coverage', value: `${coverage.total} public look-ins across ${coverage.countries} countries`, kind: 'observed' },
+      { label: 'Position precision', value: best?.approximate ? 'Country-level estimate; confirm in source' : 'Camera-specific location', kind: best?.approximate ? 'question' : 'verified' },
       { label: 'Insight', value: best && best.distance < 250 ? 'This is close enough to provide meaningful local visual context, but the camera still shows only its own field of view and cannot verify the event by itself.' : best ? 'This is the nearest curated public camera, but it is not close enough to treat as direct local evidence; use it as regional atmosphere and compare distance carefully.' : 'No camera inference is made.', kind: 'interpretation' },
       { label: 'Next evidence', value: 'A closer authorized local stream, official incident imagery or verified ground observation', kind: 'question' }
-    ], { videos: cameras.map(camera => ({ title: camera.title, place: camera.place, distance: Math.round(camera.distance), src: cameraEmbed(camera), youtubeId: camera.youtubeId, quality: camera.quality })) });
+    ], { videos: cameras.map(camera => ({ title: camera.title, place: camera.place, distance: Math.round(camera.distance), src: cameraEmbed(camera), youtubeId: camera.youtubeId, quality: camera.quality, approximate: camera.approximate, confidence: camera.confidence })) });
   }
 
   if (t.includes('historical comparison')) {

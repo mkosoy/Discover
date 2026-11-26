@@ -2,9 +2,10 @@
 
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { Line, OrbitControls, Stars } from '@react-three/drei';
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { Discovery, Investigation } from '@/lib/types';
+import type { PublicCamera } from '@/lib/cameras';
 
 function latLon(lat: number, lon: number, radius = 1.36) {
   const phi = (90 - lat) * Math.PI / 180;
@@ -33,7 +34,7 @@ function subsolarPoint(date = new Date()) {
 
 type FocusTarget = { id: string; location: { lat: number; lon: number }; connections?: { id: string }[] };
 
-function Earth({ active, discoveries, investigations, onSelect, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
+function Earth({ active, discoveries, investigations, cameras, onSelect, onSelectCamera, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; cameras: PublicCamera[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectCamera: (camera: PublicCamera) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
   const group = useRef<THREE.Group>(null);
   const pointerDown = useRef<{ x: number; y: number }>();
   const earth = useLoader(THREE.TextureLoader, '/textures/earth-blue-marble.jpg');
@@ -101,6 +102,7 @@ function Earth({ active, discoveries, investigations, onSelect, onSelectInvestig
       const slot = discoveries.slice(0, index).filter(samePlace).length;
       return <Marker key={d.id} discovery={d} slot={slot} active={active?.id === d.id} onSelect={onSelect} />;
     })}
+    <CameraPins cameras={cameras.filter(camera => !discoveries.some(discovery => discovery.mediaVideo?.includes(camera.youtubeId)))} activeId={active?.id?.startsWith('camera-pin-') ? active.id.slice(11) : undefined} onSelect={onSelectCamera} />
     {investigations.map(i => <InvestigationMarker key={i.id} investigation={i} active={active?.id === i.id} onSelect={onSelectInvestigation} />)}
   </group>;
 }
@@ -203,6 +205,53 @@ function Marker({ discovery, slot = 0, active, onSelect }: { discovery: Discover
   </group>;
 }
 
+function CameraPins({ cameras, activeId, onSelect }: { cameras: PublicCamera[]; activeId?: string; onSelect: (camera: PublicCamera) => void }) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const pointerDown = useRef<{ x: number; y: number }>();
+  const inactive = useMemo(() => cameras.filter(camera => camera.id !== activeId), [cameras, activeId]);
+  const activeCamera = useMemo(() => cameras.find(camera => camera.id === activeId), [cameras, activeId]);
+  useEffect(() => {
+    if (!ref.current) return;
+    const matrix = new THREE.Matrix4();
+    inactive.forEach((camera, index) => {
+      matrix.setPosition(latLon(camera.lat, camera.lon, 1.365));
+      ref.current?.setMatrixAt(index, matrix);
+    });
+    ref.current.instanceMatrix.needsUpdate = true;
+  }, [inactive]);
+  return <>
+    <instancedMesh
+      key={inactive.length}
+      ref={ref}
+      args={[undefined, undefined, Math.max(1, inactive.length)]}
+      onPointerDown={event => { const native = event.nativeEvent as PointerEvent; pointerDown.current = { x: native.clientX, y: native.clientY }; }}
+      onClick={event => {
+        event.stopPropagation();
+        const native = event.nativeEvent as PointerEvent;
+        const moved = pointerDown.current ? Math.hypot(native.clientX - pointerDown.current.x, native.clientY - pointerDown.current.y) > 8 : false;
+        if (!moved && event.instanceId != null && inactive[event.instanceId]) onSelect(inactive[event.instanceId]);
+      }}
+    >
+      <sphereGeometry args={[.0105, 8, 8]} />
+      <meshBasicMaterial color="#74dfc8" transparent opacity={.68} />
+    </instancedMesh>
+    {activeCamera && <ActiveCameraPin camera={activeCamera} />}
+  </>;
+}
+
+function ActiveCameraPin({ camera }: { camera: PublicCamera }) {
+  const ref = useRef<THREE.Group>(null);
+  const pos = useMemo(() => latLon(camera.lat, camera.lon, 1.385), [camera.lat, camera.lon]);
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    ref.current.scale.setScalar(1.18 + Math.sin(clock.elapsedTime * 4) * .1);
+  });
+  return <group ref={ref} position={pos}>
+    <mesh><sphereGeometry args={[.025, 16, 16]} /><meshBasicMaterial color="#74dfc8" /></mesh>
+    <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.052, .0025, 8, 48]} /><meshBasicMaterial color="#74dfc8" transparent opacity={.72} /></mesh>
+  </group>;
+}
+
 function InvestigationMarker({ investigation, active, onSelect }: { investigation: Investigation; active: boolean; onSelect: (investigation: Investigation) => void }) {
   const ref = useRef<THREE.Group>(null);
   const pointerDown = useRef<{ x: number; y: number }>();
@@ -227,7 +276,7 @@ function InvestigationMarker({ investigation, active, onSelect }: { investigatio
   </group>;
 }
 
-export default function Globe({ active, discoveries, investigations, onSelect, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
+export default function Globe({ active, discoveries, investigations, cameras, onSelect, onSelectCamera, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; cameras: PublicCamera[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectCamera: (camera: PublicCamera) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
   const sun = useMemo(() => {
     const point = subsolarPoint();
     return latLon(point.lat, point.lon, 5.4);
@@ -239,7 +288,7 @@ export default function Globe({ active, discoveries, investigations, onSelect, o
       <directionalLight position={[sun.x, sun.y, sun.z]} intensity={2.45} />
       <pointLight position={[-3, -2, -2]} intensity={.38} color="#5b7cff" />
       <Stars radius={80} depth={35} count={3600} factor={3.2} saturation={0} fade speed={.45} />
-      <Earth active={active} discoveries={discoveries} investigations={investigations} onSelect={onSelect} onSelectInvestigation={onSelectInvestigation} />
+      <Earth active={active} discoveries={discoveries} investigations={investigations} cameras={cameras} onSelect={onSelect} onSelectCamera={onSelectCamera} onSelectInvestigation={onSelectInvestigation} />
       <OrbitControls enablePan={false} enableZoom minDistance={3.25} maxDistance={5.2} zoomSpeed={.55} rotateSpeed={.42} enableDamping dampingFactor={.08} />
     </Canvas>
     <div className="orbitalVignette" />

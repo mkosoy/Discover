@@ -1,5 +1,12 @@
+import { generatedCountryCameras } from './cameras.generated';
+import { skylineCameras } from './cameras.skyline.generated';
+
 export type PublicCamera = {
   id: string;
+  country?: string;
+  confidence?: 'high' | 'medium' | 'low';
+  approximate?: boolean;
+  sourceName?: string;
   title: string;
   lat: number;
   lon: number;
@@ -9,7 +16,7 @@ export type PublicCamera = {
   quality: number;
 };
 
-export const publicCameras: PublicCamera[] = [
+const curatedPublicCameras: PublicCamera[] = [
   { id: 'times-square', title: 'Times Square North 4K', lat: 40.758, lon: -73.9855, youtubeId: 'ZxCeWQ3Lcig', place: 'New York City', kind: 'city', quality: 94 },
   { id: 'times-square-broadway', title: 'Times Square 1560 Broadway', lat: 40.7585, lon: -73.985, youtubeId: 'VXo0VqVcbK4', place: 'New York City', kind: 'city', quality: 88 },
   { id: 'world-trade-center', title: 'World Trade Center', lat: 40.7127, lon: -74.0134, youtubeId: '5C9oM7C2Q9k', place: 'New York City', kind: 'city', quality: 90 },
@@ -54,8 +61,22 @@ export const publicCameras: PublicCamera[] = [
   { id: 'sydney-harbour', title: 'Sydney Harbour and Opera House', lat: -33.856, lon: 151.215, youtubeId: '6FLSjlQhiKo', place: 'Sydney', kind: 'water', quality: 92 },
   { id: 'auckland-viaduct', title: 'Auckland Viaduct Harbour', lat: -36.842, lon: 174.763, youtubeId: 'nLCMw_Fh0u0', place: 'Auckland', kind: 'water', quality: 90 },
   { id: 'dubai-skyline', title: 'Dubai skyline camera', lat: 25.2, lon: 55.27, youtubeId: 'ka9MsehA8I4', place: 'Dubai', kind: 'city', quality: 85 },
-  { id: 'shibuya-crossing', title: 'Shibuya crossing atmosphere', lat: 35.68, lon: 139.69, youtubeId: '5B4LmH4JbnY', place: 'Tokyo', kind: 'city', quality: 91 }
+  { id: 'shibuya-crossing', title: 'Shibuya crossing atmosphere', lat: 35.68, lon: 139.69, youtubeId: '5B4LmH4JbnY', place: 'Tokyo', kind: 'city', quality: 91 },
+  { id: 'india-nanded-hazur', title: 'Takht Sachkhand Sri Hazur temple', lat: 19.153, lon: 77.318, youtubeId: 'C4ZuoKJfcqg', place: 'Nanded, India', kind: 'city', quality: 82, country: 'India', confidence: 'high', approximate: true, sourceName: 'SkylineWebcams' },
+  { id: 'india-mount-abu', title: 'Tower of Peace, Mount Abu', lat: 24.592, lon: 72.702, youtubeId: 'JWo4Tte6A4c', place: 'Mount Abu, India', kind: 'nature', quality: 80, country: 'India', confidence: 'high', approximate: true, sourceName: 'SkylineWebcams' },
+  { id: 'denmark-henne-beach', title: 'Henne Beach', lat: 55.742, lon: 8.203, youtubeId: '9B8e3Y8JPUk', place: 'Henne, Denmark', kind: 'water', quality: 82, country: 'Denmark', confidence: 'high', approximate: true, sourceName: 'SkylineWebcams' },
+  { id: 'denmark-hvide-sande', title: 'Hvide Sande lighthouse', lat: 55.998, lon: 8.121, youtubeId: '5Z6Nhw6USVw', place: 'Hvide Sande, Denmark', kind: 'water', quality: 80, country: 'Denmark', confidence: 'high', approximate: true, sourceName: 'SkylineWebcams' },
+
+  { id: 'china-hong-kong-skyline', title: 'Hong Kong city panorama', lat: 22.32, lon: 114.16, youtubeId: 'XN-ArdUrqtc', place: 'Hong Kong, China', kind: 'city', quality: 84, country: 'China', confidence: 'high', approximate: true, sourceName: 'SkylineWebcams' }
+
 ];
+
+const generatedUnique = [...skylineCameras, ...generatedCountryCameras].filter((camera, index, all) =>
+  !curatedPublicCameras.some(curated => curated.youtubeId === camera.youtubeId) &&
+  all.findIndex(other => other.youtubeId === camera.youtubeId) === index
+);
+
+export const publicCameras: PublicCamera[] = [...curatedPublicCameras, ...generatedUnique];
 
 export function cameraDistanceKm(latA: number, lonA: number, latB: number, lonB: number) {
   const rad = Math.PI / 180;
@@ -68,8 +89,20 @@ export function cameraDistanceKm(latA: number, lonA: number, latB: number, lonB:
 export function nearestPublicCameras(lat: number, lon: number, limit = 3) {
   return publicCameras
     .map(camera => ({ ...camera, distance: cameraDistanceKm(lat, lon, camera.lat, camera.lon) }))
-    .sort((a, b) => a.distance - b.distance || b.quality - a.quality)
+    .sort((a, b) => cameraRank(a) - cameraRank(b) || a.distance - b.distance)
     .slice(0, limit);
+}
+
+function cameraRank(camera: PublicCamera & { distance: number }) {
+  const confidencePenalty = camera.confidence === 'low' ? 70 : camera.confidence === 'medium' ? 25 : 0;
+  return camera.distance + confidencePenalty + (camera.approximate ? 30 : 0) - camera.quality * 1.1;
+}
+
+export function cameraCoverage() {
+  return {
+    total: publicCameras.length,
+    countries: new Set(publicCameras.map(camera => camera.country).filter(Boolean)).size
+  };
 }
 
 export function cameraEmbed(camera: Pick<PublicCamera, 'youtubeId'>) {

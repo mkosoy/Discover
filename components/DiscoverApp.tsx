@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowRight, Check, Compass, Eye, Globe2, Loader2, Newspaper, Play, Radio, Satellite, Share2, Shuffle, Sparkles, X } from 'lucide-react';
 import Globe from './Globe';
 import type { Discovery, Investigation } from '@/lib/types';
+import { cameraCoverage, cameraEmbed, publicCameras, type PublicCamera } from '@/lib/cameras';
 
 const kindLabel = { observed: 'Observed', verified: 'Verified report', interpretation: 'Interpretation', prediction: 'Prediction', question: 'Open question' } as const;
 
@@ -37,6 +38,26 @@ function unavailableSharedDiscovery(id: string): Discovery {
       { label: 'What happened', value: 'Live signals expire as public data updates', kind: 'interpretation' }
     ],
     sources: [], related: []
+  };
+}
+
+
+function discoveryForCamera(camera: PublicCamera): Discovery {
+  const coverage = cameraCoverage();
+  return {
+    id: `camera-pin-${camera.id}`, template: 'atmosphere', title: camera.title, kicker: 'Live look-in', visual: camera.kind === 'water' ? 'ocean' : camera.kind === 'aurora' ? 'aurora' : camera.kind === 'volcano' ? 'fire' : 'city',
+    score: camera.quality, freshness: 'validated public live-camera registry',
+    location: { lat: camera.lat, lon: camera.lon, label: camera.place },
+    summary: `${camera.place} is available as an authorized public live video look-in. ${camera.approximate ? 'Its map position is a city/country-level estimate, so use distance and source context carefully.' : 'Its map position is curated to the camera location.'}`,
+    facts: [
+      { label: 'Camera source', value: camera.sourceName ? `${camera.sourceName} public camera, YouTube embed` : 'Authorized public YouTube embed', kind: 'verified' },
+      { label: 'Registry confidence', value: `${camera.quality}/100${camera.confidence ? ` · ${camera.confidence}` : ''}`, kind: 'interpretation' },
+      { label: 'Position precision', value: camera.approximate ? 'City/country-level estimate' : 'Camera-specific curated position', kind: camera.approximate ? 'question' : 'verified' },
+      { label: 'Registry coverage', value: `${coverage.total} public look-ins across ${coverage.countries} countries`, kind: 'observed' }
+    ],
+    mediaVideo: cameraEmbed(camera),
+    sources: [{ label: 'Open source stream on YouTube', url: `https://www.youtube.com/watch?v=${camera.youtubeId}`, retrievedAt: new Date().toISOString() }],
+    related: ['Nearby cameras', 'Historical comparison', 'Nearby signals', 'Night lights']
   };
 }
 
@@ -88,6 +109,9 @@ export default function DiscoverApp() {
       if (placeHash) {
         const [hashLat, hashLon] = initialHash.slice(6).split(',').map(Number);
         if (Number.isFinite(hashLat) && Number.isFinite(hashLon)) void probePlace({ lat: hashLat, lon: hashLon }, nextDiscoveries);
+      } else if (initial && initialHash.startsWith('camera-pin-')) {
+        const camera = publicCameras.find(item => `camera-pin-${item.id}` === initialHash);
+        setActive(camera ? discoveryForCamera(camera) : unavailableSharedDiscovery(initialHash));
       } else if (initial && initialHash && !investigationHash) {
         const targetDiscovery = nextDiscoveries.find((item: Discovery) => item.id === initialHash);
         setActive(targetDiscovery ?? unavailableSharedDiscovery(initialHash));
@@ -148,6 +172,15 @@ export default function DiscoverApp() {
     setLensLoading(false);
     setPath([]);
     if (reveal) setPanelOpen(true);
+    setMode('discover');
+  };
+
+  const selectCamera = (camera: PublicCamera) => {
+    setActive(discoveryForCamera(camera));
+    setLens(undefined);
+    setLensLoading(false);
+    setPath([]);
+    setPanelOpen(true);
     setMode('discover');
   };
 
@@ -213,6 +246,16 @@ export default function DiscoverApp() {
       if (targetInvestigation) {
         setSelectedInvestigation(targetInvestigation);
         setMode('investigate');
+        return;
+      }
+      if (hash.startsWith('camera-pin-')) {
+        const camera = publicCameras.find(item => `camera-pin-${item.id}` === hash);
+        if (camera) selectCamera(camera);
+        else {
+          setActive(unavailableSharedDiscovery(hash));
+          setMode('discover');
+          setPanelOpen(true);
+        }
         return;
       }
       const targetDiscovery = discoveries.find(item => item.id === hash);
@@ -285,7 +328,7 @@ export default function DiscoverApp() {
   };
 
   return <main className={`mode-${mode} ${panelOpen ? 'panel-open' : 'panel-closed'}`}>
-    <Globe active={globeFocus} discoveries={discoveries} investigations={investigations} onSelect={selectDiscovery} onSelectInvestigation={selectInvestigation} />
+    <Globe active={globeFocus} discoveries={discoveries} investigations={investigations} cameras={publicCameras} onSelect={selectDiscovery} onSelectCamera={selectCamera} onSelectInvestigation={selectInvestigation} />
     <header className="topbar">
       <div className="brand"><Globe2 size={22} /><span>Elsewhere</span></div>
       <nav>
@@ -297,7 +340,7 @@ export default function DiscoverApp() {
     <section className="heroCopy">
       <motion.p>Live Earth intelligence</motion.p>
       <motion.h1>Discover what’s happening.<br /><span>Understand what it means.</span></motion.h1>
-      <motion.p className="interactionHint">Drag Earth · tap anywhere · follow the evidence</motion.p>
+      <motion.p className="interactionHint">Drag Earth · tap anywhere · {cameraCoverage().total} live look-ins · follow the evidence</motion.p>
     </section>
 
     <div className="actionDock">
@@ -311,7 +354,7 @@ export default function DiscoverApp() {
         <button className="panelClose" aria-label="Hide discovery" onClick={() => setPanelOpen(false)}><X size={17} /></button>
         <div className="panelMedia">{active.visual === 'nasa-live' ?
           <LiveVideo title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0&autoplay=1&mute=1&playsinline=1" /> : active.mediaVideo ?
-          <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} /> :
+          <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} autoPlay={active.id.startsWith('camera-pin-')} /> :
           <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
           {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? (active.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : 'Latest public Earth imagery') : 'Animated evidence visualization'}</div>}
         </div>
@@ -377,7 +420,7 @@ function CameraLookins({ videos }: { videos: any[] }) {
   if (!current) return null;
   return <div className="cameraLookins">
     <div className="lensVideo"><LiveVideo title={`${current.title} live look-in`} src={current.src} autoPlay /></div>
-    <div className="cameraChoices">{videos.map((video, videoIndex) => <button key={video.youtubeId ?? video.title} onClick={() => setIndex(videoIndex)} className={videoIndex === index ? 'active' : ''}><b>{video.place}</b><small>{video.distance} km away</small></button>)}</div>
+    <div className="cameraChoices">{videos.map((video, videoIndex) => <button key={video.youtubeId ?? video.title} onClick={() => setIndex(videoIndex)} className={videoIndex === index ? 'active' : ''}><b>{video.place}</b><small>{video.approximate ? '~' : ''}{video.distance} km away{video.confidence === 'low' ? ' · verify' : ''}</small></button>)}</div>
     {current.youtubeId && <a className="cameraSourceLink" href={`https://www.youtube.com/watch?v=${current.youtubeId}`} target="_blank">Open source stream directly</a>}
   </div>;
 }

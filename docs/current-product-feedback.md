@@ -37,6 +37,8 @@
 - Fire/natural-event cards now cross-reference wind transport, modeled PM2.5/AOD smoke proxy, satellite context and nearest live look-in. Arbitrary place taps now compute a distinctive local evidence hook and expose nearby-camera/history actions directly.
 - Fourteen featured live-look-in cards join Tokyo/Namib/Etna, including Times Square, Washington, Kīlauea, Iceland, Sydney, Vancouver, wildlife waterholes, aurora and harbor/city scenes; production API validation returned 29 discoveries, 17 with real video embeds.
 - US events/places now prefer minutes-old NOAA GOES GeoColor sector imagery where coverage exists, falling back to NASA MODIS outside those sectors; media tags distinguish near-real-time imagery from latest swaths.
+- The camera layer is now a generated global registry rather than a small hand list: 45 curated exact cameras plus validated country/city candidates, exposed as small interactive globe pins. Generated positions are explicitly marked approximate and lower confidence; clearly mismatched search results are removed rather than treated as evidence.
+
 - Earth now uses a NASA-style Black Marble night-light overlay with warm amplified city lights on the night side, plus color-coded markers distinguishing live look-ins, fire, ocean, storm, seismic and aurora signals.
 - Initial loading no longer waits for slow investigations before rendering discoveries; investigation deep links resolve when their slower endpoint arrives. GDELT’s unreliable/rate-limited request is capped at 1.8s. Local cold-start smoke improved to about 2.39s for discoveries and 1.89s for investigations.
 
