@@ -144,9 +144,15 @@ export default function DiscoverApp() {
 
   const locationLine = useMemo(() => active ? `${active.location.label} · ${active.freshness}` : 'Reading live Earth signals', [active]);
   const inv = selectedInvestigation ?? investigations[0];
+  const globeFocus = mode === 'investigate' && inv ? { id: inv.id, location: inv.location } : active;
 
-  return <main>
-    <Globe active={active} discoveries={discoveries} onSelect={selectDiscovery} />
+  const selectInvestigation = (investigation: Investigation) => {
+    setSelectedInvestigation(investigation);
+    setMode('investigate');
+  };
+
+  return <main className={`mode-${mode}`}>
+    <Globe active={globeFocus} discoveries={discoveries} investigations={investigations} onSelect={selectDiscovery} onSelectInvestigation={selectInvestigation} />
     <header className="topbar">
       <div className="brand"><Globe2 size={22} /><span>Elsewhere</span></div>
       <nav>
@@ -158,6 +164,7 @@ export default function DiscoverApp() {
     <section className="heroCopy">
       <motion.p>Live Earth intelligence</motion.p>
       <motion.h1>Discover what’s happening.<br /><span>Understand what it means.</span></motion.h1>
+      <motion.p className="interactionHint">Drag Earth · tap anywhere · follow the evidence</motion.p>
     </section>
 
     <div className="actionDock">

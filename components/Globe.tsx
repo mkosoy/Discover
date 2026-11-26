@@ -4,7 +4,7 @@ import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import type { Discovery } from '@/lib/types';
+import type { Discovery, Investigation } from '@/lib/types';
 
 function latLon(lat: number, lon: number, radius = 1.36) {
   const phi = (90 - lat) * Math.PI / 180;
@@ -20,7 +20,9 @@ function vectorToLatLon(vector: THREE.Vector3) {
   return { lat, lon };
 }
 
-function Earth({ active, discoveries, onSelect }: { active?: Discovery; discoveries: Discovery[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void }) {
+type FocusTarget = { id: string; location: { lat: number; lon: number } };
+
+function Earth({ active, discoveries, investigations, onSelect, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
   const group = useRef<THREE.Group>(null);
   const pointerDown = useRef<{ x: number; y: number }>();
   const earth = useLoader(THREE.TextureLoader, '/textures/earth-blue-marble.jpg');
@@ -30,7 +32,7 @@ function Earth({ active, discoveries, onSelect }: { active?: Discovery; discover
     if (!active) return new THREE.Quaternion();
     const marker = latLon(active.location.lat, active.location.lon, 1).normalize();
     return new THREE.Quaternion().setFromUnitVectors(marker, new THREE.Vector3(0, 0, 1));
-  }, [active?.id]);
+  }, [active?.id, active?.location.lat, active?.location.lon]);
   useFrame((state, dt) => {
     if (!group.current) return;
     group.current.quaternion.slerp(target, 1 - Math.pow(.002, dt));
@@ -66,6 +68,7 @@ function Earth({ active, discoveries, onSelect }: { active?: Discovery; discover
       <shaderMaterial transparent blending={THREE.AdditiveBlending} side={THREE.BackSide} vertexShader={`varying vec3 vNormal; void main(){ vNormal=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`} fragmentShader={`varying vec3 vNormal; void main(){ float intensity=pow(.72-dot(vNormal,vec3(0.,0.,1.)),2.1); gl_FragColor=vec4(.18,.55,1.,1.)*intensity;}`} />
     </mesh>
     {discoveries.map(d => <Marker key={d.id} discovery={d} active={active?.id === d.id} onSelect={onSelect} />)}
+    {investigations.map(i => <InvestigationMarker key={i.id} investigation={i} active={active?.id === i.id} onSelect={onSelectInvestigation} />)}
   </group>;
 }
 
@@ -95,7 +98,31 @@ function Marker({ discovery, active, onSelect }: { discovery: Discovery; active:
   </group>;
 }
 
-export default function Globe({ active, discoveries, onSelect }: { active?: Discovery; discoveries: Discovery[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void }) {
+function InvestigationMarker({ investigation, active, onSelect }: { investigation: Investigation; active: boolean; onSelect: (investigation: Investigation) => void }) {
+  const ref = useRef<THREE.Group>(null);
+  const pointerDown = useRef<{ x: number; y: number }>();
+  const pos = useMemo(() => latLon(investigation.location.lat, investigation.location.lon, 1.395), [investigation]);
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    ref.current.scale.setScalar(active ? 1.25 + Math.sin(clock.elapsedTime * 4) * .12 : .78);
+  });
+  return <group
+    ref={ref}
+    position={pos}
+    onPointerDown={event => { const native = event.nativeEvent as PointerEvent; pointerDown.current = { x: native.clientX, y: native.clientY }; }}
+    onClick={event => {
+      event.stopPropagation();
+      const native = event.nativeEvent as PointerEvent;
+      const moved = pointerDown.current ? Math.hypot(native.clientX - pointerDown.current.x, native.clientY - pointerDown.current.y) > 8 : false;
+      if (!moved) onSelect(investigation);
+    }}
+  >
+    <mesh><octahedronGeometry args={[.026, 0]} /><meshBasicMaterial color={active ? '#d8b4fe' : '#8a7dff'} transparent opacity={active ? 1 : .78} /></mesh>
+    {active && <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.052, .0025, 8, 48]} /><meshBasicMaterial color="#d8b4fe" transparent opacity={.75} /></mesh>}
+  </group>;
+}
+
+export default function Globe({ active, discoveries, investigations, onSelect, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
   return <div className="globeWrap" aria-label="Interactive earth visualization">
     <Canvas camera={{ position: [0, .25, 4.1], fov: 42 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
       <color attach="background" args={['#02040c']} />
@@ -103,8 +130,8 @@ export default function Globe({ active, discoveries, onSelect }: { active?: Disc
       <directionalLight position={[4, 2, 5]} intensity={2.2} />
       <pointLight position={[-3, -2, -2]} intensity={.5} color="#5b7cff" />
       <Stars radius={80} depth={35} count={3600} factor={3.2} saturation={0} fade speed={.45} />
-      <Earth active={active} discoveries={discoveries} onSelect={onSelect} />
-      <OrbitControls enablePan={false} enableZoom={false} rotateSpeed={.42} enableDamping dampingFactor={.08} />
+      <Earth active={active} discoveries={discoveries} investigations={investigations} onSelect={onSelect} onSelectInvestigation={onSelectInvestigation} />
+      <OrbitControls enablePan={false} enableZoom minDistance={3.25} maxDistance={5.2} zoomSpeed={.55} rotateSpeed={.42} enableDamping dampingFactor={.08} />
     </Canvas>
     <div className="orbitalVignette" />
   </div>;
