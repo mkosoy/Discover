@@ -57,6 +57,18 @@ function newsTime(value: string | undefined) {
   return compact ? Date.UTC(Number(compact[1]), Number(compact[2]) - 1, Number(compact[3]), Number(compact[4]), Number(compact[5]), Number(compact[6] ?? 0)) : NaN;
 }
 
+function storyClusters(articles: any[]) {
+  const groups = new Map<string, any[]>();
+  for (const article of articles) {
+    const withoutSource = String(article.title ?? '').replace(/\s+-\s+[^-]{2,80}$/, '');
+    const key = withoutSource.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 9).join(' ');
+    if (!key) continue;
+    groups.set(key, [...(groups.get(key) ?? []), article]);
+  }
+  const clusters = [...groups.values()].sort((a, b) => b.length - a.length);
+  return { clusters, independent: clusters.length, repeated: clusters.reduce((sum, group) => sum + Math.max(0, group.length - 1), 0), largest: clusters[0] ?? [] };
+}
+
 function parseGdacs(xml: string | null) {
   if (!xml) return null;
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(match => {
@@ -393,6 +405,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const lastHourCoverage = articleTimes.filter((time: number) => Date.now() - time < 1000 * 60 * 70).length;
   const military = articles.filter((a: any) => /strike|missile|drone|attack|front|war|air raid|defen[cs]e/i.test(a.title ?? '')).length;
   const diplomacy = articles.filter((a: any) => /peace|talks|ceasefire|aid|funding|minister|negotiat/i.test(a.title ?? '')).length;
+  const ukraineStories = storyClusters(articles);
   const coldest = cityWeather.reduce((a: any, b: any) => !a || b.current.apparent_temperature < a.current.apparent_temperature ? b : a, null);
   const windiest = cityWeather.reduce((a: any, b: any) => !a || b.current.wind_speed_10m > a.current.wind_speed_10m ? b : a, null);
   const funding = fts?.data?.incoming?.fundingTotal ?? 0;
@@ -425,6 +438,8 @@ export async function getInvestigations(): Promise<Investigation[]> {
       metrics: [
         { label: 'Coldest feels-like', value: coldest ? `${Math.round(coldest.current.apparent_temperature)}°C` : '—', delta: coldest ? coldest.city : '5-city grid' },
         { label: 'Attention breadth', value: articles.length ? (gdeltArticles.length ? `${attentionBreadth} countries` : `${domains.size} outlets`) : 'unavailable', delta: articles.length ? `${articles.length} ${attentionSource} items / 24h · latest ${latestCoverage}` : 'attention sources unavailable' },
+        { label: 'Narrative independence', value: articles.length ? `${ukraineStories.independent} story clusters` : 'unavailable', delta: articles.length ? `${ukraineStories.repeated} duplicate/repeated items` : 'headline clustering unavailable' },
+        { label: 'Attention mix', value: articles.length ? `${military} conflict / ${diplomacy} diplomacy` : 'unavailable', delta: 'rough title analysis' },
         { label: 'Humanitarian funding', value: funding ? `$${(funding / 1e9).toFixed(2)}B` : '—', delta: `${flowCount} FTS flows in ${currentYear}` },
         { label: 'Displaced people', value: idpNow ? `${(idpNow / 1e6).toFixed(1)}M IDPs` : '—', delta: latestDisplacement ? `${(refugeesNow / 1e6).toFixed(1)}M refugees abroad · ${latestDisplacement.year}` : 'UNHCR' },
         { label: 'Public datasets', value: String(datasetCount), delta: `${freshDatasets} updated in sample / 30d` }
@@ -432,6 +447,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
       evidence: [
         { kind: 'observed', text: `Across a five-city Open-Meteo grid, ${coldest?.city ?? 'the coldest sampled city'} currently feels like ${coldest ? Math.round(coldest.current.apparent_temperature) : '—'}°C; ${windiest?.city ?? 'the windiest sampled city'} has ${windiest ? Math.round(windiest.current.wind_speed_10m) : '—'} km/h winds. This is current weather, not a damage report.` },
         { kind: 'observed', text: articles.length ? `${articles.length} recent Ukraine-related items came from ${domains.size} outlets/domains${gdeltArticles.length ? ` in ${countries.size} source countries and ${languages.size} languages` : ''} via ${attentionSource}. Rough title analysis: ${military} conflict-related and ${diplomacy} diplomacy/aid-related mentions; ${lastHourCoverage} items appear within roughly the latest hour.` : 'Both attention samples were unavailable at retrieval time, so no claim is made about current article volume.', source: gdeltArticles.length ? 'https://www.gdeltproject.org/' : 'https://news.google.com/' },
+        { kind: 'interpretation', text: articles.length ? `Headline clustering separates the attention sample into about ${ukraineStories.independent} distinct story clusters; ${ukraineStories.repeated} items look like repetition or wire-copy amplification. The largest cluster has ${ukraineStories.largest.length} items, so breadth should not be mistaken for independent corroboration.` : 'Narrative independence cannot be estimated because the attention sample is unavailable.' },
         { kind: 'verified', text: `OCHA FTS reports $${(funding / 1e9).toFixed(2)}B in ${currentYear} incoming humanitarian funding for Ukraine across ${flowCount} flows, plus $${(pledges / 1e6).toFixed(0)}M in pledges.`, source: 'https://fts.unocha.org/' },
         { kind: 'verified', text: latestDisplacement ? `UNHCR population statistics for origin-country Ukraine list ${idpNow.toLocaleString()} internally displaced people and ${refugeesNow.toLocaleString()} refugees abroad in ${latestDisplacement.year}; IDPs are ${idpDelta >= 0 ? 'up' : 'down'} ${Math.abs(idpDelta).toLocaleString()} versus ${Number(latestDisplacement.year) - 1}. These are stock estimates and can reflect methodological revisions, not just movement.` : 'UNHCR displacement data was unavailable at retrieval time.', source: 'https://www.unhcr.org/refugee-statistics/' },
         { kind: 'verified', text: `HDX indexes ${datasetCount} Ukraine-related datasets; ${freshDatasets} in the sampled first page were modified within the last 30 days. Dataset availability is not the same as field verification.`, source: 'https://data.humdata.org/' },
@@ -463,6 +479,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const sudanLatestCoverage = sudanArticleTimes.length ? ago(Math.max(...sudanArticleTimes)) : 'unknown';
   const sudanMilitary = sudanArticles.filter((a: any) => /strike|missile|drone|attack|front|war|violence|rsf|army|defen[cs]e/i.test(a.title ?? '')).length;
   const sudanDiplomacy = sudanArticles.filter((a: any) => /peace|talks|ceasefire|aid|funding|minister|negotiat|humanitarian/i.test(a.title ?? '')).length;
+  const sudanStories = storyClusters(sudanArticles);
   const hottestSudan = sudanCityWeather.reduce((a: any, b: any) => !a || b.current.apparent_temperature > a.current.apparent_temperature ? b : a, null);
   const windiestSudan = sudanCityWeather.reduce((a: any, b: any) => !a || b.current.wind_speed_10m > a.current.wind_speed_10m ? b : a, null);
   const sudanFunding = sudanFts?.data?.incoming?.fundingTotal ?? 0;
@@ -496,6 +513,8 @@ export async function getInvestigations(): Promise<Investigation[]> {
       metrics: [
         { label: 'Hottest feels-like', value: hottestSudan ? `${Math.round(hottestSudan.current.apparent_temperature)}°C` : '—', delta: hottestSudan ? hottestSudan.city : '5-city grid' },
         { label: 'Attention breadth', value: sudanArticles.length ? `${sudanDomains.size} outlets` : 'unavailable', delta: sudanArticles.length ? `${sudanArticles.length} Google News items / 24h · latest ${sudanLatestCoverage}` : 'attention unavailable' },
+        { label: 'Narrative independence', value: sudanArticles.length ? `${sudanStories.independent} story clusters` : 'unavailable', delta: sudanArticles.length ? `${sudanStories.repeated} duplicate/repeated items` : 'headline clustering unavailable' },
+        { label: 'Attention mix', value: sudanArticles.length ? `${sudanMilitary} conflict / ${sudanDiplomacy} diplomacy` : 'unavailable', delta: 'rough title analysis' },
         { label: 'Humanitarian funding', value: sudanFunding ? `$${(sudanFunding / 1e9).toFixed(2)}B` : '—', delta: `${sudanFlowCount} FTS flows in ${currentYear}` },
         { label: 'Displaced people', value: sudanIdps ? `${(sudanIdps / 1e6).toFixed(1)}M IDPs` : '—', delta: latestSudanDisplacement ? `${(sudanRefugees / 1e6).toFixed(1)}M refugees abroad · ${latestSudanDisplacement.year}` : 'UNHCR' },
         { label: 'Funding per IDP', value: sudanFundingPerIdp ? `$${Math.round(sudanFundingPerIdp)}` : '—', delta: 'rough ratio, not allocation' },
@@ -504,6 +523,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
       evidence: [
         { kind: 'observed', text: `Across the sampled Sudan grid, ${hottestSudan?.city ?? 'the hottest sampled city'} currently feels like ${hottestSudan ? Math.round(hottestSudan.current.apparent_temperature) : '—'}°C; ${windiestSudan?.city ?? 'the windiest sampled city'} has ${windiestSudan ? Math.round(windiestSudan.current.wind_speed_10m) : '—'} km/h winds. This is current environmental exposure, not a damage report.` },
         { kind: 'observed', text: sudanArticles.length ? `${sudanArticles.length} recent Sudan-conflict-related items came from ${sudanDomains.size} outlets/domains via Google News RSS. Rough title analysis: ${sudanMilitary} conflict-related and ${sudanDiplomacy} diplomacy/aid-related mentions; latest item is ${sudanLatestCoverage}.` : 'The Sudan attention sample was unavailable at retrieval time, so no claim is made about current article volume.', source: 'https://news.google.com/' },
+        { kind: 'interpretation', text: sudanArticles.length ? `Headline clustering separates the Sudan sample into about ${sudanStories.independent} distinct story clusters; ${sudanStories.repeated} items look like repetition or wire-copy amplification. The largest cluster has ${sudanStories.largest.length} items, so outlet count is not the same as independent corroboration.` : 'Narrative independence cannot be estimated because the Sudan attention sample is unavailable.' },
         { kind: 'verified', text: `OCHA FTS reports $${(sudanFunding / 1e9).toFixed(2)}B in ${currentYear} incoming humanitarian funding for Sudan across ${sudanFlowCount} flows.`, source: 'https://fts.unocha.org/' },
         { kind: 'verified', text: latestSudanDisplacement ? `UNHCR population statistics for origin-country Sudan list ${sudanIdps.toLocaleString()} internally displaced people and ${sudanRefugees.toLocaleString()} refugees abroad in ${latestSudanDisplacement.year}; IDPs are ${sudanIdpDelta >= 0 ? 'up' : 'down'} ${Math.abs(sudanIdpDelta).toLocaleString()} versus ${Number(latestSudanDisplacement.year) - 1}. These are stock estimates and can reflect methodological revisions, not just movement.` : 'UNHCR displacement data was unavailable at retrieval time.', source: 'https://www.unhcr.org/refugee-statistics/' },
         { kind: 'verified', text: `HDX indexes ${sudanDatasetCount} Sudan-related datasets; ${sudanFreshDatasets} in the sampled first page were modified within the last 30 days. Dataset availability is not the same as field verification.`, source: 'https://data.humdata.org/' },
