@@ -96,3 +96,7 @@ Next hill-climb candidates:
 - production build green after all investigation work; dev server restarted on port 3000 (plain `next dev` default — 3100 was never scripted)
 - surprise-loop validation: Kīlauea crater card showed actual glowing lava in live USGS frame with honest daylight/volcano-status framing — demo-quality moment
 - deploy retry at ~13:50 PT still quota-blocked (`api-deployments-free-per-day`, rolling 24h)
+- `ea02c12` investigation payload cache: rail loads 1.96s → 9ms on cache hit (4min TTL, stale fallback on upstream failure)
+- `1eaba6e` REAL BUG FIX: shared links / investigation jumps to non-featured registry cameras dead-ended with "This live signal has moved on" — hash resolution and liveLink clicks now fall back to constructing the camera card from the full 459-entry registry. Validated: #camera-mount-etna deep-link renders Mount Etna card with video. CAUTION when validating: CDP Page.navigate to a URL differing only in hash does NOT reload the SPA — use Page.reload or navigate cross-page first.
+- gdacs green titles reframed (no more bureaucratic "Green wildfire signal"), scoring reprioritized by alert level (orange/red outrank green noise)
+- browser_preview exposed to user: "Elsewhere — live local build" on port 3000 (next dev default port — dev script has no -p flag)
