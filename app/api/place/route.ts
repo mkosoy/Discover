@@ -3,8 +3,8 @@ import { NextResponse } from 'next/server';
 async function json<T>(url: string): Promise<T | null> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
-    const res = await fetch(url, { signal: controller.signal, next: { revalidate: 300 } });
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(url, { signal: controller.signal, next: { revalidate: 120 } });
     clearTimeout(timer);
     if (!res.ok) return null;
     return await res.json() as T;

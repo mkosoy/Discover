@@ -28,16 +28,28 @@ export default function DiscoverApp() {
   const [lensLoading, setLensLoading] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/discoveries').then(r => r.json()).catch(() => ({ discoveries: [] })),
-      fetch('/api/investigations').then(r => r.json()).catch(() => ({ investigations: [] }))
-    ]).then(([d, i]) => {
-      setDiscoveries(d.discoveries ?? []);
-      setInvestigations(i.investigations ?? []);
-      setActive((d.discoveries ?? [])[0]);
-      setSelectedInvestigation((i.investigations ?? [])[0]);
-      setLoading(false);
-    });
+    let cancelled = false;
+    const load = async (initial = false) => {
+      const [d, i] = await Promise.all([
+        fetch('/api/discoveries', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ discoveries: [] })),
+        fetch('/api/investigations', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ investigations: [] }))
+      ]);
+      if (cancelled) return;
+      const nextDiscoveries = d.discoveries ?? [];
+      const nextInvestigations = i.investigations ?? [];
+      setDiscoveries(nextDiscoveries);
+      setInvestigations(nextInvestigations);
+      setActive(current => {
+        if (!current) return nextDiscoveries[0];
+        if (current.id.startsWith('place-')) return current;
+        return nextDiscoveries.find((item: Discovery) => item.id === current.id) ?? nextDiscoveries[0] ?? current;
+      });
+      setSelectedInvestigation(current => current ? nextInvestigations.find((item: Investigation) => item.id === current.id) ?? nextInvestigations[0] : nextInvestigations[0]);
+      if (initial) setLoading(false);
+    };
+    void load(true);
+    const refresh = window.setInterval(() => void load(), 90000);
+    return () => { cancelled = true; window.clearInterval(refresh); };
   }, []);
 
   const surprise = (reveal = true) => {
