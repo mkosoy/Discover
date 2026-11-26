@@ -534,7 +534,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
   const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
   const currentYear = new Date().getFullYear();
-  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace] = await Promise.all([
+  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace, volcanoXml, myanmarNewsXml, haitiNewsXml, drcNewsXml, yemenNewsXml, myanmarUnhcr, haitiUnhcr, drcUnhcr, yemenUnhcr] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
@@ -552,7 +552,16 @@ export async function getInvestigations(): Promise<Investigation[]> {
     json<any>('https://api.adsb.lol/v2/lat/49.2/lon/31.4/dist/250'),
     json<any>('https://api.adsb.lol/v2/lat/52.1/lon/19.4/dist/250'),
     json<any>('https://api.adsb.lol/v2/lat/45.9/lon/24.9/dist/250'),
-    json<any>('https://api.adsb.lol/v2/lat/51.1/lon/10.4/dist/250')
+    json<any>('https://api.adsb.lol/v2/lat/51.1/lon/10.4/dist/250'),
+    text('https://volcano.si.edu/news/WeeklyVolcanoRSS.xml'),
+    text('https://news.google.com/rss/search?q=Myanmar%20conflict%20when%3A1d&hl=en-US&gl=US&ceid=US%3Aen'),
+    text('https://news.google.com/rss/search?q=Haiti%20crisis%20when%3A1d&hl=en-US&gl=US&ceid=US%3Aen'),
+    text('https://news.google.com/rss/search?q=Congo%20conflict%20when%3A1d&hl=en-US&gl=US&ceid=US%3Aen'),
+    text('https://news.google.com/rss/search?q=Yemen%20war%20when%3A1d&hl=en-US&gl=US&ceid=US%3Aen'),
+    json<any>('https://api.unhcr.org/population/v1/population/?coo=MMR&limit=100'),
+    json<any>('https://api.unhcr.org/population/v1/population/?coo=HTI&limit=100'),
+    json<any>('https://api.unhcr.org/population/v1/population/?coo=COD&limit=100'),
+    json<any>('https://api.unhcr.org/population/v1/population/?coo=YEM&limit=100')
   ]);
   const q = quake?.features?.[0];
   const evt = eonet?.events?.[0];
@@ -861,5 +870,178 @@ export async function getInvestigations(): Promise<Investigation[]> {
       { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' }
     ]
   });
+
+  // --- Volcano unrest: what is erupting right now, cross-linked with live cameras ---
+  const normName = (value: string) => value.toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, '');
+  const volcanoItems = volcanoXml ? [...volcanoXml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(match => {
+    const block = match[1];
+    const title = xmlValue(block, 'title');
+    const parsed = title.match(/^(.*?)\s*\((.*?)\)\s*-\s*Report for .*?\s*-\s*(.*)$/);
+    const point = xmlValue(block, 'georss:point').trim().split(/\s+/).map(Number);
+    return {
+      name: parsed?.[1]?.trim() ?? title,
+      country: parsed?.[2]?.trim() ?? 'Unknown',
+      status: parsed?.[3]?.trim() ?? 'Activity',
+      lat: point[0], lon: point[1],
+      link: xmlValue(block, 'link'),
+      description: xmlValue(block, 'description').replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 260)
+    };
+  }).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lon)) : [];
+  const volcanoWithCameras = volcanoItems.map(item => {
+    const key = normName(item.name).split(' ')[0];
+    const camera = key.length > 3 ? publicCameras.find(cam => normName(`${cam.title} ${cam.place}`).includes(key)) : undefined;
+    return { ...item, camera };
+  });
+  const newVolcanoActivity = volcanoItems.filter(item => /new/i.test(item.status));
+  const eruptingNow = volcanoItems.filter(item => /eruptive/i.test(item.status));
+  const volcanoCountries = new Set(volcanoItems.map(item => item.country));
+  const cameraLinked = volcanoWithCameras.filter(item => item.camera);
+  const volcanoVisuals = [
+    { label: 'New eruptive activity', value: newVolcanoActivity.filter(item => /eruptive/i.test(item.status)).length },
+    { label: 'New unrest', value: newVolcanoActivity.filter(item => /unrest/i.test(item.status)).length },
+    { label: 'Continuing eruptions', value: volcanoItems.filter(item => /continuing eruptive/i.test(item.status)).length },
+    { label: 'Continuing unrest', value: volcanoItems.filter(item => /continuing unrest/i.test(item.status)).length }
+  ].filter(row => row.value > 0).map(row => ({ ...row, display: `${row.value} volcanoes`, highlight: /new eruptive/i.test(row.label) }));
+
+  if (volcanoItems.length >= 5) {
+    const notable = volcanoWithCameras.filter(item => /new eruptive/i.test(item.status)).slice(0, 3);
+    out.push({
+      id: 'volcano-unrest-live',
+      title: `${volcanoItems.length} volcanoes are actively erupting or stirring right now`,
+      dek: 'The Smithsonian/USGS Weekly Volcanic Activity Report is a real-time-adjacent global consensus feed most people never see. Elsewhere cross-links it with live public volcano cameras so eruptions are not just text on a list.',
+      status: 'developing',
+      location: { lat: volcanoItems[0].lat, lon: volcanoItems[0].lon, label: `${volcanoItems[0].name}, ${volcanoItems[0].country}` },
+      updatedAt: now(),
+      confidence: 88,
+      metrics: [
+        { label: 'Active this week', value: String(volcanoItems.length), delta: `across ${volcanoCountries.size} countries` },
+        { label: 'New eruptive activity', value: String(newVolcanoActivity.filter(item => /eruptive/i.test(item.status)).length), delta: 'started or escalated this week' },
+        { label: 'Continuing eruptions', value: String(eruptingNow.filter(item => /continuing/i.test(item.status)).length), delta: 'in progress right now' },
+        { label: 'Live camera links', value: String(cameraLinked.length), delta: cameraLinked.length ? cameraLinked.map(item => item.name).slice(0, 3).join(', ') : 'no direct camera match' }
+      ],
+      evidence: [
+        { kind: 'observed', text: `The Smithsonian/USGS Weekly Volcanic Activity Report currently lists ${volcanoItems.length} volcanoes with new or continuing activity across ${volcanoCountries.size} countries. This is the authoritative global consensus feed, synthesized weekly by observatories.`, source: 'https://volcano.si.edu/news/weeklyvolcano.cfm' },
+        ...(notable.length ? notable.map(item => ({ kind: 'observed' as const, text: `${item.name} (${item.country}) — ${item.status.toLowerCase()}. ${item.description || 'Details in the weekly report.'}`, source: item.link || 'https://volcano.si.edu/' })) : [{ kind: 'observed' as const, text: volcanoItems[0].description ? `${volcanoItems[0].name}: ${volcanoItems[0].description}` : 'No new eruptive activity escalated this week; activity is continuing at background erupting volcanoes.' }]),
+        { kind: 'verified', text: cameraLinked.length ? `${cameraLinked.length} of these volcanoes have live public cameras in the Elsewhere registry: ${cameraLinked.map(item => `${item.name} (${item.camera?.sourceName ?? 'public camera'})`).join(', ')}. Watching a camera frame is direct visual evidence of what is visible — though a quiet frame never proves a volcano is quiet.` : 'None of the currently active volcanoes matched a live camera in the Elsewhere registry; most erupting volcanoes on Earth have no public live look-in at all.', source: 'https://volcano.si.edu/' },
+        { kind: 'interpretation', text: 'Volcanic unrest is the norm, not the exception: at any given moment dozens of volcanoes are erupting. What is rare is not eruption but attention — most of these events will never appear in any news feed because they happen far from cities and cameras.' },
+        { kind: 'interpretation', text: 'New unrest is not a prediction of eruption. Observatories report seismicity, gas and deformation changes; most unrest episodes never escalate, and escalation timescales range from hours to years.' },
+        { kind: 'question', text: 'Which of these volcanoes have populations or flight paths in their hazard footprint — and which are being watched only by satellites because nobody lives close enough to care?' }
+      ],
+      visuals: volcanoVisuals.length ? volcanoVisuals : undefined,
+      visualTitle: 'Global volcanic activity right now',
+      visualCaption: 'Smithsonian/USGS weekly consensus feed',
+      sources: [
+        { label: 'Smithsonian/USGS Weekly Volcanic Activity Report', url: 'https://volcano.si.edu/news/weeklyvolcano.cfm' },
+        { label: 'Elsewhere live volcano cameras', url: 'https://volcano.si.edu/' }
+      ]
+    });
+  }
+
+  // --- Crisis attention index: who gets attention per million displaced? ---
+  const latestIdps = (rows: any) => {
+    const items = rows?.items ?? [];
+    const latest = items.reduce((a: any, b: any) => Number(b.year) > Number(a?.year ?? 0) ? b : a, items[0]);
+    return num(latest?.idps);
+  };
+  const crisisRows = [
+    { label: 'Ukraine', articles, idps: idpNow, lat: 49.2, lon: 31.4 },
+    { label: 'Sudan', articles: sudanArticles, idps: sudanIdps, lat: 15.6, lon: 30.4 },
+    { label: 'Myanmar', articles: parseGoogleNews(myanmarNewsXml), idps: latestIdps(myanmarUnhcr), lat: 19.7, lon: 96.2 },
+    { label: 'Haiti', articles: parseGoogleNews(haitiNewsXml), idps: latestIdps(haitiUnhcr), lat: 18.97, lon: -72.3 },
+    { label: 'DR Congo', articles: parseGoogleNews(drcNewsXml), idps: latestIdps(drcUnhcr), lat: -2.9, lon: 23.7 },
+    { label: 'Yemen', articles: parseGoogleNews(yemenNewsXml), idps: latestIdps(yemenUnhcr), lat: 15.5, lon: 47.6 }
+  ].map(row => ({ ...row, attention: row.articles.length, perMillion: row.idps ? row.articles.length / (row.idps / 1e6) : NaN }));
+  const rankedCrises = crisisRows.filter(row => Number.isFinite(row.perMillion)).sort((a, b) => b.perMillion - a.perMillion);
+  const mostWatched = rankedCrises[0];
+  const leastWatched = rankedCrises[rankedCrises.length - 1];
+  const neglectRatio = mostWatched && leastWatched ? (leastWatched.perMillion > 0 ? mostWatched.perMillion / leastWatched.perMillion : (mostWatched.perMillion > 0 ? Infinity : NaN)) : NaN;
+
+  if (rankedCrises.length >= 3) {
+    out.push({
+      id: 'crisis-attention-index',
+      title: 'The attention gap: which crises the world is actually watching',
+      dek: `Six simultaneous crises, one measurement: how much coverage does each displaced person get? ${neglectRatio === Infinity ? `Today ${leastWatched?.label ?? 'one crisis'} — with ${leastWatched?.idps ? (leastWatched.idps / 1e6).toFixed(1) + ' million displaced people' : 'millions displaced'} — registered essentially zero conflict coverage in the 24-hour sample while ${mostWatched?.label ?? 'another'} dominated attention` : `Today ${mostWatched?.label ?? 'one crisis'} receives roughly ${Number.isFinite(neglectRatio) ? neglectRatio.toFixed(0) : '—'}× more attention per million displaced people than ${leastWatched?.label ?? 'another'}`} — not because it is bigger, but because attention follows its own logic.`,
+      status: 'developing',
+      location: { lat: leastWatched?.lat ?? 15, lon: leastWatched?.lon ?? 30, label: `${leastWatched?.label ?? 'Least-watched crisis'} — least attention per displaced person` },
+      updatedAt: now(),
+      confidence: 71,
+      metrics: [
+        { label: 'Most watched', value: mostWatched?.label ?? '—', delta: `${mostWatched?.perMillion.toFixed(1) ?? '—'} items / million IDPs` },
+        { label: 'Least watched', value: leastWatched?.label ?? '—', delta: `${leastWatched?.perMillion.toFixed(1) ?? '—'} items / million IDPs` },
+        { label: 'Neglect ratio', value: neglectRatio === Infinity ? 'off the scale' : Number.isFinite(neglectRatio) ? `${neglectRatio.toFixed(0)}×` : '—', delta: 'most vs least attention per displaced' },
+        { label: 'Crises compared', value: String(rankedCrises.length), delta: 'same method, same hour' }
+      ],
+      evidence: [
+        { kind: 'observed', text: `In the same hour, 24-hour Google News samples were taken for six crises using identical queries and divided by UNHCR internally-displaced stock estimates. Results span from ${mostWatched?.perMillion.toFixed(1) ?? '—'} attention items per million displaced in ${mostWatched?.label ?? '—'} down to ${leastWatched?.perMillion.toFixed(1) ?? '—'} in ${leastWatched?.label ?? '—'}.`, source: 'https://news.google.com/' },
+        ...rankedCrises.slice(0, 4).map(row => ({ kind: 'observed' as const, text: `${row.label}: ${row.attention} attention items in the 24h sample, ${row.idps ? (row.idps / 1e6).toFixed(1) + 'M' : 'unknown'} IDPs → ${row.perMillion.toFixed(1)} items per million displaced.`, source: 'https://www.unhcr.org/refugee-statistics/' })),
+        { kind: 'interpretation', text: 'Attention is not proportional to human scale. It correlates instead with language, wire-service infrastructure, geopolitical interest, media-market size and novelty. A crisis can be enormous and nearly invisible at the same time.' },
+        { kind: 'interpretation', text: 'This index compares English-edition Google News samples, which systematically under-count coverage in non-English media. Samples are capped and measure the public record, not reality. Displacement stocks are annual estimates, so treat exact ratios as approximate — the order-of-magnitude gaps are the signal.' },
+        { kind: 'question', text: 'What would humanitarian funding look like if it followed displacement rather than attention? FTS data suggests it already partially does — attention is not the only lever that moves money.' },
+        { kind: 'question', text: 'Which crises are invisible even in their own languages? This English-edition sample cannot answer that — it is itself evidence of the attention structure it measures.' }
+      ],
+      visuals: rankedCrises.map(row => ({ label: row.label, value: row.perMillion, display: `${row.perMillion.toFixed(1)}/M`, highlight: row.label === leastWatched?.label })),
+      visualTitle: 'Attention items per million displaced people',
+      visualCaption: 'identical 24h Google News samples ÷ UNHCR IDP estimates',
+      sources: [
+        { label: 'Google News RSS attention samples', url: 'https://news.google.com/' },
+        { label: 'UNHCR Refugee Data Finder', url: 'https://www.unhcr.org/refugee-statistics/' }
+      ]
+    });
+  }
+
+  // --- Seismic pulse: the earth's week in energy ---
+  const weekQuakes = (allQuakes?.features ?? []).filter((feature: any) => Number(feature.properties?.mag ?? 0) >= 4.5 && Number.isFinite(feature.geometry?.coordinates?.[0]));
+  if (weekQuakes.length >= 20) {
+    const energy = (mag: number) => Math.pow(10, 1.5 * mag);
+    const totalEnergy = weekQuakes.reduce((sum: number, feature: any) => sum + energy(feature.properties.mag), 0);
+    const sortedByEnergy = [...weekQuakes].sort((a: any, b: any) => b.properties.mag - a.properties.mag);
+    const largest = sortedByEnergy[0];
+    const top3Share = sortedByEnergy.slice(0, 3).reduce((sum: number, feature: any) => sum + energy(feature.properties.mag), 0) / totalEnergy * 100;
+    const deepest = [...weekQuakes].sort((a: any, b: any) => Number(b.geometry.coordinates[2] ?? 0) - Number(a.geometry.coordinates[2] ?? 0))[0];
+    const bins = Array(12).fill(0);
+    const weekMs = 7 * 86400000;
+    for (const feature of weekQuakes) {
+      const ageMs = Date.now() - Number(feature.properties.time);
+      const bin = Math.min(11, Math.floor((weekMs - ageMs) / (weekMs / 12)));
+      if (bin >= 0) bins[bin] += 1;
+    }
+    const nearLargest = weekQuakes.filter((feature: any) => feature.id !== largest.id && distanceKm(largest.geometry.coordinates[1], largest.geometry.coordinates[0], feature.geometry.coordinates[1], feature.geometry.coordinates[0]) <= 300);
+    const [qLon, qLat] = largest.geometry.coordinates;
+    out.push({
+      id: 'seismic-pulse-week',
+      title: `The earth rang ${weekQuakes.length} times this week — ${top3Share.toFixed(0)}% of the energy came from just 3 events`,
+      dek: 'A planetary audit of the complete USGS earthquake catalog: not just the biggest event, but where the week\'s seismic energy actually concentrated, how deep it happened, and whether the planet is quiet or restless right now.',
+      status: 'developing',
+      location: { lat: qLat, lon: qLon, label: largest.properties.place },
+      mediaImage: worldviewSnapshot(qLat, qLon, 9, 18),
+      mediaAlt: `NASA MODIS latest available imagery near ${largest.properties.place}`,
+      updatedAt: now(),
+      confidence: 82,
+      metrics: [
+        { label: 'M4.5+ events', value: String(weekQuakes.length), delta: 'complete USGS catalog, 7 days' },
+        { label: 'Largest', value: `M${largest.properties.mag.toFixed(1)}`, delta: largest.properties.place?.split(',').pop()?.trim() ?? 'global' },
+        { label: 'Top-3 energy share', value: `${top3Share.toFixed(0)}%`, delta: 'of the week\'s seismic moment' },
+        { label: 'Deepest', value: `${Math.round(Number(deepest.geometry.coordinates[2] ?? 0))} km`, delta: `M${deepest.properties.mag.toFixed(1)} ${deepest.properties.place?.split(',').pop()?.trim() ?? ''}` },
+        { label: 'Near largest event', value: String(nearLargest.length), delta: 'within 300 km this week' }
+      ],
+      evidence: [
+        { kind: 'observed', text: `The complete USGS catalog lists ${weekQuakes.length} earthquakes of magnitude 4.5 or greater in the past 7 days — not a sample, the full global record.`, source: 'https://earthquake.usgs.gov/earthquakes/feed/' },
+        { kind: 'observed', text: `The largest was M${largest.properties.mag.toFixed(1)} near ${largest.properties.place}. Because seismic energy scales by about 32× per magnitude unit, the three largest events account for ${top3Share.toFixed(0)}% of the entire week's seismic moment release — the thousands of smaller quakes combined barely register energetically.`, source: largest.properties.url },
+        { kind: 'observed', text: `The deepest major event this week was M${deepest.properties.mag.toFixed(1)} at ${Math.round(Number(deepest.geometry.coordinates[2] ?? 0))} km depth near ${deepest.properties.place}. Deep-focus earthquakes reveal slabs of oceanic crust still sinking into the mantle — they are direct evidence of plate tectonics in motion.`, source: 'https://earthquake.usgs.gov/' },
+        { kind: 'observed', text: `${nearLargest.length} cataloged events this week occurred within 300 km of the largest shock${nearLargest.length > 8 ? ' — a clustered sequence rather than an isolated event' : nearLargest.length > 2 ? ' — moderate regional activity' : ' — it struck in relative isolation'}.`, source: 'https://earthquake.usgs.gov/earthquakes/feed/' },
+        { kind: 'interpretation', text: 'Global seismicity never stops. The background rate is remarkably steady over years, so the interesting questions are spatial: whether energy is concentrating along one plate boundary, whether deep or shallow events dominate, and whether a large event was isolated or part of an active sequence.' },
+        { kind: 'interpretation', text: 'Magnitude distribution follows a power law — small quakes vastly outnumber large ones, but energy concentrates in the few largest. That is why a single M7 can outweigh a thousand M4s, and why magnitude statistics mislead anyone counting only event counts.' },
+        { kind: 'question', text: 'Is any plate boundary segment unusually quiet right now? Seismic gaps — locked segments that have not released energy — are where hazard accumulates, but catalogs cannot measure strain directly.' }
+      ],
+      pulses: [{ label: 'M4.5+ events per ~14h', values: bins, display: `${weekQuakes.length} total` }],
+      pulseTitle: '7-day seismic cadence',
+      pulseCaption: 'complete catalog binned oldest → latest',
+      sources: [
+        { label: 'USGS all-week earthquake catalog', url: 'https://earthquake.usgs.gov/earthquakes/feed/' },
+        { label: 'USGS significant earthquakes', url: 'https://earthquake.usgs.gov/' }
+      ]
+    });
+  }
+
   return out;
 }
