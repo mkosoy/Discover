@@ -104,8 +104,8 @@ export default function DiscoverApp() {
         <button className="panelClose" aria-label="Hide discovery" onClick={() => setPanelOpen(false)}><X size={17} /></button>
         <div className="panelMedia">{active.visual === 'nasa-live' ?
           <iframe title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen /> :
-          <VisualMotif kind={active.visual} />}
-          <div className="mediaTag"><Radio size={13} />{active.visual === 'nasa-live' ? 'Official live video' : 'Animated evidence visualization'}</div>
+          <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
+          <div className="mediaTag"><Radio size={13} />{active.visual === 'nasa-live' ? 'Official live video' : active.mediaImage ? 'Live public imagery + visualization' : 'Animated evidence visualization'}</div>
         </div>
         <div className="panelBody">
           <div className="eyebrow"><Sparkles size={14} />{active.kicker}</div>
@@ -113,9 +113,10 @@ export default function DiscoverApp() {
           <p className="location">{locationLine}</p>
           <p className="summary">{active.summary}</p>
           <div className="factGrid">{active.facts.map(f => <div key={f.label} className={`fact ${f.kind}`}><span>{f.label}</span><strong>{f.value}</strong><em>{kindLabel[f.kind]}</em></div>)}</div>
+          {Boolean(active.connections?.length) && <div className="connections"><span>Connected signals</span>{active.connections?.map(c => <button key={c.id} onClick={() => { const match = discoveries.find(d => d.id === c.id); if (match) selectDiscovery(match); }}><b>{c.title}</b><small>{c.reason}</small></button>)}</div>}
           <div className="rabbit"><span>Explore further</span>{active.related.map(r => <button key={r} onClick={() => exploreRelated(r)}>{r}<ArrowRight size={13} /></button>)}</div>
           {lensLoading && <div className="contextLens"><b>Reading local evidence…</b></div>}
-          {lens && <div className="contextLens"><b>{lens.topic}</b><div className="lensGrid">{lens.facts?.map((f: any) => <div key={f.label} className={`lensFact ${f.kind}`}><span>{f.label}</span><p>{f.value}</p></div>)}</div></div>}
+          {lens && <div className="contextLens"><b>{lens.topic}</b>{lens.retrievedAt && <small className="lensTime">retrieved {new Date(lens.retrievedAt).toLocaleTimeString()}</small>}<div className="lensGrid">{lens.facts?.map((f: any) => <div key={f.label} className={`lensFact ${f.kind}`}><span>{f.label}</span><p>{f.value}</p></div>)}</div></div>}
           <details className="sources"><summary>Evidence and sources</summary>{active.sources.map(s => <a key={s.url} href={s.url} target="_blank">{s.label}<small>{new Date(s.retrievedAt).toLocaleTimeString()}</small></a>)}</details>
         </div>
       </motion.aside>}
@@ -133,6 +134,13 @@ export default function DiscoverApp() {
     {mode === 'discover' && active && !panelOpen && <button className="reopen" onClick={() => setPanelOpen(true)}>{active.kicker}</button>}
     {loading && <div className="loading"><Loader2 className="spin" />Listening to public Earth signals…</div>}
   </main>;
+}
+
+function LiveImage({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+  if (failed) return null;
+  return <img className="liveImage" src={src} alt={alt} onError={() => setFailed(true)} />;
 }
 
 function VisualMotif({ kind }: { kind: Discovery['visual'] }) {
