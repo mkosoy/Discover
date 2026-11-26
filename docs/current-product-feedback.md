@@ -129,3 +129,10 @@ Next hill-climb candidates:
 - app/page.tsx generateMetadata resolves ?d= against live catalog (10min in-process cache) → dynamic og:title/description + discovery mediaImage when available. Registry fallback for any camera-* id. Validated: /?d=iss-over-earth renders "The ISS is crossing the planet in silence".
 - Cold first shared hit pays investigations fill (~14s with ADS-B throttle) once per 10min cache window — accepted, crawler-only traffic.
 - Mobile 390x844 validated: bottom sheet card, globe with aircraft specks, action dock all render correctly.
+
+## Round VI — census + consolidation (Nov 26 ~15:45 PT)
+- airborne-now card: global ADS-B census (5,111 aircraft aloft at validation, ~0.5M estimated souls). Shares OpenSky snapshot with sky layer via getGlobalAircraft() in lib/live (60s cache) — api/sky now thin wrapper.
+- emergency-board title now leads with serious (red+orange) count vs total hazards.
+- watchdog.sh keeps dev:3000 and prod:3212 alive overnight (60s loop, logged to /tmp/watchdog.log).
+- Full-loop validation: 0 console errors across surprise×2 + investigate at 1440px.
+- PUSHED everything to origin devin/discover-polish as backup — PR #1 current through f253aab. CI still fails only on Vercel deploy quota.
