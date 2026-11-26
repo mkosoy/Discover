@@ -28,6 +28,22 @@
 - ISS now includes a smooth propagated orbital track from the current public TLE, with orbit-model freshness shown as evidence.
 - Ukraine now opens with NASA MODIS latest-available true-color satellite-swath imagery plus explicit non-surveillance caveats; attention cadence is visualized in 2h bins without claiming capped samples are total volume. Sudan, significant-earthquake and under-covered-event investigations also use latest-available MODIS visual context with explicit orbital/cloud/timing caveats.
 - Mount Etna live-camera discovery added, with current wind/weather and volcano-specific ash/air-quality/seismic lenses.
+## Camera coverage scaling (latest)
+
+- Camera registry scaled to ~459 deduplicated public look-ins across 122 independent countries (~302 video-backed YouTube entries plus refreshing near-real-time still imagery from SkylineWebcams and Webcam Galore).
+- Globe camera pins are interactive, mobile-tappable, color-coded by media type (teal video, gold imagery), with ranked nearest-camera selection and confidence/approximate-position labeling.
+- Nearby-camera lens can supplement the curated registry with OpenEye's live public-camera index (200k+ indexed cameras) where rows are live, embeddable images.
+- Webcam Galore integration adds precise-coordinate refreshing imagery for hard-to-cover countries: Egypt, Fiji, Liechtenstein, Montenegro, Papua New Guinea, Saint Vincent and the Grenadines, Tunisia.
+- Honest coverage finding: the remaining ~70 uncovered independent countries largely lack keyless, embeddable, reliable public camera streams. YouWebcams/Webcamera24 deep links rely on embed.skydream.cam, whose DNS no longer resolves (defunct service), so those streams cannot be truthfully embedded. Filling gaps with unrelated cameras is deliberately avoided per product values.
+- OpenEye probing of missing-country capitals found almost no coverage in those countries either (only Andorra and Antigua exact matches among 78 probed).
+
+## Known camera limitations
+
+- Generated YouTube live badges are point-in-time validations and can go stale.
+- Some Skyline entries may serve a "latest image" rather than a truly live feed; labeling stays honest about "near-real-time imagery".
+- Skyline HLS streams (livee.m3u8) remain unresolved; still-image fallback used instead.
+- YouTube thumbnails may be static promotional images rather than live frames.
+
 - Approximate sunlight/day-night lighting, duplicate-marker spreading, shortened NWS deep-link ids, compact evidence sections and no-immediate-repeat Surprise/Watch weighting improve polish.
 - Share/deep links exist for discoveries, investigations and arbitrary tapped places, including truthful unavailable states when ephemeral live cards expire.
 - Mobile bottom sheet compacted; hero hides while the evidence panel is open.
