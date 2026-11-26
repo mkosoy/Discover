@@ -332,7 +332,7 @@ export default function DiscoverApp() {
     setMode('investigate');
   };
 
-  return <main className={`mode-${mode} ${panelOpen ? 'panel-open' : 'panel-closed'}`}>
+  return <main className={`mode-${mode} ${panelOpen ? 'panel-open' : 'panel-closed'} ${watching ? 'watching' : ''}`}>
     <Globe active={globeFocus} discoveries={discoveries} investigations={investigations} cameras={publicCameras} onSelect={selectDiscovery} onSelectCamera={selectCamera} onSelectInvestigation={selectInvestigation} />
     <header className="topbar">
       <div className="brand"><Globe2 size={22} /><span>Elsewhere</span></div>

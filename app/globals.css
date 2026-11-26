@@ -29,3 +29,7 @@
 
 .emptyState{position:fixed;z-index:6;left:50%;bottom:110px;transform:translateX(-50%);display:grid;gap:5px;max-width:320px;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:rgba(5,12,26,.72);backdrop-filter:blur(18px);text-align:center}.emptyState span{color:var(--muted);font-size:12px;line-height:1.4}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 @media(max-width:760px){.factGrid.metrics{display:flex;overflow-x:auto;grid-template-columns:none;padding-bottom:4px}.factGrid.metrics .fact{min-width:132px}.signalBarsHeader{display:block}.signalBar{grid-template-columns:72px 1fr 76px;gap:7px}.pulseRow{grid-template-columns:78px 1fr 58px;gap:6px;font-size:10px}.pulseColumns{height:46px;gap:3px}}
+
+/* Watch mode: let the planet command the screen */
+main.watching .heroCopy{opacity:0;transform:translateY(-8px);pointer-events:none;transition:opacity .9s ease,transform .9s ease}
+.heroCopy{transition:opacity .9s ease,transform .9s ease}
