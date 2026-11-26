@@ -1,5 +1,6 @@
 import { generatedCountryCameras } from './cameras.generated';
 import { skylineCameras } from './cameras.skyline.generated';
+import { webcamGaloreCameras } from './cameras.webcamgalore.generated';
 
 export type PublicCamera = {
   id: string;
@@ -73,7 +74,7 @@ const curatedPublicCameras: PublicCamera[] = [
 
 ];
 
-const generatedUnique = [...skylineCameras, ...generatedCountryCameras].filter((camera, index, all) =>
+const generatedUnique = [...webcamGaloreCameras, ...skylineCameras, ...generatedCountryCameras].filter((camera, index, all) =>
   !curatedPublicCameras.some(curated => curated.youtubeId === camera.youtubeId) &&
   all.findIndex(other => (other.youtubeId ?? other.id) === (camera.youtubeId ?? camera.id)) === index
 );

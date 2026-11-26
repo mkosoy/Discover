@@ -432,11 +432,11 @@ function LiveImage({ src, alt }: { src: string; alt: string }) {
   const [refreshTick, setRefreshTick] = useState(0);
   useEffect(() => setFailed(false), [src, refreshTick]);
   useEffect(() => {
-    if (!src.includes('embed.skylinewebcams.com')) return;
+    if (!(src.includes('embed.skylinewebcams.com') || src.includes('images.webcamgalore.com'))) return;
     const timer = window.setInterval(() => setRefreshTick(tick => tick + 1), 60000);
     return () => window.clearInterval(timer);
   }, [src]);
-  const liveSrc = src.includes('embed.skylinewebcams.com') ? `${src}${src.includes('?') ? '&' : '?'}t=${refreshTick}` : src;
+  const liveSrc = (src.includes('embed.skylinewebcams.com') || src.includes('images.webcamgalore.com')) ? `${src}${src.includes('?') ? '&' : '?'}t=${refreshTick}` : src;
   if (failed) return null;
   return <img
     className="liveImage"
