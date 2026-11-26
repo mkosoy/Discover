@@ -41,9 +41,9 @@ export async function GET(request: Request) {
       json<any[]>('https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json')
     ]);
     const p = plasma?.find(row => Number.isFinite(row?.speed));
-    const m = mag?.find(row => Number.isFinite(row?.gse_bz));
+    const m = mag?.find(row => Number.isFinite(row?.gsm_bz) || Number.isFinite(row?.gse_bz));
     const x = xrays?.at(-1);
-    const bz = m?.gse_bz;
+    const bz = m?.gsm_bz ?? m?.gse_bz;
     return answer(topic, 'Sun–Earth L1 / near-Earth space', [
       { label: 'Solar wind speed', value: p ? `${Math.round(p.speed)} km/s` : 'Unavailable', kind: 'observed' },
       { label: 'Proton density', value: p?.dens != null ? `${p.dens.toFixed(1)} particles/cm³` : 'Unavailable', kind: 'observed' },

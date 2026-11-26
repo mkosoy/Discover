@@ -96,11 +96,11 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   });
 
   const plasma = swepam?.find(row => Number.isFinite(row?.speed));
-  const mag = aceMag?.find(row => Number.isFinite(row?.gse_bz));
+  const mag = aceMag?.find(row => Number.isFinite(row?.gsm_bz) || Number.isFinite(row?.gse_bz));
   const xray = xrays?.at(-1);
   if (plasma || mag || xray) {
     const speed = plasma?.speed ?? 0;
-    const bz = mag?.gse_bz;
+    const bz = mag?.gsm_bz ?? mag?.gse_bz;
     out.push({
       id: 'solar-wind-stream', template: 'atmosphere', title: 'The solar wind is pressing against near-Earth space', kicker: 'NOAA real-time space weather', visual: 'orbital', score: 86 + Math.max(0, Math.min(8, (speed - 400) / 50)), freshness: plasma?.time_tag ? ago(plasma.time_tag) : 'minutes ago',
       mediaImage: 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png', mediaAlt: 'Latest NOAA GOES solar ultraviolet image',
