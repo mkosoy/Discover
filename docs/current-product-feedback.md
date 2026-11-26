@@ -105,3 +105,12 @@ Next hill-climb candidates:
 - remaining ideas queue: ReliefWeb current-disasters investigation, globe pin declutter in dense regions, Watch-mode cinematic polish, eonet/gdacs event card connections enrichment, iOS strategy doc (task 23 pending)
 - ReliefWeb probing: base endpoint returns JSON but with totalCount missing in some responses; the fields[include] bracket query returned non-JSON (needs URL-encoded brackets or different param style) — finish probe before implementing
 - NOTE orbital-cadence drops out when Launch Library 429s persist across server restarts (memory cache is in-process); acceptable degradation, recovers when rate limit clears
+
+## Round 2026-11-26 afternoon II
+- pin quality hierarchy (video large, stills small), watch-mode cinematic fade validated, mobile chart caption overlap fixed
+- NWS alert cards place-specific ("Flood Warning — Jones, NC") with real description texture
+- EPIC full-disk Earth card (keyless epic.gsfc.nasa.gov) — validated rendering, honest 70h lag
+- iOS strategy doc committed + Safari install hint shipped; apple-touch-icon already existed
+- OG/Twitter meta + og-image.png (crop of Etna venting screenshot) — shared links now render rich previews; FUTURE: per-discovery dynamic OG needs query-param share urls (?d=id) + generateMetadata + /api/og image route
+- dead ends: ReliefWeb needs approved appname; WHO DON rss 404; open-notify unreachable; usgs waterservices 10-15s per query (only viable as on-demand lens, low value without flood-stage context)
+- console error audit across surprise+investigate flows: 0 errors
