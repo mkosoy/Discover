@@ -668,8 +668,8 @@ export async function getInvestigations(): Promise<Investigation[]> {
     const evidenceStrength = [cityWeather.length >= 4, articles.length >= 8, funding > 0, datasetCount > 100].filter(Boolean).length;
     out.unshift({
       id: 'ukraine-live-signal',
-      title: 'Ukraine: what the live public record can — and cannot — say',
-      dek: 'A country-level synthesis of current weather stress, global attention patterns, humanitarian funding flows and public datasets. It intentionally avoids tactical battlefield tracking and instead asks what conditions mean for civilians and infrastructure resilience.',
+      title: ukraineAircraft != null && maxNeighboringAircraft != null && maxNeighboringAircraft - ukraineAircraft > 50 ? 'Ukraine: a silent sky that says everything' : 'Ukraine: cold cities, watched skies, and a war the world is funding',
+      dek: 'The most eloquent data point is absence: civil aircraft simply do not cross Ukraine while neighbors\' skies are full. Around that silence, the live public record shows a country enduring cold, displacement and constant global attention — measured here, right now, across eight independent sources.',
       mediaImage: worldviewSnapshot(49.2, 31.4, 10, 22),
       mediaAlt: 'NASA MODIS latest available true-color satellite swath over Ukraine and surrounding regions',
       status: evidenceStrength >= 3 ? 'developing' : 'uncertain',
@@ -1172,5 +1172,6 @@ export async function getInvestigations(): Promise<Investigation[]> {
     });
   }
 
-  return out;
+  const investigationPriority = ['crisis-attention-index', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
+  return out.sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
 }
