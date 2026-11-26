@@ -5,7 +5,10 @@ const now = () => new Date().toISOString();
 const src = (label: string, url: string) => ({ label, url, retrievedAt: now() });
 async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
-    const res = await fetch(url, { ...init, next: { revalidate: 180 } });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 9000);
+    const res = await fetch(url, { signal: controller.signal, ...init, next: { revalidate: 180 } });
+    clearTimeout(timer);
     if (!res.ok) return null;
     return await res.json() as T;
   } catch { return null; }
@@ -71,30 +74,86 @@ export async function getDiscoveries(): Promise<Discovery[]> {
 }
 
 export async function getInvestigations(): Promise<Investigation[]> {
-  const [quake, reports, news, eonet] = await Promise.all([
+  const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
+  const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
+  const [quake, hdx, ukraineNews, ukraineWeather, fts, eonet] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
-    json<any>('https://api.reliefweb.int/v1/reports?appname=elsewhere-discover&limit=5&profile=list&sort[]=date:desc'),
-    json<any>('https://api.gdeltproject.org/api/v2/doc/doc?query=earthquake%20OR%20volcano%20OR%20flood&mode=ArtList&maxrecords=8&format=json&sort=HybridRel'),
+    json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
+    json<any>('https://api.gdeltproject.org/api/v2/doc/doc?query=ukraine&mode=ArtList&maxrecords=30&format=json&timespan=24h'),
+    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${ukraineCities}&longitude=${ukraineLons}&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&timezone=Europe%2FKyiv`),
+    json<any>('https://api.hpc.tools/v1/public/fts/flow?countryISO3=UKR&year=2026'),
     json<any>('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=6')
   ]);
   const q = quake?.features?.[0];
   const out: Investigation[] = [];
+  const cityNames = ['Kyiv', 'Kharkiv', 'Dnipro', 'Odesa', 'Lviv'];
+  const weatherRows = Array.isArray(ukraineWeather) ? ukraineWeather : ukraineWeather ? [ukraineWeather] : [];
+  const cityWeather = weatherRows.map((row: any, i: number) => ({ city: cityNames[i] ?? `Point ${i + 1}`, current: row.current })).filter((row: any) => row.current);
+  const articles = ukraineNews?.articles ?? [];
+  const countries = new Set(articles.map((a: any) => a.sourcecountry).filter(Boolean));
+  const languages = new Set(articles.map((a: any) => a.language).filter(Boolean));
+  const domains = new Set(articles.map((a: any) => a.domain).filter(Boolean));
+  const military = articles.filter((a: any) => /strike|missile|drone|attack|front|war|air raid|defen[cs]e/i.test(a.title ?? '')).length;
+  const diplomacy = articles.filter((a: any) => /peace|talks|ceasefire|aid|funding|minister|negotiat/i.test(a.title ?? '')).length;
+  const coldest = cityWeather.reduce((a: any, b: any) => !a || b.current.apparent_temperature < a.current.apparent_temperature ? b : a, null);
+  const windiest = cityWeather.reduce((a: any, b: any) => !a || b.current.wind_speed_10m > a.current.wind_speed_10m ? b : a, null);
+  const funding = fts?.data?.incoming?.fundingTotal ?? 0;
+  const pledges = fts?.data?.incoming?.pledgeTotal ?? 0;
+  const flowCount = fts?.data?.incoming?.flowCount ?? 0;
+  const datasets = hdx?.result?.results ?? [];
+  const datasetCount = hdx?.result?.count ?? datasets.length ?? 0;
+  const freshDatasets = datasets.filter((d: any) => Date.now() - new Date(d.metadata_modified ?? 0).getTime() < 1000 * 60 * 60 * 24 * 30).length;
+
+  if (cityWeather.length || articles.length || funding) {
+    const coldStress = coldest && coldest.current.apparent_temperature <= 0;
+    const attentionBreadth = countries.size;
+    const evidenceStrength = [cityWeather.length >= 4, articles.length >= 8, funding > 0, datasetCount > 100].filter(Boolean).length;
+    out.unshift({
+      id: 'ukraine-live-signal',
+      title: 'Ukraine: what the live public record can — and cannot — say',
+      dek: 'A country-level synthesis of current weather stress, global attention patterns, humanitarian funding flows and public datasets. It intentionally avoids tactical battlefield tracking and instead asks what conditions mean for civilians and infrastructure resilience.',
+      status: evidenceStrength >= 3 ? 'developing' : 'uncertain',
+      location: { lat: 49.2, lon: 31.4, label: 'Ukraine, country-level synthesis' },
+      updatedAt: now(),
+      confidence: 42 + evidenceStrength * 11,
+      metrics: [
+        { label: 'Coldest feels-like', value: coldest ? `${Math.round(coldest.current.apparent_temperature)}°C` : '—', delta: coldest ? coldest.city : '5-city grid' },
+        { label: 'Attention breadth', value: articles.length ? `${attentionBreadth} countries` : 'unavailable', delta: articles.length ? `${articles.length} GDELT articles / 24h` : 'GDELT rate-limited or empty' },
+        { label: 'Humanitarian funding', value: funding ? `$${(funding / 1e9).toFixed(2)}B` : '—', delta: `${flowCount} FTS flows in 2026` },
+        { label: 'Public datasets', value: String(datasetCount), delta: `${freshDatasets} updated in sample / 30d` }
+      ],
+      evidence: [
+        { kind: 'observed', text: `Across a five-city Open-Meteo grid, ${coldest?.city ?? 'the coldest sampled city'} currently feels like ${coldest ? Math.round(coldest.current.apparent_temperature) : '—'}°C; ${windiest?.city ?? 'the windiest sampled city'} has ${windiest ? Math.round(windiest.current.wind_speed_10m) : '—'} km/h winds. This is current weather, not a damage report.` },
+        { kind: 'observed', text: articles.length ? `${articles.length} recent GDELT-matched Ukraine articles came from ${domains.size} domains in ${countries.size} source countries and ${languages.size} languages. Rough title analysis: ${military} conflict-related and ${diplomacy} diplomacy/aid-related mentions.` : 'The GDELT attention sample was unavailable at retrieval time, so no claim is made about current article volume.', source: 'https://www.gdeltproject.org/' },
+        { kind: 'verified', text: `OCHA FTS reports $${(funding / 1e9).toFixed(2)}B in 2026 incoming humanitarian funding for Ukraine across ${flowCount} flows, plus $${(pledges / 1e6).toFixed(0)}M in pledges.`, source: 'https://fts.unocha.org/' },
+        { kind: 'verified', text: `HDX indexes ${datasetCount} Ukraine-related datasets; ${freshDatasets} in the sampled first page were modified within the last 30 days. Dataset availability is not the same as field verification.`, source: 'https://data.humdata.org/' },
+        { kind: 'interpretation', text: coldStress ? 'Sub-zero feels-like conditions make heating, grid resilience, shelter and transport disruption especially consequential; however, these public feeds do not prove outages or localized harm.' : 'Current sampled weather does not indicate exceptional cold stress countrywide; attention and humanitarian data still matter independently.' },
+        { kind: 'interpretation', text: articles.length ? (attentionBreadth >= 8 ? 'Broad international attention increases the chance that major developments are independently corroborated, but volume also creates repetition and noise. Source diversity is stronger evidence than raw article count.' : 'Limited international attention makes corroboration weaker; absence of coverage should not be read as absence of events.') : 'Because the attention sample is unavailable, the investigation relies more heavily on direct weather, funding and dataset observations.' },
+        { kind: 'question', text: 'What independent, appropriately aggregated evidence about power availability, heating access, displacement and civilian harm would corroborate or contradict the apparent level of stress?' },
+        { kind: 'question', text: 'Which stories are being repeated across outlets, and which are independently observed? Elsewhere does not treat republished narratives as separate evidence.' }
+      ],
+      sources: [
+        { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' },
+        { label: 'GDELT 24h Ukraine attention sample', url: 'https://www.gdeltproject.org/' },
+        { label: 'OCHA Financial Tracking Service', url: 'https://fts.unocha.org/' },
+        { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' }
+      ]
+    });
+  }
+
   if (q) {
     const [lon, lat, depth] = q.geometry.coordinates;
-    const reliefCount = reports?.data?.length ?? 0;
-    const coverage = news?.articles?.length ?? 0;
-    out.push({ id: 'seismic-ripple', title: 'What follows a significant earthquake?', dek: 'A evidence-first reconstruction combining USGS observations, humanitarian reporting and global media attention.', status: reliefCount ? 'developing' : 'uncertain', location: { lat, lon, label: q.properties.place }, updatedAt: new Date(q.properties.time).toISOString(), confidence: coverage && reliefCount ? 74 : 52, metrics: [
-      { label: 'Magnitude', value: q.properties.mag?.toFixed(1) ?? '—' }, { label: 'Depth', value: `${Math.round(depth)} km` }, { label: 'Media signals', value: String(coverage), delta: 'last refresh' }, { label: 'Relief reports', value: String(reliefCount), delta: 'global sample' }
+    out.push({ id: 'seismic-ripple', title: 'What follows a significant earthquake?', dek: 'An evidence-first reconstruction combining USGS observations, humanitarian-data availability and attention gaps.', status: 'uncertain', location: { lat, lon, label: q.properties.place }, updatedAt: new Date(q.properties.time).toISOString(), confidence: 52, metrics: [
+      { label: 'Magnitude', value: q.properties.mag?.toFixed(1) ?? '—' }, { label: 'Depth', value: `${Math.round(depth)} km` }, { label: 'Felt reports', value: String(q.properties.felt ?? 0), delta: 'USGS crowd reports' }, { label: 'Impact evidence', value: 'Unresolved', delta: 'needs corroboration' }
     ], evidence: [
       { kind: 'observed', text: `USGS recorded magnitude ${q.properties.mag?.toFixed(1)} at ${Math.round(depth)} km depth near ${q.properties.place}.`, source: q.properties.url },
-      { kind: 'verified', text: `${coverage} recent GDELT-matched articles mention major earth hazards; this is attention, not damage measurement.` },
       { kind: 'interpretation', text: 'Humanitarian consequence cannot be inferred from magnitude alone; depth, exposure, building stock and reporting lag matter.' },
       { kind: 'question', text: 'What independent evidence would show whether infrastructure, shelter or lifeline services are deteriorating?' }
-    ], sources: [{ label: 'USGS significant earthquakes', url: 'https://earthquake.usgs.gov/' }, { label: 'ReliefWeb API', url: 'https://reliefweb.int/' }, { label: 'GDELT', url: 'https://www.gdeltproject.org/' }] });
+    ], sources: [{ label: 'USGS significant earthquakes', url: 'https://earthquake.usgs.gov/' }, { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' }] });
   }
   const evt = eonet?.events?.[0];
-  if (evt) out.push({ id: 'event-attention-gap', title: 'Which natural events are being missed?', dek: 'NASA event observations are compared with broad news attention to surface stories that may be under-covered.', status: 'uncertain', location: { lat: evt.geometry?.at(-1)?.coordinates?.[1] ?? 0, lon: evt.geometry?.at(-1)?.coordinates?.[0] ?? 0, label: evt.title }, updatedAt: evt.geometry?.at(-1)?.date ?? now(), confidence: 48, metrics: [
-    { label: 'Open events', value: String(eonet?.events?.length ?? 0) }, { label: 'Attention proxy', value: String(news?.articles?.length ?? 0), delta: 'GDELT sample' }, { label: 'Evidence quality', value: 'Mixed', delta: 'source-dependent' }
+  if (evt) out.push({ id: 'event-attention-gap', title: 'Which natural events are being missed?', dek: 'NASA event observations are compared with broad public attention to surface stories that may be under-covered.', status: 'uncertain', location: { lat: evt.geometry?.at(-1)?.coordinates?.[1] ?? 0, lon: evt.geometry?.at(-1)?.coordinates?.[0] ?? 0, label: evt.title }, updatedAt: evt.geometry?.at(-1)?.date ?? now(), confidence: 48, metrics: [
+    { label: 'Open events', value: String(eonet?.events?.length ?? 0) }, { label: 'Attention proxy', value: String(articles.length), delta: 'Ukraine sample reuse' }, { label: 'Evidence quality', value: 'Mixed', delta: 'source-dependent' }
   ], evidence: [
     { kind: 'observed', text: `NASA EONET is tracking ${evt.title} as an open natural event.` },
     { kind: 'interpretation', text: 'Low media attention does not imply low consequence; it creates a research question worth investigating.' },
