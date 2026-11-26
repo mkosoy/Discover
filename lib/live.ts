@@ -25,6 +25,30 @@ const cameraCopy: Record<string, { title: string; summary: string; template: Dis
   'table-mountain': { template: 'atmosphere', visual: 'city', title: 'Table Mountain is holding weather over Cape Town', summary: 'A live camera watches the mountain-city interface where cloud, wind and ocean light can change the scene minute by minute.' }
 };
 
+
+const nwsCache: { at: number; data: any } = { at: 0, data: null };
+async function nwsAlertsJson(timeoutMs = 8000) {
+  const now = Date.now();
+  if (nwsCache.data && now - nwsCache.at < 90000) return nwsCache.data;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch('https://api.weather.gov/alerts/active?status=actual', {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' },
+      cache: 'no-store'
+    });
+    clearTimeout(timer);
+    if (!res.ok) return nwsCache.data;
+    const data = await res.json();
+    nwsCache.at = now;
+    nwsCache.data = data;
+    return data;
+  } catch {
+    return nwsCache.data;
+  }
+}
+
 async function json<T>(url: string, init?: RequestInit, timeoutMs = 5000): Promise<T | null> {
   try {
     const controller = new AbortController();
@@ -258,7 +282,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://api.open-meteo.com/v1/forecast?latitude=-23.65&longitude=15.95&current=temperature_2m,weather_code,wind_speed_10m,is_day&timezone=auto'),
     json<any>('https://api.open-meteo.com/v1/forecast?latitude=37.73&longitude=15.0&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day&timezone=auto'),
     head('https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg'),
-    json<any>('https://api.weather.gov/alerts/active?status=actual', { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }),
+    nwsAlertsJson(),
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${featuredCameras.map(camera => camera.lat).join(',')}&longitude=${featuredCameras.map(camera => camera.lon).join(',')}&current=temperature_2m,wind_speed_10m,is_day,cloud_cover&timezone=auto`)
   ]);
   const out: Discovery[] = [];
