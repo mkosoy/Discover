@@ -56,7 +56,8 @@ export async function GET(request: Request) {
     ]);
   }
 
-  if (t.includes('launch') || t.includes('mission trajectory') || t.includes('pad camera') || t.includes('weather constraint')) {
+  const launchTopic = t.includes('launch') || t.includes('mission trajectory') || t.includes('pad camera') || (t.includes('weather constraint') && Boolean(entityId));
+  if (launchTopic) {
     const launch = entityId
       ? await json<any>(`https://ll.thespacedevs.com/2.3.0/launches/${encodeURIComponent(entityId)}/?mode=detailed`)
       : (await json<any>('https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=1&mode=detailed'))?.results?.[0];
