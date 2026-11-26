@@ -282,7 +282,7 @@ function connectDiscoveries(out: Discovery[]) {
 
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -302,8 +302,10 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://api.open-meteo.com/v1/forecast?latitude=-23.65&longitude=15.95&current=temperature_2m,weather_code,wind_speed_10m,is_day&timezone=auto'),
     json<any>('https://api.open-meteo.com/v1/forecast?latitude=37.73&longitude=15.0&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day&timezone=auto'),
     head('https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg'),
+
     nwsAlertsJson(),
-    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${featuredCameras.map(camera => camera.lat).join(',')}&longitude=${featuredCameras.map(camera => camera.lon).join(',')}&current=temperature_2m,wind_speed_10m,is_day,cloud_cover&timezone=auto`)
+    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${featuredCameras.map(camera => camera.lat).join(',')}&longitude=${featuredCameras.map(camera => camera.lon).join(',')}&current=temperature_2m,wind_speed_10m,is_day,cloud_cover&timezone=auto`),
+    json<any[]>('https://epic.gsfc.nasa.gov/api/natural', undefined, 6000)
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -527,6 +529,28 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     sources: [src('Mount Etna live camera', 'https://www.youtube.com/watch?v=JmKT_-IAUPc'), src('Open-Meteo current weather', 'https://open-meteo.com/')],
     related: ['Volcano weather', 'Ash and air quality', 'Seismic context']
   });
+
+  const epic = Array.isArray(epicImages) && epicImages.length ? epicImages[0] : null;
+  const epicFrames = Array.isArray(epicImages) ? epicImages.length : 0;
+  if (epic?.image && epic?.date) {
+    const epicDate = epic.date.slice(0, 10).replace(/-/g, '/');
+    const epicUrl = `https://epic.gsfc.nasa.gov/archive/natural/${epicDate}/png/${epic.image}.png`;
+    const epicAge = Date.now() - new Date(epic.date.replace(' ', 'T') + 'Z').getTime();
+    out.push({
+      id: `epic-earth-${epic.image}`, entityId: epic.image, occurredAt: epic.date, template: 'orbit', title: 'Earth, photographed whole from a million miles away', kicker: 'DSCOVR deep-space camera', visual: 'orbital', score: 87,
+      freshness: ago(epic.date), mediaImage: epicUrl, mediaAlt: `Full-disk natural-color Earth from DSCOVR EPIC, captured ${epic.date} UTC`,
+      location: { lat: Number(epic.centroid_coordinates?.lat ?? 0), lon: Number(epic.centroid_coordinates?.lon ?? 0), label: 'Sun-Earth L1 point · 1.5 million km sunward' },
+      summary: `A spacecraft parked a million miles sunward photographs the entire sunlit face of Earth in one frame, roughly once every two hours. This is the most recent full-disk natural-color image — every cloud system, ocean and continent visible at once, ${Number.isFinite(epicAge) ? `${Math.round(epicAge / 3600000)}h` : 'some time'} after the shutter fired.`,
+      facts: [
+        { label: 'Distance from Earth', value: '~1.5 million km', kind: 'verified' },
+        { label: 'Frames per day', value: `${epicFrames} today`, kind: 'observed' },
+        { label: 'Perspective', value: 'Full sunlit disk in a single exposure', kind: 'verified' },
+        { label: 'Why it lags', value: 'Deep-space downlink + ground processing delay', kind: 'interpretation' }
+      ],
+      sources: [src('NASA EPIC image archive', 'https://epic.gsfc.nasa.gov/'), src('DSCOVR mission', 'https://www.nesdis.noaa.gov/dscovr')],
+      related: ['Satellite imagery', 'Orbital mechanics', 'The Sun-Earth connection']
+    });
+  }
 
   const launch = launches?.results?.[0];
   if (launch) out.push({ id: `launch-${launch.id}`, entityId: launch.id, occurredAt: launch.net, template: 'launch', title: launch.name, kicker: 'Upcoming space mission', visual: 'launch', score: 70, freshness: launch.net ? until(launch.net) : 'scheduled', location: { lat: launch.pad?.latitude ?? 28.6, lon: launch.pad?.longitude ?? -80.6, label: launch.pad?.location?.name ?? launch.pad?.name ?? 'Launch complex' }, summary: `${launch.name} is scheduled from ${launch.pad?.name ?? 'a launch complex'}. Countdowns can change, so Elsewhere distinguishes the published schedule from confirmation.`, facts: [
