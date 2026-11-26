@@ -49,7 +49,11 @@ export default function DiscoverApp() {
         : currentActive.id.startsWith('place-')
           ? currentActive
           : nextDiscoveries.find((item: Discovery) => item.id === currentActive.id) ?? nextDiscoveries[0] ?? currentActive;
-      if (!initial && currentActive && nextActive?.id !== currentActive.id) {
+      const activeMoved = Boolean(nextActive && currentActive && nextActive.id === currentActive.id && (
+        Math.abs(nextActive.location.lat - currentActive.location.lat) > 0.5 ||
+        Math.abs(nextActive.location.lon - currentActive.location.lon) > 0.5
+      ));
+      if (!initial && currentActive && (nextActive?.id !== currentActive.id || activeMoved)) {
         setLens(undefined);
         setLensLoading(false);
       }
