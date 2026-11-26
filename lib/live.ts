@@ -26,6 +26,26 @@ const cameraCopy: Record<string, { title: string; summary: string; template: Dis
 };
 
 
+
+const launchCache: { at: number; data: any } = { at: 0, data: null };
+async function upcomingLaunchesJson(timeoutMs = 6000) {
+  const nowMs = Date.now();
+  if (launchCache.data && nowMs - launchCache.at < 3600000) return launchCache.data;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch('https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=30&mode=detailed', { signal: controller.signal, cache: 'no-store' });
+    clearTimeout(timer);
+    if (!res.ok) return launchCache.data;
+    const data = await res.json();
+    launchCache.at = nowMs;
+    launchCache.data = data;
+    return data;
+  } catch {
+    return launchCache.data;
+  }
+}
+
 const nwsCache: { at: number; data: any } = { at: 0, data: null };
 async function nwsAlertsJson(timeoutMs = 8000) {
   const now = Date.now();
@@ -305,9 +325,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     related: ['Next visible pass', 'Aurora watch', 'Upcoming launches']
   });
 
-  const plasma = swepam?.find(row => Number.isFinite(row?.speed));
-  const mag = aceMag?.find(row => Number.isFinite(row?.gsm_bz) || Number.isFinite(row?.gse_bz));
-  const xray = xrays?.at(-1);
+  const plasma = swepam?.filter(row => Number.isFinite(row?.speed)).sort((a, b) => String(b.time_tag ?? '').localeCompare(String(a.time_tag ?? '')))[0];
+  const mag = aceMag?.filter(row => Number.isFinite(row?.gsm_bz) || Number.isFinite(row?.gse_bz)).sort((a, b) => String(b.time_tag ?? '').localeCompare(String(a.time_tag ?? '')))[0];
+  const xray = xrays?.length ? [...xrays].sort((a, b) => String(b.time_tag ?? '').localeCompare(String(a.time_tag ?? '')))[0] : undefined;
   if (plasma || mag || xray) {
     const speed = plasma?.speed ?? 0;
     const bz = mag?.gsm_bz ?? mag?.gse_bz;
@@ -331,7 +351,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   if (q) {
     const [lon, lat, depth] = q.geometry.coordinates;
     const imagery = earthImagery(lat, lon);
-    out.push({ id: `quake-${q.id}`, entityId: q.id, occurredAt: new Date(q.properties.time).toISOString(), template: 'geology', title: 'A significant earthquake just reshaped the seismic map', kicker: 'USGS live event', visual: 'seismic', score: 82 + Math.min(14, q.properties.mag * 2), freshness: ago(q.properties.time), mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} around ${q.properties.place}`, location: { lat, lon, label: q.properties.place }, summary: `A magnitude ${q.properties.mag.toFixed(1)} earthquake was recorded near ${q.properties.place}. The shake is real observed data; broader impact is deliberately left as an open question until corroborated.`, facts: [
+    out.push({ id: `quake-${q.id}`, entityId: q.id, occurredAt: new Date(q.properties.time).toISOString(), template: 'geology', title: 'A significant earthquake just reshaped the seismic map', kicker: 'USGS live event', visual: 'seismic', score: 82 + Math.min(14, q.properties.mag * 2), freshness: ago(q.properties.time), mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} around ${q.properties.place}`, location: { lat, lon, label: q.properties.place }, summary: `A magnitude ${q.properties.mag.toFixed(1)} earthquake was recorded near ${q.properties.place} — the largest of ${quakes?.features?.length ?? 'several'} earthquakes magnitude 4.5+ cataloged worldwide in the past 24 hours${depth < 70 ? ', shallow enough to shake the surface hard' : depth > 300 ? ', but so deep its energy spread silently through the mantle' : ''}. The shake is real observed data; broader impact is deliberately left as an open question until corroborated.`, facts: [
       { label: 'Magnitude', value: q.properties.mag.toFixed(1), kind: 'observed' }, { label: 'Depth', value: `${Math.round(depth)} km`, kind: 'observed' }, { label: 'Reports', value: `${q.properties.felt ?? 0} felt reports`, kind: 'verified' }, { label: 'Impact', value: 'Still unknown', kind: 'question' }
     ], sources: [src(imagery.sourceLabel, imagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/'), src('USGS earthquake feed', q.properties.url)], related: ['Aftershock pattern', 'Tsunami bulletins', 'Regional recovery'] });
   }
@@ -468,7 +488,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     { label: 'Carbon intensity', value: carbonNow?.actual ? `${carbonNow.actual} gCO₂/kWh` : carbonNow?.forecast ? `${carbonNow.forecast} forecast` : '—', kind: carbonNow?.actual ? 'observed' : 'interpretation' }, { label: 'Wind share', value: `${windShare}%`, kind: 'observed' }, { label: 'Gas share', value: `${gasShare}%`, kind: 'observed' }, { label: 'Grid stress', value: 'Not inferable', kind: 'question' }
   ], sources: [src('Carbon Intensity API', 'https://carbonintensity.org.uk/')], related: ['Grid weather context', 'Night lights', 'Historical comparison'] });
 
-  if (tokyo?.current) out.push({ id: 'tokyo-waking', mediaVideo: 'https://www.youtube.com/embed/5B4LmH4JbnY?rel=0&autoplay=1&mute=1&playsinline=1', template: 'city', title: 'Tokyo is moving through its evening atmosphere', kicker: 'Open-Meteo city pulse', visual: 'city', score: 66, freshness: 'current conditions', location: { lat: 35.68, lon: 139.69, label: 'Tokyo' }, summary: 'Weather, air quality, aircraft activity and local time combine into a portrait of a megacity changing state. Air quality is modeled current data, not a direct roadside sensor reading.', facts: [
+  if (tokyo?.current) out.push({ id: 'tokyo-waking', mediaVideo: 'https://www.youtube.com/embed/5B4LmH4JbnY?rel=0&autoplay=1&mute=1&playsinline=1', template: 'city', title: 'Tokyo is moving through its evening atmosphere', kicker: 'Open-Meteo city pulse', visual: 'city', score: 52, freshness: 'current conditions', location: { lat: 35.68, lon: 139.69, label: 'Tokyo' }, summary: 'Weather, air quality, aircraft activity and local time combine into a portrait of a megacity changing state. Air quality is modeled current data, not a direct roadside sensor reading.', facts: [
     { label: 'Temperature', value: `${Math.round(tokyo.current.temperature_2m)}°C`, kind: 'observed' }, { label: 'Wind', value: `${Math.round(tokyo.current.wind_speed_10m)} km/h`, kind: 'observed' }, { label: 'PM2.5', value: tokyoAir?.current?.pm2_5 != null ? `${Math.round(tokyoAir.current.pm2_5)} μg/m³ model` : '—', kind: 'interpretation' }, { label: 'Sunrise', value: tokyo.daily?.sunrise?.[0]?.slice(11) ?? '—', kind: 'verified' }
   ], sources: [src('Open-Meteo', 'https://open-meteo.com/'), src('Open-Meteo air quality', 'https://open-meteo.com/en/docs/air-quality-api')], related: ['Air quality pulse', 'City cameras', 'Night lights'] });
   if (namib?.current) out.push({
@@ -534,7 +554,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
   const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
   const currentYear = new Date().getFullYear();
-  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace, volcanoXml, myanmarNewsXml, haitiNewsXml, drcNewsXml, yemenNewsXml, myanmarUnhcr, haitiUnhcr, drcUnhcr, yemenUnhcr] = await Promise.all([
+  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace, volcanoXml, myanmarNewsXml, haitiNewsXml, drcNewsXml, yemenNewsXml, myanmarUnhcr, haitiUnhcr, drcUnhcr, yemenUnhcr, upcomingLaunches, kpIndexRaw, plasmaRaw, xrayRaw] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
@@ -561,7 +581,11 @@ export async function getInvestigations(): Promise<Investigation[]> {
     json<any>('https://api.unhcr.org/population/v1/population/?coo=MMR&limit=100'),
     json<any>('https://api.unhcr.org/population/v1/population/?coo=HTI&limit=100'),
     json<any>('https://api.unhcr.org/population/v1/population/?coo=COD&limit=100'),
-    json<any>('https://api.unhcr.org/population/v1/population/?coo=YEM&limit=100')
+    json<any>('https://api.unhcr.org/population/v1/population/?coo=YEM&limit=100'),
+    upcomingLaunchesJson(),
+    json<any>('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
+    json<any[]>('https://services.swpc.noaa.gov/json/ace/swepam/ace_swepam_1h.json'),
+    json<any[]>('https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json')
   ]);
   const q = quake?.features?.[0];
   const evt = eonet?.events?.[0];
@@ -1039,6 +1063,111 @@ export async function getInvestigations(): Promise<Investigation[]> {
       sources: [
         { label: 'USGS all-week earthquake catalog', url: 'https://earthquake.usgs.gov/earthquakes/feed/' },
         { label: 'USGS significant earthquakes', url: 'https://earthquake.usgs.gov/' }
+      ]
+    });
+  }
+
+
+  // --- Orbital cadence: humanity's launch tempo ---
+  const launches = upcomingLaunches?.results ?? [];
+  if (launches.length >= 8) {
+    const nowMs = Date.now();
+    const in14d = launches.filter((l: any) => new Date(l.net).getTime() - nowMs < 14 * 86400000);
+    const providers = new Map<string, number>();
+    const pads = new Map<string, number>();
+    const countries = new Map<string, number>();
+    for (const l of in14d) {
+      const provider = l.launch_service_provider?.name ?? 'Unknown';
+      providers.set(provider, (providers.get(provider) ?? 0) + 1);
+      const pad = l.pad?.location?.name ?? l.pad?.name ?? 'Unknown pad';
+      pads.set(pad, (pads.get(pad) ?? 0) + 1);
+      const country = l.pad?.country_code ?? '??';
+      countries.set(country, (countries.get(country) ?? 0) + 1);
+    }
+    const next = [...launches].sort((a: any, b: any) => new Date(a.net).getTime() - new Date(b.net).getTime())[0];
+    const topProvider = [...providers.entries()].sort((a, b) => b[1] - a[1])[0];
+    const topPad = [...pads.entries()].sort((a, b) => b[1] - a[1])[0];
+    const hoursToNext = next ? (new Date(next.net).getTime() - nowMs) / 3600000 : NaN;
+    const cadenceDays = in14d.length ? 14 / in14d.length : NaN;
+    const countryRows = [...countries.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([label, value]) => ({ label, value, display: `${value} launch${value === 1 ? '' : 'es'}`, highlight: value === Math.max(...countries.values()) }));
+    out.push({
+      id: 'orbital-cadence',
+      title: `Humanity is throwing something into space every ${Number.isFinite(cadenceDays) ? cadenceDays.toFixed(1) : '—'} days right now`,
+      dek: `${in14d.length} orbital launches are publicly scheduled for the next two weeks across ${countries.size} countries. Space access has quietly shifted from rare spectacle to industrial rhythm — most people simply never see the schedule.`,
+      status: 'developing',
+      location: { lat: Number(next?.pad?.latitude ?? 28.6), lon: Number(next?.pad?.longitude ?? -80.6), label: next?.pad?.location?.name ?? 'Next launch complex' },
+      updatedAt: now(),
+      confidence: 84,
+      metrics: [
+        { label: 'Next 14 days', value: String(in14d.length), delta: `across ${countries.size} countries` },
+        { label: 'Tempo', value: Number.isFinite(cadenceDays) ? `1 per ${cadenceDays.toFixed(1)}d` : '—', delta: 'scheduled orbital launches' },
+        { label: 'Next launch', value: Number.isFinite(hoursToNext) ? (hoursToNext < 48 ? `${Math.max(0, Math.round(hoursToNext))}h` : `${(hoursToNext / 24).toFixed(1)}d`) : '—', delta: next ? next.name.split('|')[0].trim().slice(0, 34) : '—' },
+        { label: 'Busiest provider', value: topProvider?.[0]?.split(' ').slice(0, 3).join(' ') ?? '—', delta: `${topProvider?.[1] ?? 0} of ${in14d.length} scheduled` },
+        { label: 'Busiest pad', value: topPad?.[0]?.split(',')[0]?.slice(0, 26) ?? '—', delta: `${topPad?.[1] ?? 0} launches scheduled` }
+      ],
+      evidence: [
+        { kind: 'observed', text: `The Launch Library public schedule lists ${in14d.length} orbital launches with published dates in the next 14 days, operated by ${providers.size} distinct launch providers from ${pads.size} launch complexes in ${countries.size} countries.`, source: 'https://thespacedevs.com/' },
+        { kind: 'observed', text: next ? `Next up: ${next.name}, scheduled ${new Date(next.net).toUTCString().slice(0, 16)} UTC from ${next.pad?.name ?? 'an unspecified pad'}. Schedules slip constantly — this is the published plan, not a countdown commitment.` : 'No next launch could be resolved from the schedule.', source: 'https://thespacedevs.com/' },
+        { kind: 'verified', text: `${topProvider?.[0] ?? 'One provider'} alone accounts for ${topProvider?.[1] ?? 0} of the ${in14d.length} scheduled launches — a concentration that would have been unimaginable when spaceflight was exclusively national.`, source: 'https://thespacedevs.com/' },
+        { kind: 'interpretation', text: 'The normalization of spaceflight is one of the biggest quiet stories on Earth: a launch every couple of days means most flights now pass without any coverage at all. What was once a global spectacle is now infrastructure — like shipping, but vertical.' },
+        { kind: 'interpretation', text: 'Published schedules overstate what will actually fly on time. Scrubs, weather and range conflicts mean realized cadence is usually lower than scheduled cadence; treat this as intent, not outcome.' },
+        { kind: 'question', text: 'How much of this traffic is national prestige, commercial constellation deployment, or military? The public schedule rarely says — payload classification is itself a signal.' }
+      ],
+      visuals: countryRows.length ? countryRows : undefined,
+      visualTitle: 'Scheduled launches by country, next 14 days',
+      visualCaption: 'public schedule intent, not flown reality',
+      sources: [{ label: 'The Space Devs Launch Library', url: 'https://thespacedevs.com/' }]
+    });
+  }
+
+  // --- Space weather: the Sun's current pressure on Earth ---
+  const kpRows = Array.isArray(kpIndexRaw) ? kpIndexRaw.map((row: any) => ({ time: row.time_tag ?? row[0], kp: Number(row.Kp ?? row[1]) })).filter((row: any) => Number.isFinite(row.kp)).sort((a: any, b: any) => String(a.time).localeCompare(String(b.time))) : [];
+  const latestKpRow = kpRows[kpRows.length - 1];
+  const plasmaRows = Array.isArray(plasmaRaw) ? plasmaRaw.map((row: any) => ({ time: row.time_tag, speed: Number(row.speed), density: Number(row.dens) })).filter((row: any) => Number.isFinite(row.speed) && row.speed > 0).sort((a: any, b: any) => String(a.time).localeCompare(String(b.time))) : [];
+  const latestPlasma = plasmaRows[plasmaRows.length - 1];
+  const xrayRows = Array.isArray(xrayRaw) ? xrayRaw.map((row: any) => ({ flux: Number(row.flux) })).filter((row: any) => Number.isFinite(row.flux)) : [];
+  const peakXray = xrayRows.reduce((a: any, b: any) => b.flux > (a?.flux ?? 0) ? b : a, null);
+  const kpPeak7d = kpRows.length ? Math.max(...kpRows.map(row => row.kp)) : NaN;
+  const stormLevel = !latestKpRow ? 'unknown' : latestKpRow.kp >= 5 ? `G${Math.min(5, Math.floor(latestKpRow.kp) - 4)} geomagnetic storm` : latestKpRow.kp >= 4 ? 'unsettled — storm threshold near' : 'quiet';
+  const auroraLatitude = latestKpRow ? Math.max(45, 66 - latestKpRow.kp * 2.2) : NaN;
+  const speedElevated = latestPlasma && latestPlasma.speed > 500;
+  if (latestKpRow && latestPlasma) {
+    const kpBins = Array(12).fill(0);
+    const step = Math.max(1, Math.floor(kpRows.length / 12));
+    for (let i = 0; i < 12; i++) {
+      const slice = kpRows.slice(i * step, (i + 1) * step);
+      kpBins[i] = slice.length ? Math.round(Math.max(...slice.map((row: any) => row.kp)) * 10) / 10 : 0;
+    }
+    out.push({
+      id: 'space-weather-now',
+      title: speedElevated || latestKpRow.kp >= 4 ? `The solar wind is hitting Earth at ${Math.round(latestPlasma.speed)} km/s — ${stormLevel}` : `The Sun is quiet right now — but it never stops pressing on Earth`,
+      dek: 'Every second, a million tons of charged particles stream past Earth per square kilometer of the solar wind front. NOAA measures this pressure in real time; tonight\'s aurora odds are a calculation, not a guess.',
+      status: latestKpRow.kp >= 4 ? 'developing' : 'uncertain',
+      mediaImage: 'https://services.swpc.noaa.gov/images/aurora-forecast-northern-hemisphere.jpg',
+      mediaAlt: 'NOAA northern hemisphere aurora forecast, current model run',
+      location: { lat: 64.2, lon: -21.1, label: 'Polar oval / near-Earth space' },
+      updatedAt: now(),
+      confidence: 86,
+      metrics: [
+        { label: 'Planetary K index', value: latestKpRow.kp.toFixed(1), delta: stormLevel },
+        { label: 'Solar wind speed', value: `${Math.round(latestPlasma.speed)} km/s`, delta: speedElevated ? 'elevated — enhanced aurora possible' : 'near typical levels' },
+        { label: 'Aurora boundary', value: Number.isFinite(auroraLatitude) ? `~${Math.round(auroraLatitude)}° latitude` : '—', delta: 'rough magnetic-latitude estimate' },
+        { label: 'Peak K this window', value: Number.isFinite(kpPeak7d) ? kpPeak7d.toFixed(1) : '—', delta: 'NOAA measured' },
+        { label: 'Peak X-ray flux', value: peakXray ? xrayClass(peakXray.flux) : '—', delta: 'GOES 24h flare monitor' }
+      ],
+      evidence: [
+        { kind: 'observed', text: `NOAA's real-time solar wind measurement shows plasma streaming past Earth at ${Math.round(latestPlasma.speed)} km/s with density ${latestPlasma.density?.toFixed(1) ?? '—'} particles/cm³. This is measured by spacecraft a million miles sunward — the wind measured there arrives at Earth roughly 30-60 minutes later.`, source: 'https://www.swpc.noaa.gov/' },
+        { kind: 'observed', text: `The planetary K index — a global average of geomagnetic disturbance — currently reads ${latestKpRow.kp.toFixed(1)} on a 0-9 scale. ${latestKpRow.kp >= 5 ? 'That is storm territory: power grids, pipelines and satellites feel measurable effects.' : latestKpRow.kp >= 4 ? 'That is elevated but below storm threshold; high-latitude aurora is likely.' : 'That is quiet; aurora stays pinned to high latitudes.'}`, source: 'https://www.swpc.noaa.gov/products/planetary-k-index' },
+        { kind: 'interpretation', text: `A Kp of ${latestKpRow.kp.toFixed(1)} puts the auroral boundary near magnetic latitude ${Math.round(auroraLatitude)}° as a rough rule of thumb${latestKpRow.kp >= 5 ? ' — meaning aurora could reach populated mid-latitudes tonight where skies are dark and clear' : ' — meaning aurora tonight is confined to polar regions unless conditions intensify'}. Cloud cover and moonlight decide what anyone actually sees.` },
+        { kind: 'interpretation', text: 'Space weather is Earth weather\'s invisible twin: the same Sun that drives the climate also drives geomagnetic storms, and the coupling happens in minutes, not seasons. Most infrastructure on Earth is now silently exposed to it — grids, GPS, pipelines, satellites.' },
+        { kind: 'question', text: 'Is a coronal mass ejection currently en route but not yet arrived? The 30-60 minute warning from upstream spacecraft is the only notice Earth ever gets — there is no longer-range forecast with real precision.' }
+      ],
+      pulses: [{ label: 'K index (max per window)', values: kpBins, display: `now ${latestKpRow.kp.toFixed(1)}` }],
+      pulseTitle: 'Geomagnetic activity cadence',
+      pulseCaption: 'NOAA planetary K index, oldest → latest',
+      sources: [
+        { label: 'NOAA Space Weather Prediction Center', url: 'https://www.swpc.noaa.gov/' },
+        { label: 'NOAA aurora forecast', url: 'https://www.swpc.noaa.gov/products/aurora-30-minute-forecast' }
       ]
     });
   }
