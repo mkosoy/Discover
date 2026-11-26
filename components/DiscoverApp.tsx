@@ -62,7 +62,7 @@ export default function DiscoverApp() {
       if (initial) setLoading(false);
     };
     void load(true);
-    const refresh = window.setInterval(() => void load(), 90000);
+    const refresh = window.setInterval(() => void load(), 60000);
     return () => { cancelled = true; window.clearInterval(refresh); };
   }, []);
 

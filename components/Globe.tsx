@@ -1,7 +1,7 @@
 'use client';
 
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
+import { Line, OrbitControls, Stars } from '@react-three/drei';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { Discovery, Investigation } from '@/lib/types';
@@ -67,9 +67,29 @@ function Earth({ active, discoveries, investigations, onSelect, onSelectInvestig
       <sphereGeometry args={[1.34, 96, 96]} />
       <shaderMaterial transparent blending={THREE.AdditiveBlending} side={THREE.BackSide} vertexShader={`varying vec3 vNormal; void main(){ vNormal=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`} fragmentShader={`varying vec3 vNormal; void main(){ float intensity=pow(.72-dot(vNormal,vec3(0.,0.,1.)),2.1); gl_FragColor=vec4(.18,.55,1.,1.)*intensity;}`} />
     </mesh>
+    <ConnectionArcs active={active} discoveries={discoveries} />
     {discoveries.map(d => <Marker key={d.id} discovery={d} active={active?.id === d.id} onSelect={onSelect} />)}
     {investigations.map(i => <InvestigationMarker key={i.id} investigation={i} active={active?.id === i.id} onSelect={onSelectInvestigation} />)}
   </group>;
+}
+
+function ConnectionArcs({ active, discoveries }: { active?: FocusTarget; discoveries: Discovery[] }) {
+  const activeDiscovery = discoveries.find(d => d.id === active?.id);
+  if (!activeDiscovery?.connections?.length) return null;
+  return <>
+    {activeDiscovery.connections.map(connection => {
+      const other = discoveries.find(d => d.id === connection.id);
+      if (!other) return null;
+      const start = latLon(activeDiscovery.location.lat, activeDiscovery.location.lon, 1.39);
+      const end = latLon(other.location.lat, other.location.lon, 1.39);
+      const sum = start.clone().add(end);
+      const mid = sum.length() > .01
+        ? sum.normalize().multiplyScalar(1.74)
+        : start.clone().cross(new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(1.74);
+      const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+      return <Line key={connection.id} points={curve.getPoints(56)} color="#8fe7ff" transparent opacity={.42} lineWidth={1.35} />;
+    })}
+  </>;
 }
 
 function Marker({ discovery, active, onSelect }: { discovery: Discovery; active: boolean; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void }) {

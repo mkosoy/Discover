@@ -179,12 +179,12 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   }
   const gdacs = parseGdacs(gdacsXml);
   if (gdacs) {
-    const typeName = { EQ: 'earthquake', TC: 'tropical cyclone', FL: 'flood', VO: 'volcanic activity', TS: 'tsunami', DR: 'drought' }[gdacs.eventType as 'EQ' | 'TC' | 'FL' | 'VO' | 'TS' | 'DR'] ?? 'natural disaster';
-    const visual = gdacs.eventType === 'VO' || gdacs.eventType === 'EQ' ? 'seismic' : gdacs.eventType === 'DR' ? 'fire' : 'aurora';
+    const typeName = { EQ: 'earthquake', TC: 'tropical cyclone', FL: 'flood', VO: 'volcanic activity', TS: 'tsunami', DR: 'drought', WF: 'wildfire' }[gdacs.eventType as 'EQ' | 'TC' | 'FL' | 'VO' | 'TS' | 'DR' | 'WF'] ?? 'natural disaster';
+    const visual = gdacs.eventType === 'VO' || gdacs.eventType === 'EQ' ? 'seismic' : gdacs.eventType === 'DR' || gdacs.eventType === 'WF' ? 'fire' : 'aurora';
     const regionParts = (gdacs.country || '').split(',').map((part: string) => part.trim()).filter(Boolean);
     const region = regionParts.length > 2 ? `${regionParts.slice(0, 2).join(', ')} +${regionParts.length - 2} more` : regionParts.join(', ');
     out.push({
-      id: `gdacs-${gdacs.eventType}-${gdacs.lat.toFixed(1)}-${gdacs.lon.toFixed(1)}`, template: gdacs.eventType === 'EQ' || gdacs.eventType === 'VO' ? 'geology' : gdacs.eventType === 'FL' ? 'ocean' : 'atmosphere',
+      id: `gdacs-${gdacs.eventType}-${gdacs.lat.toFixed(1)}-${gdacs.lon.toFixed(1)}`, template: gdacs.eventType === 'EQ' || gdacs.eventType === 'VO' ? 'geology' : gdacs.eventType === 'FL' ? 'ocean' : gdacs.eventType === 'WF' ? 'wildfire' : 'atmosphere',
       title: `${gdacs.alert} ${typeName} signal near ${region || 'an exposed region'}`, kicker: 'GDACS humanitarian disaster model', visual, score: 72 + gdacs.alertScore * 8,
       freshness: gdacs.published ? ago(gdacs.published) : 'current bulletin', mediaImage: gdacs.image, mediaAlt: `GDACS impact map for ${gdacs.title}`,
       location: { lat: gdacs.lat, lon: gdacs.lon, label: region || 'GDACS event area' },
