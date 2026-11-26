@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowRight, Compass, Eye, Globe2, Loader2, Newspaper, Play, Radio, Shuffle, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Check, Compass, Eye, Globe2, Loader2, Newspaper, Play, Radio, Share2, Shuffle, Sparkles, X } from 'lucide-react';
 import Globe from './Globe';
 import type { Discovery, Investigation } from '@/lib/types';
 
@@ -27,6 +27,8 @@ export default function DiscoverApp() {
   const [lens, setLens] = useState<any>();
   const [lensLoading, setLensLoading] = useState(false);
   const [path, setPath] = useState<Discovery[]>([]);
+  const [copied, setCopied] = useState(false);
+  const [initialHash] = useState(() => typeof window === 'undefined' ? '' : decodeURIComponent(window.location.hash.replace(/^#/, '')));
   const activeRef = useRef<Discovery>();
 
   useEffect(() => { activeRef.current = active; }, [active]);
@@ -57,7 +59,23 @@ export default function DiscoverApp() {
         setLens(undefined);
         setLensLoading(false);
       }
-      setActive(nextActive);
+      if (initial && initialHash) {
+        if (initialHash.startsWith('place=')) {
+          const [hashLat, hashLon] = initialHash.slice(6).split(',').map(Number);
+          if (Number.isFinite(hashLat) && Number.isFinite(hashLon)) void probePlace({ lat: hashLat, lon: hashLon }, nextDiscoveries);
+        } else {
+          const hashId = initialHash.replace(/^investigate-/, '');
+          const targetInvestigation = nextInvestigations.find((item: Investigation) => item.id === hashId || `investigate-${item.id}` === initialHash);
+          if (targetInvestigation) {
+            setSelectedInvestigation(targetInvestigation);
+            setMode('investigate');
+          }
+          const targetDiscovery = nextDiscoveries.find((item: Discovery) => item.id === initialHash);
+          if (targetDiscovery) setActive(targetDiscovery);
+        }
+      } else {
+        setActive(nextActive);
+      }
       setSelectedInvestigation(current => current ? nextInvestigations.find((item: Investigation) => item.id === current.id) ?? nextInvestigations[0] : nextInvestigations[0]);
       if (initial) setLoading(false);
     };
@@ -65,6 +83,16 @@ export default function DiscoverApp() {
     const refresh = window.setInterval(() => void load(), 60000);
     return () => { cancelled = true; window.clearInterval(refresh); };
   }, []);
+
+  const shareCurrent = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      window.prompt('Copy this Elsewhere link', window.location.href);
+    }
+  };
 
   const surprise = (reveal = true) => {
     if (!discoveries.length) return;
@@ -98,7 +126,7 @@ export default function DiscoverApp() {
     setMode('discover');
   };
 
-  const probePlace = async (point: { lat: number; lon: number }) => {
+  const probePlace = async (point: { lat: number; lon: number }, availableDiscoveries = discoveries) => {
     setLens(undefined);
     setLensLoading(false);
     setPath([]);
@@ -114,7 +142,7 @@ export default function DiscoverApp() {
       const response = await fetch(`/api/place?lat=${point.lat}&lon=${point.lon}`);
       const data = await response.json();
       const place = data.place;
-      const nearest = discoveries
+      const nearest = availableDiscoveries
         .map(d => ({ d, distance: angularDistance(point.lat, point.lon, d.location.lat, d.location.lon) }))
         .sort((a, b) => a.distance - b.distance)
         .slice(0, 3)
@@ -175,6 +203,15 @@ export default function DiscoverApp() {
   const inv = selectedInvestigation ?? investigations[0];
   const globeFocus = mode === 'investigate' && inv ? { id: inv.id, location: inv.location } : active;
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || loading) return;
+    let hash = '';
+    if (mode === 'investigate' && inv) hash = `investigate-${inv.id}`;
+    if (mode === 'discover' && active) hash = active.id.startsWith('place-') ? `place=${active.location.lat.toFixed(4)},${active.location.lon.toFixed(4)}` : active.id;
+    if (hash) window.history.replaceState(null, '', `${window.location.pathname}#${encodeURIComponent(hash)}`);
+  }, [active?.id, active?.location.lat, active?.location.lon, mode, inv?.id, loading]);
+
+
   const selectInvestigation = (investigation: Investigation) => {
     setSelectedInvestigation(investigation);
     setMode('investigate');
@@ -199,6 +236,7 @@ export default function DiscoverApp() {
     <div className="actionDock">
       <button className="surprise" onClick={() => surprise()} disabled={loading}><Shuffle size={20} />{loading ? 'Listening…' : 'Surprise Me'}</button>
       <button className={watching ? 'watch active' : 'watch'} onClick={() => setWatching(!watching)}><Play size={17} />{watching ? 'Watching' : 'Watch'}</button>
+      <button className="share" onClick={shareCurrent} aria-label="Copy link to this view">{copied ? <Check size={17} /> : <Share2 size={17} />}{copied ? 'Copied' : 'Share'}</button>
     </div>
 
     <AnimatePresence mode="wait">

@@ -256,12 +256,13 @@ export async function GET(request: Request) {
     const firstDate = first?.date ? new Date(first.date).getTime() : NaN;
     const latestDate = latest?.date ? new Date(latest.date).getTime() : NaN;
     const span = Number.isFinite(firstDate) && Number.isFinite(latestDate) ? Math.max(0, Math.round((latestDate - firstDate) / 86400000)) : null;
-    const movement = first && latest ? degreesApart(first.coordinates[1], first.coordinates[0], latest.coordinates[1], latest.coordinates[0]) : null;
+    const hasTrack = geometry.length >= 2;
+    const movement = hasTrack && first && latest ? degreesApart(first.coordinates[1], first.coordinates[0], latest.coordinates[1], latest.coordinates[0]) : null;
     return answer(topic, event?.title ?? label, [
       { label: 'Tracked positions', value: geometry.length ? String(geometry.length) : 'Unavailable', kind: geometry.length ? 'observed' : 'question' },
       { label: 'First / latest geometry', value: first?.date && latest?.date ? `${new Date(first.date).toLocaleDateString()} → ${new Date(latest.date).toLocaleDateString()}` : 'Unavailable', kind: first && latest ? 'observed' : 'question' },
       { label: 'Tracked span', value: span == null ? 'Unavailable' : span === 0 ? 'Same-day sample' : `${span} days`, kind: span == null ? 'question' : 'observed' },
-      { label: 'Position shift', value: movement == null ? 'Unavailable' : `${movement.toFixed(1)}° across track`, kind: movement == null ? 'question' : 'observed' },
+      { label: 'Position shift', value: !hasTrack ? 'Not enough positions to infer movement' : movement == null ? 'Unavailable' : `${movement.toFixed(1)}° across track`, kind: !hasTrack || movement == null ? 'question' : 'observed' },
       { label: 'Insight', value: 'The event timeline shows persistence and movement in the public track. It does not measure intensity, damage or whether conditions are improving without additional evidence.', kind: 'interpretation' },
       { label: 'Next evidence', value: 'Current satellite imagery, weather and verified local reporting', kind: 'question' }
     ]);
@@ -308,7 +309,7 @@ export async function GET(request: Request) {
       { label: 'Latest carbon intensity', value: latest != null ? `${Math.round(latest)} gCO₂/kWh` : 'Unavailable', kind: latest != null ? 'observed' : 'question' },
       { label: 'Today’s observed average', value: average != null ? `${Math.round(average)} gCO₂/kWh` : 'Unavailable', kind: average != null ? 'observed' : 'question' },
       { label: 'Day range', value: rows.length ? `${Math.round(Math.min(...rows))}–${Math.round(Math.max(...rows))} gCO₂/kWh` : 'Unavailable', kind: rows.length ? 'observed' : 'question' },
-      { label: 'Insight', value: latest != null && average != null ? (latest < average ? 'The grid is currently cleaner than today’s sampled average, consistent with strong low-carbon generation, but not proof of cause.' : 'The grid is currently dirtier than today’s sampled average; compare wind output and demand before inferring why.') : 'Historical grid comparison is unavailable right now.', kind: 'interpretation' },
+      { label: 'Insight', value: latest != null && average != null ? (rows.length < 4 ? 'Only a few observed intervals are available today, so the baseline is too thin for a meaningful cleaner/dirtier comparison.' : latest < average ? 'The grid is currently cleaner than today’s observed average, consistent with strong low-carbon generation, but not proof of cause.' : latest > average ? 'The grid is currently dirtier than today’s observed average; compare wind output and demand before inferring why.' : 'The latest observed interval matches today’s observed average.') : 'Historical grid comparison is unavailable right now.', kind: 'interpretation' },
       { label: 'Next evidence', value: 'Wind generation, demand and interconnectors for the same interval', kind: 'question' }
     ]);
   }

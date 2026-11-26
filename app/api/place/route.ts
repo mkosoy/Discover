@@ -52,12 +52,13 @@ export async function GET(request: Request) {
   const lat = Number(url.searchParams.get('lat'));
   const lon = Number(url.searchParams.get('lon'));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return NextResponse.json({ error: 'invalid coordinates' }, { status: 400 });
-  const [weather, place, air, quakes, gdacsXml] = await Promise.all([
+  const [weather, place, air, quakes, gdacsXml, aircraftFeed] = await Promise.all([
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,weather_code,wind_speed_10m,wind_direction_10m,is_day&daily=sunrise,sunset&timezone=auto`),
     json<any>(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=en`, { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }),
     json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,ozone&timezone=auto`),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson'),
-    text('https://www.gdacs.org/xml/rss.xml')
+    text('https://www.gdacs.org/xml/rss.xml'),
+    json<any>(`https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/100`)
   ]);
   const current = weather?.current;
   const address = place?.address ?? {};
@@ -77,6 +78,10 @@ export async function GET(request: Request) {
     .filter(event => event.distance <= 1000)
     .sort((a, b) => a.distance - b.distance);
   const nearestHazard = gdacsEvents[0];
+  const aircraft = (aircraftFeed?.ac ?? []).filter((plane: any) => Number.isFinite(plane.lat) && Number.isFinite(plane.lon));
+  const nearestAircraft = aircraft
+    .map((plane: any) => ({ ...plane, distance: distanceKm(lat, lon, plane.lat, plane.lon) }))
+    .sort((a: any, b: any) => a.distance - b.distance)[0];
   const daylight = current?.is_day == null ? null : current.is_day ? 'Daylight now' : 'Dark now';
   const facts = [
     current ? { label: 'Weather', value: `${weatherText(current.weather_code)}, ${Math.round(current.temperature_2m)}°C`, kind: 'observed' } : { label: 'Weather', value: 'Unavailable', kind: 'question' },
@@ -86,6 +91,8 @@ export async function GET(request: Request) {
     { label: 'Recent seismicity', value: nearbyQuakes.length ? `${nearbyQuakes.length} recorded within 500 km in 24h` : 'None recorded within 500 km in 24h', kind: nearbyQuakes.length ? 'observed' : 'verified' },
     nearestQuake ? { label: 'Nearest quake', value: `M${Number(nearestQuake.feature.properties?.mag ?? 0).toFixed(1)}, ${Math.round(nearestQuake.distance)} km away`, kind: 'observed' } : null,
     nearestHazard ? { label: 'Hazard model nearby', value: `${nearestHazard.alert} ${nearestHazard.type || 'event'}, ${Math.round(nearestHazard.distance)} km away`, kind: 'interpretation' } : { label: 'Hazard model nearby', value: 'No GDACS alert within 1,000 km', kind: 'verified' },
+    { label: 'Aircraft overhead', value: aircraft.length ? `${aircraft.length} live transponders within ~185 km` : 'No live transponders in the ~185 km search radius', kind: 'observed' },
+    nearestAircraft ? { label: 'Nearest aircraft', value: `${(nearestAircraft.flight ?? nearestAircraft.hex ?? 'Unidentified').trim()} · ${Math.round(nearestAircraft.distance)} km away${Number.isFinite(nearestAircraft.alt_baro) ? ` at ${Math.round(nearestAircraft.alt_baro).toLocaleString()} ft` : ''}`, kind: 'observed' } : null,
     air?.current?.pm2_5 != null ? { label: 'PM2.5', value: `${Math.round(air.current.pm2_5)} μg/m³ model`, kind: 'interpretation' } : null,
     weather?.elevation != null ? { label: 'Elevation', value: `${Math.round(weather.elevation)} m`, kind: 'verified' } : null,
     weather?.timezone ? { label: 'Local timezone', value: weather.timezone.replace('_', ' '), kind: 'verified' } : null,
@@ -101,7 +108,8 @@ export async function GET(request: Request) {
         { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/', retrievedAt: new Date().toISOString() },
         { label: 'OpenStreetMap Nominatim reverse geocode', url: 'https://nominatim.openstreetmap.org/', retrievedAt: new Date().toISOString() },
         { label: 'USGS 24-hour earthquake feed', url: 'https://earthquake.usgs.gov/earthquakes/feed/', retrievedAt: new Date().toISOString() },
-        { label: 'GDACS current disaster alerts', url: 'https://www.gdacs.org/', retrievedAt: new Date().toISOString() }
+        { label: 'GDACS current disaster alerts', url: 'https://www.gdacs.org/', retrievedAt: new Date().toISOString() },
+        { label: 'adsb.lol live aircraft transponders', url: 'https://adsb.lol/', retrievedAt: new Date().toISOString() }
       ],
       retrievedAt: new Date().toISOString()
     }
