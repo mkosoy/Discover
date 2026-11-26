@@ -103,3 +103,5 @@ Next hill-climb candidates:
 - ReliefWeb API reachable and keyless (api.reliefweb.int/v1/disasters?appname=elsewhere&preset=current) — candidate for next humanitarian investigation; response shape differs from docs (check pagination wrapper before use)
 - deploy retry ~14:15 PT: still quota-blocked. Next retry worthwhile ~09:00 PT next day (24h after the morning burst)
 - remaining ideas queue: ReliefWeb current-disasters investigation, globe pin declutter in dense regions, Watch-mode cinematic polish, eonet/gdacs event card connections enrichment, iOS strategy doc (task 23 pending)
+- ReliefWeb probing: base endpoint returns JSON but with totalCount missing in some responses; the fields[include] bracket query returned non-JSON (needs URL-encoded brackets or different param style) — finish probe before implementing
+- NOTE orbital-cadence drops out when Launch Library 429s persist across server restarts (memory cache is in-process); acceptable degradation, recovers when rate limit clears
