@@ -216,6 +216,10 @@ function CameraPins({ cameras, activeId, onSelect }: { cameras: PublicCamera[]; 
     const matrix = new THREE.Matrix4();
     const color = new THREE.Color();
     inactive.forEach((camera, index) => {
+      // Video look-ins are the primary value — render them larger so dense regions read as
+      // a hierarchy of quality rather than uniform noise; still-image backups recede.
+      const scale = camera.youtubeId ? 1 : .62;
+      matrix.makeScale(scale, scale, scale);
       matrix.setPosition(latLon(camera.lat, camera.lon, 1.365));
       ref.current?.setMatrixAt(index, matrix);
       hitRef.current?.setMatrixAt(index, matrix);
