@@ -659,6 +659,32 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     }
   }
 
+  // --- Airborne right now: the whole species, in the air ---
+  {
+    const aircraft = await getGlobalAircraft();
+    if (aircraft.length > 1500) {
+      const withAlt = aircraft.map(a => a.alt).filter(a => Number.isFinite(a) && a > 1000).sort((a, b) => a - b);
+      const medianAlt = withAlt.length ? withAlt[Math.floor(withAlt.length / 2)] : 0;
+      const centroidLat = aircraft.reduce((sum, a) => sum + a.lat, 0) / aircraft.length;
+      const centroidLon = aircraft.reduce((sum, a) => sum + a.lon, 0) / aircraft.length;
+      const soulsEstimate = Math.round(aircraft.length * 95 / 1000) / 10;
+      out.push({
+        id: 'airborne-now', template: 'atmosphere', title: `${aircraft.length.toLocaleString()} aircraft are airborne over Earth right now`, kicker: 'Live global ADS-B census',
+        visual: 'orbital', score: 78, freshness: 'positions seconds old',
+        location: { lat: centroidLat, lon: centroidLon, label: 'Centroid of global air traffic' },
+        summary: `Every golden point on the globe is a real aircraft, measured by crowdsourced ground receivers within the last few seconds. At typical occupancy that is roughly ${soulsEstimate} million people currently off the ground — a city the size of a megacity, floating. The shimmer updates every minute.`,
+        facts: [
+          { label: 'Aircraft airborne', value: aircraft.length.toLocaleString(), kind: 'observed' },
+          { label: 'Median altitude', value: `${Math.round(medianAlt / 100) / 10}k ft`, kind: 'observed' },
+          { label: 'Estimated people aloft', value: `~${soulsEstimate} million`, kind: 'interpretation' },
+          { label: 'Coverage', value: 'Crowdsourced receivers — oceans and poles thin', kind: 'interpretation' }
+        ],
+        sources: [src('OpenSky Network live ADS-B', 'https://opensky-network.org/')],
+        related: ['Empty-sky audit', 'Tokyo air corridor', 'Night lights']
+      });
+    }
+  }
+
   return connectDiscoveries(out.sort((a, b) => b.score - a.score)).map(d => ({ ...d, retrieved } as Discovery));
 }
 
@@ -679,6 +705,25 @@ async function adsbSkyAudit() {
   }
   if (rows.some(r => r.count != null)) { adsbAuditCache.at = Date.now(); adsbAuditCache.rows = rows; return rows; }
   return adsbAuditCache.rows.length ? adsbAuditCache.rows : rows;
+}
+
+// Shared global air-traffic snapshot — used by both the /api/sky layer and the airborne-now card.
+const skyCache: { at: number; positions: Array<{ lat: number; lon: number; alt: number }> } = { at: 0, positions: [] };
+export async function getGlobalAircraft() {
+  if (Date.now() - skyCache.at < 60000 && skyCache.positions.length) return skyCache.positions;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 9000);
+    const res = await fetch('https://opensky-network.org/api/states/all', { signal: controller.signal, cache: 'no-store' } as any);
+    clearTimeout(timer);
+    if (!res.ok) return skyCache.positions;
+    const data = await res.json();
+    const positions = (data.states ?? [])
+      .filter((row: any[]) => Number.isFinite(row?.[5]) && Number.isFinite(row?.[6]) && row?.[8] !== true)
+      .map((row: any[]) => ({ lat: row[6], lon: row[5], alt: row[7] ?? row[13] ?? 0 }));
+    if (positions.length > 500) { skyCache.at = Date.now(); skyCache.positions = positions; }
+  } catch { /* keep stale */ }
+  return skyCache.positions;
 }
 
 export async function getInvestigations(): Promise<Investigation[]> {
@@ -1378,7 +1423,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
     const topType = typeNames[top.eventType] ?? 'hazard';
     out.push({
       id: 'planet-emergency-board',
-      title: `The planet's emergency board: ${boardItems.length} active disasters being modeled right now — most will never make your feed`,
+      title: redCount + orangeCount > 0 ? `The planet's emergency board: ${redCount + orangeCount} serious disaster alert${redCount + orangeCount === 1 ? '' : 's'} among ${boardItems.length} active hazards right now` : `The planet's emergency board: ${boardItems.length} active hazards being modeled right now — most will never make your feed`,
       dek: 'GDACS — the UN and EU\'s joint disaster alert system — continuously scores every major hazard on Earth by exposure and vulnerability. This is the whole board, unfiltered: what the humanitarian system is actually watching this hour, ranked by modeled impact rather than by what trends.',
       status: redCount ? 'developing' : 'uncertain',
       location: { lat: top.lat, lon: top.lon, label: `${regionOf(top)} — highest-scored current alert` },
