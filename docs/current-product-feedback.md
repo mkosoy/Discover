@@ -21,7 +21,7 @@
 - Namibia and Tokyo live-camera cards use poster-first authorized YouTube embeds.
 - GOES-East near-real-time imagery card added with Last-Modified freshness and cache-busting.
 - NWS active-alert card added with zone geometry, exact alert identifiers, timing lenses and impact caveats.
-- GDACS humanitarian hazard cards added with current-event filtering, impact imagery and exposure-model lenses.
+- GDACS humanitarian hazard cards added with current-event filtering, impact imagery and exposure-model lenses. Significant earthquakes, NASA EONET events and NWS alerts now also carry latest-available MODIS satellite-swath context rather than generic motifs.
 - Ukraine and Sudan investigations use conflict-filtered news attention, weather, OCHA FTS, HDX and UNHCR displacement data.
 - Ukraine now includes a non-tactical live public-aircraft contrast: coarse ADS-B counts over a Ukraine-centered sample versus neighboring-country-centered samples, with receiver/coverage caveats and a visual comparison bar.
 - Sudan includes attention-per-million-IDP normalization when samples are comparable; one-sided or capped samples are not visualized as false precision.

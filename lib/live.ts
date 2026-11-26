@@ -276,18 +276,20 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   const q = quakes?.features?.sort((a: any, b: any) => (b.properties?.mag ?? 0) - (a.properties?.mag ?? 0))[0];
   if (q) {
     const [lon, lat, depth] = q.geometry.coordinates;
-    out.push({ id: `quake-${q.id}`, entityId: q.id, occurredAt: new Date(q.properties.time).toISOString(), template: 'geology', title: 'A significant earthquake just reshaped the seismic map', kicker: 'USGS live event', visual: 'seismic', score: 82 + Math.min(14, q.properties.mag * 2), freshness: ago(q.properties.time), location: { lat, lon, label: q.properties.place }, summary: `A magnitude ${q.properties.mag.toFixed(1)} earthquake was recorded near ${q.properties.place}. The shake is real observed data; broader impact is deliberately left as an open question until corroborated.`, facts: [
+    out.push({ id: `quake-${q.id}`, entityId: q.id, occurredAt: new Date(q.properties.time).toISOString(), template: 'geology', title: 'A significant earthquake just reshaped the seismic map', kicker: 'USGS live event', visual: 'seismic', score: 82 + Math.min(14, q.properties.mag * 2), freshness: ago(q.properties.time), mediaImage: worldviewSnapshot(lat, lon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${q.properties.place}`, location: { lat, lon, label: q.properties.place }, summary: `A magnitude ${q.properties.mag.toFixed(1)} earthquake was recorded near ${q.properties.place}. The shake is real observed data; broader impact is deliberately left as an open question until corroborated.`, facts: [
       { label: 'Magnitude', value: q.properties.mag.toFixed(1), kind: 'observed' }, { label: 'Depth', value: `${Math.round(depth)} km`, kind: 'observed' }, { label: 'Reports', value: `${q.properties.felt ?? 0} felt reports`, kind: 'verified' }, { label: 'Impact', value: 'Still unknown', kind: 'question' }
-    ], sources: [src('USGS earthquake feed', q.properties.url)], related: ['Aftershock pattern', 'Tsunami bulletins', 'Regional recovery'] });
+    ], sources: [src('NASA Worldview MODIS satellite imagery', 'https://worldview.earthdata.nasa.gov/'), src('USGS earthquake feed', q.properties.url)], related: ['Aftershock pattern', 'Tsunami bulletins', 'Regional recovery'] });
   }
   const evt = eonet?.events?.find((e: any) => e.geometry?.length);
   if (evt) {
     const geom = evt.geometry.at(-1);
     const [lon, lat] = geom.coordinates;
     const cat = evt.categories?.[0]?.title ?? 'Natural event';
-    out.push({ id: `eonet-${evt.id}`, entityId: evt.id, template: cat.toLowerCase().includes('fire') ? 'wildfire' : 'atmosphere', title: `${cat} unfolding in ${evt.title}`, kicker: 'NASA EONET natural event', visual: cat.toLowerCase().includes('fire') ? 'fire' : 'aurora', score: 78, freshness: ago(geom.date), location: { lat, lon, label: evt.title }, summary: `${evt.title} is being tracked in NASA's open natural-event catalog. Elsewhere combines the event position with weather and source context rather than pretending satellite imagery is live.`, facts: [
-      { label: 'Category', value: cat, kind: 'verified' }, { label: 'Last geometry', value: ago(geom.date), kind: 'observed' }, { label: 'Live imagery', value: 'Not assumed', kind: 'question' }
-    ], sources: [src('NASA EONET', evt.link ?? 'https://eonet.gsfc.nasa.gov/')], related: ['Wind direction', 'Nearby cameras', 'Event timeline'] });
+    const lowerCat = cat.toLowerCase();
+    const visual = lowerCat.includes('fire') ? 'fire' : lowerCat.includes('volcano') || lowerCat.includes('earthquake') ? 'seismic' : lowerCat.includes('ice') || lowerCat.includes('flood') ? 'ocean' : lowerCat.includes('storm') ? 'storm' : 'orbital';
+    out.push({ id: `eonet-${evt.id}`, entityId: evt.id, template: lowerCat.includes('fire') ? 'wildfire' : 'atmosphere', title: `${cat} unfolding in ${evt.title}`, kicker: 'NASA EONET natural event', visual, score: 78, freshness: ago(geom.date), mediaImage: worldviewSnapshot(lat, lon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${evt.title}`, location: { lat, lon, label: evt.title }, summary: `${evt.title} is being tracked in NASA's open natural-event catalog. Elsewhere combines the event position with weather and source context rather than pretending satellite imagery is live.`, facts: [
+      { label: 'Category', value: cat, kind: 'verified' }, { label: 'Last geometry', value: ago(geom.date), kind: 'observed' }, { label: 'Satellite context', value: 'Latest swath; gaps possible', kind: 'observed' }
+    ], sources: [src('NASA Worldview MODIS satellite imagery', 'https://worldview.earthdata.nasa.gov/'), src('NASA EONET', evt.link ?? 'https://eonet.gsfc.nasa.gov/')], related: ['Wind direction', 'Nearby cameras', 'Event timeline'] });
   }
   if (goesHead) {
     const modified = goesHead.get('last-modified');
@@ -333,6 +335,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       template: isWater ? 'ocean' : /fire|smoke/i.test(eventName) ? 'wildfire' : 'atmosphere',
       title: `${eventName} is active in the United States`, kicker: 'National Weather Service live alert', visual: isWater ? 'ocean' : /fire|smoke/i.test(eventName) ? 'fire' : 'storm', score: 62 + Math.min(28, activeAlert.rank),
       freshness: activeAlert.props.sent ? ago(activeAlert.props.sent) : 'active now',
+      mediaImage: worldviewSnapshot(alertLat, alertLon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${compactArea(activeAlert.props.areaDesc)}`,
       location: { lat: alertLat, lon: alertLon, label: compactArea(activeAlert.props.areaDesc) },
       summary: 'The National Weather Service is actively warning or advising this area. Elsewhere treats the alert itself as verified evidence, while local damage and casualties remain separate questions.',
       facts: [
@@ -341,7 +344,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         { label: 'Expires', value: activeAlert.props.expires ? until(activeAlert.props.expires) : 'See alert', kind: 'verified' },
         { label: 'Impact evidence', value: 'Not established', kind: 'question' }
       ],
-      sources: [src('NWS active alerts', activeAlert.alert.id ?? 'https://api.weather.gov/alerts/active')], related: ['Alert timing', 'Satellite context', 'Local impact evidence']
+      sources: [src('NASA Worldview MODIS satellite imagery', 'https://worldview.earthdata.nasa.gov/'), src('NWS active alerts', activeAlert.alert.id ?? 'https://api.weather.gov/alerts/active')], related: ['Alert timing', 'Satellite context', 'Local impact evidence']
     });
   }
 
