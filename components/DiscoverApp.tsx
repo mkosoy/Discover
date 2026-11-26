@@ -17,6 +17,8 @@ export default function DiscoverApp() {
   const [watching, setWatching] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [lens, setLens] = useState<any>();
+  const [lensLoading, setLensLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -48,21 +50,20 @@ export default function DiscoverApp() {
     setMode('discover');
   };
 
-  const exploreRelated = (label: string) => {
-    const text = label.toLowerCase();
-    const match = discoveries.find(d =>
-      text.includes('aurora') && d.id === 'aurora-watch' ||
-      text.includes('launch') && d.template === 'launch' ||
-      text.includes('camera') && d.template === 'orbit' ||
-      text.includes('wind') && d.template === 'atmosphere' ||
-      text.includes('pass') && d.template === 'orbit' ||
-      text.includes('tsunami') && d.template === 'geology' ||
-      text.includes('coast') && d.template === 'ocean' ||
-      text.includes('city') && d.template === 'city');
-    const current = discoveries.findIndex(d => d.id === active?.id);
-    setActive(match ?? discoveries[(current + 1 + discoveries.length) % discoveries.length]);
+  const exploreRelated = async (label: string) => {
+    if (!active) return;
+    setLensLoading(true);
+    setLens(undefined);
     setPanelOpen(true);
     setMode('discover');
+    try {
+      const params = new URLSearchParams({ topic: label, label: active.location.label, lat: String(active.location.lat), lon: String(active.location.lon) });
+      const response = await fetch(`/api/context?${params}`);
+      const data = await response.json();
+      setLens(data.lens ?? { topic: label, facts: [{ label: 'Evidence', value: 'Unavailable', kind: 'question' }] });
+    } catch {
+      setLens({ topic: label, facts: [{ label: 'Evidence', value: 'Unavailable', kind: 'question' }] });
+    } finally { setLensLoading(false); }
   };
 
   useEffect(() => {
@@ -109,6 +110,8 @@ export default function DiscoverApp() {
           <p className="summary">{active.summary}</p>
           <div className="factGrid">{active.facts.map(f => <div key={f.label} className={`fact ${f.kind}`}><span>{f.label}</span><strong>{f.value}</strong><em>{kindLabel[f.kind]}</em></div>)}</div>
           <div className="rabbit"><span>Explore further</span>{active.related.map(r => <button key={r} onClick={() => exploreRelated(r)}>{r}<ArrowRight size={13} /></button>)}</div>
+          {lensLoading && <div className="contextLens"><b>Reading local evidence…</b></div>}
+          {lens && <div className="contextLens"><b>{lens.topic}</b><div className="lensGrid">{lens.facts?.map((f: any) => <div key={f.label} className={`lensFact ${f.kind}`}><span>{f.label}</span><p>{f.value}</p></div>)}</div></div>}
           <details className="sources"><summary>Evidence and sources</summary>{active.sources.map(s => <a key={s.url} href={s.url} target="_blank">{s.label}<small>{new Date(s.retrievedAt).toLocaleTimeString()}</small></a>)}</details>
         </div>
       </motion.aside>}
