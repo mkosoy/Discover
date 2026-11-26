@@ -180,12 +180,14 @@ export async function getDiscoveries(): Promise<Discovery[]> {
 export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
   const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
-  const [quake, hdx, ukraineNews, ukraineWeather, fts, eonet] = await Promise.all([
+  const currentYear = new Date().getFullYear();
+  const [quake, hdx, ukraineNews, ukraineWeather, fts, unhcr, eonet] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
     json<any>('https://api.gdeltproject.org/api/v2/doc/doc?query=ukraine&mode=ArtList&maxrecords=30&format=json&timespan=24h'),
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${ukraineCities}&longitude=${ukraineLons}&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&timezone=Europe%2FKyiv`),
-    json<any>('https://api.hpc.tools/v1/public/fts/flow?countryISO3=UKR&year=2026'),
+    json<any>(`https://api.hpc.tools/v1/public/fts/flow?countryISO3=UKR&year=${currentYear}`),
+    json<any>('https://api.unhcr.org/population/v1/population/?coo=UKR&limit=100'),
     json<any>('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=6')
   ]);
   const q = quake?.features?.[0];
@@ -204,6 +206,14 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const funding = fts?.data?.incoming?.fundingTotal ?? 0;
   const pledges = fts?.data?.incoming?.pledgeTotal ?? 0;
   const flowCount = fts?.data?.incoming?.flowCount ?? 0;
+  const displacementRows = unhcr?.items ?? [];
+  const latestDisplacement = displacementRows.reduce((a: any, b: any) => Number(b.year) > Number(a?.year ?? 0) ? b : a, displacementRows[0]);
+  const priorDisplacement = latestDisplacement ? displacementRows.find((row: any) => Number(row.year) === Number(latestDisplacement.year) - 1) : null;
+  const num = (value: any) => Number(value) || 0;
+  const idpNow = num(latestDisplacement?.idps);
+  const idpBefore = num(priorDisplacement?.idps);
+  const refugeesNow = num(latestDisplacement?.refugees);
+  const idpDelta = idpNow - idpBefore;
   const datasets = hdx?.result?.results ?? [];
   const datasetCount = hdx?.result?.count ?? datasets.length ?? 0;
   const freshDatasets = datasets.filter((d: any) => Date.now() - new Date(d.metadata_modified ?? 0).getTime() < 1000 * 60 * 60 * 24 * 30).length;
@@ -223,16 +233,19 @@ export async function getInvestigations(): Promise<Investigation[]> {
       metrics: [
         { label: 'Coldest feels-like', value: coldest ? `${Math.round(coldest.current.apparent_temperature)}°C` : '—', delta: coldest ? coldest.city : '5-city grid' },
         { label: 'Attention breadth', value: articles.length ? `${attentionBreadth} countries` : 'unavailable', delta: articles.length ? `${articles.length} GDELT articles / 24h` : 'GDELT rate-limited or empty' },
-        { label: 'Humanitarian funding', value: funding ? `$${(funding / 1e9).toFixed(2)}B` : '—', delta: `${flowCount} FTS flows in 2026` },
+        { label: 'Humanitarian funding', value: funding ? `$${(funding / 1e9).toFixed(2)}B` : '—', delta: `${flowCount} FTS flows in ${currentYear}` },
+        { label: 'Displaced people', value: idpNow ? `${(idpNow / 1e6).toFixed(1)}M IDPs` : '—', delta: latestDisplacement ? `${(refugeesNow / 1e6).toFixed(1)}M refugees abroad · ${latestDisplacement.year}` : 'UNHCR' },
         { label: 'Public datasets', value: String(datasetCount), delta: `${freshDatasets} updated in sample / 30d` }
       ],
       evidence: [
         { kind: 'observed', text: `Across a five-city Open-Meteo grid, ${coldest?.city ?? 'the coldest sampled city'} currently feels like ${coldest ? Math.round(coldest.current.apparent_temperature) : '—'}°C; ${windiest?.city ?? 'the windiest sampled city'} has ${windiest ? Math.round(windiest.current.wind_speed_10m) : '—'} km/h winds. This is current weather, not a damage report.` },
         { kind: 'observed', text: articles.length ? `${articles.length} recent GDELT-matched Ukraine articles came from ${domains.size} domains in ${countries.size} source countries and ${languages.size} languages. Rough title analysis: ${military} conflict-related and ${diplomacy} diplomacy/aid-related mentions.` : 'The GDELT attention sample was unavailable at retrieval time, so no claim is made about current article volume.', source: 'https://www.gdeltproject.org/' },
-        { kind: 'verified', text: `OCHA FTS reports $${(funding / 1e9).toFixed(2)}B in 2026 incoming humanitarian funding for Ukraine across ${flowCount} flows, plus $${(pledges / 1e6).toFixed(0)}M in pledges.`, source: 'https://fts.unocha.org/' },
+        { kind: 'verified', text: `OCHA FTS reports $${(funding / 1e9).toFixed(2)}B in ${currentYear} incoming humanitarian funding for Ukraine across ${flowCount} flows, plus $${(pledges / 1e6).toFixed(0)}M in pledges.`, source: 'https://fts.unocha.org/' },
+        { kind: 'verified', text: latestDisplacement ? `UNHCR population statistics for origin-country Ukraine list ${idpNow.toLocaleString()} internally displaced people and ${refugeesNow.toLocaleString()} refugees abroad in ${latestDisplacement.year}; IDPs are ${idpDelta >= 0 ? 'up' : 'down'} ${Math.abs(idpDelta).toLocaleString()} versus ${Number(latestDisplacement.year) - 1}. These are stock estimates and can reflect methodological revisions, not just movement.` : 'UNHCR displacement data was unavailable at retrieval time.', source: 'https://www.unhcr.org/refugee-statistics/' },
         { kind: 'verified', text: `HDX indexes ${datasetCount} Ukraine-related datasets; ${freshDatasets} in the sampled first page were modified within the last 30 days. Dataset availability is not the same as field verification.`, source: 'https://data.humdata.org/' },
         { kind: 'interpretation', text: coldStress ? 'Sub-zero feels-like conditions make heating, grid resilience, shelter and transport disruption especially consequential; however, these public feeds do not prove outages or localized harm.' : 'Current sampled weather does not indicate exceptional cold stress countrywide; attention and humanitarian data still matter independently.' },
         { kind: 'interpretation', text: articles.length ? (attentionBreadth >= 8 ? 'Broad international attention increases the chance that major developments are independently corroborated, but volume also creates repetition and noise. Source diversity is stronger evidence than raw article count.' : 'Limited international attention makes corroboration weaker; absence of coverage should not be read as absence of events.') : 'Because the attention sample is unavailable, the investigation relies more heavily on direct weather, funding and dataset observations.' },
+        { kind: 'interpretation', text: articles.length && idpNow ? `The scale of displacement (${(idpNow / 1e6).toFixed(1)}M IDPs) is structural regardless of whether today’s ${articles.length}-article attention sample is large or small. News volume measures attention cycles, not humanitarian magnitude.` : 'Humanitarian magnitude cannot be inferred from news volume; displacement statistics and current attention measure different things.' },
         { kind: 'question', text: 'What independent, appropriately aggregated evidence about power availability, heating access, displacement and civilian harm would corroborate or contradict the apparent level of stress?' },
         { kind: 'question', text: 'Which stories are being repeated across outlets, and which are independently observed? Elsewhere does not treat republished narratives as separate evidence.' }
       ],
@@ -240,7 +253,8 @@ export async function getInvestigations(): Promise<Investigation[]> {
         { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' },
         { label: 'GDELT 24h Ukraine attention sample', url: 'https://www.gdeltproject.org/' },
         { label: 'OCHA Financial Tracking Service', url: 'https://fts.unocha.org/' },
-        { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' }
+        { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' },
+        { label: 'UNHCR Refugee Data Finder', url: 'https://www.unhcr.org/refugee-statistics/' }
       ]
     });
   }
