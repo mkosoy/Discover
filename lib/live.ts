@@ -41,9 +41,8 @@ function connectionReason(a: Discovery, b: Discovery): string | null {
   if (pair.includes('launch') && pair.includes('solar-wind')) return 'Space weather is operational context for spacecraft and communications, not a launch decision by itself.';
   if (pair.includes('tokyo-air-corridor') && pair.includes('tokyo-waking')) return 'Aviation, weather and air quality are simultaneous layers over the same megacity.';
   if (pair.includes('nazare-swell') && pair.includes('storm')) return 'Ocean waves and storm systems can share atmospheric forcing.';
-  if (a.template === 'geology' && b.template === 'ocean' || b.template === 'geology' && a.template === 'ocean') return 'Coastal earthquakes raise a tsunami evidence question, but do not establish one.';
-  if (a.template === 'wildfire' && b.template === 'atmosphere' || b.template === 'wildfire' && a.template === 'atmosphere') return 'Weather can condition fire behavior, but wind alone does not prove spread.';
   const distance = angularDistance(a, b);
+  if ((a.template === 'geology' && b.template === 'ocean' || b.template === 'geology' && a.template === 'ocean') && distance < 25) return 'The earthquake is close enough to this coastline to make sea-level evidence worth checking, but no tsunami is established.';
   if (distance < 12) return `Nearby on the globe (${Math.round(distance)}° apart), worth comparing as simultaneous regional conditions.`;
   return null;
 }
