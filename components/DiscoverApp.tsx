@@ -368,6 +368,10 @@ export default function DiscoverApp() {
           <div className="factGrid">{active.facts.map(f => <div key={f.label} className={`fact ${f.kind}`}><span>{f.label}</span><strong>{f.value}</strong><em>{kindLabel[f.kind]}</em></div>)}</div>
           {path.length > 1 && <div className="evidencePath"><span>Evidence path</span><div>{path.map((d, i) => <button key={`${d.id}-${i}`} onClick={() => selectDiscovery(d, undefined, true)} className={d.id === active.id ? 'active' : ''}>{d.title}</button>)}</div></div>}
           {Boolean(active.connections?.length) && <div className="connections"><span>Connected signals</span>{active.connections?.map(c => <button key={c.id} onClick={() => followConnection(c.id)}><b>{c.title}</b><small>{c.reason}</small></button>)}</div>}
+          {(() => {
+            const parents = investigations.filter(i => i.liveLinks?.some(l => l.discoveryId === active.id));
+            return parents.length ? <div className="rabbit"><span>Part of the investigation</span>{parents.map(i => <button key={i.id} onClick={() => selectInvestigation(i)}>{i.title}<ArrowRight size={13} /></button>)}</div> : null;
+          })()}
           {Boolean(active.related.length) && <div className="rabbit"><span>Explore further</span>{active.related.map(r => <button key={r} onClick={() => exploreRelated(r)}>{r}<ArrowRight size={13} /></button>)}</div>}
           {lensLoading && <div className="contextLens"><b>Reading local evidence…</b></div>}
           {lens && <div className="contextLens"><b>{lens.topic}</b>{lens.retrievedAt && <small className="lensTime">retrieved {new Date(lens.retrievedAt).toLocaleTimeString()}</small>}{Boolean(lens.videos?.length) && <CameraLookins videos={lens.videos} />}<div className="lensGrid">{lens.facts?.map((f: any) => <div key={f.label} className={`lensFact ${f.kind}`}><span>{f.label}</span><p>{f.value}</p></div>)}</div></div>}
