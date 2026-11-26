@@ -114,3 +114,12 @@ Next hill-climb candidates:
 - OG/Twitter meta + og-image.png (crop of Etna venting screenshot) — shared links now render rich previews; FUTURE: per-discovery dynamic OG needs query-param share urls (?d=id) + generateMetadata + /api/og image route
 - dead ends: ReliefWeb needs approved appname; WHO DON rss 404; open-notify unreachable; usgs waterservices 10-15s per query (only viable as on-demand lens, low value without flood-stage context)
 - console error audit across surprise+investigate flows: 0 errors
+
+## Round IV — investigations depth + living planet (Nov 26 ~15:00 PT)
+- empty-sky-audit investigation: throttled ADS-B sampling (adsb.lol rate limit ~1 req/sec) across 6 conflict zones + 4 controls, 8min in-process cache. Ukraine/Sudan/Syria/Yemen measured silent vs 125-340 control aircraft. Honest receiver-density caveat included.
+- planet-emergency-board investigation: full GDACS board (~156 active modeled alerts) via parseGdacsItems refactor; visuals by type; liveLinks to top 3 events with lat/lon fallback.
+- terminator card: dawn/dusk megacity computed from NOAA solar position math — no upstream feed, always fresh.
+- aurora-watch upgraded to composite verdict: Kp + darkness + cloud at Utsjoki camera with blocking-reason labeling; connection link to camera-utsjoki-aurora.
+- investigations route: stale-while-revalidate (600s fresh) — cold ADS-B fill takes 15s+, never blocks the rail after first fill.
+- sky layer global: OpenSky /states/all stride-sampled to ~2600 airborne aircraft, 69KB payload, 45s cache. Visually validated — subtle shimmer at globe scale.
+- GOTCHA: `pkill -f next-server` / pgrep loops kill BOTH dev and prod (same process name) AND the invoking shell itself. Use ss -tlnp + port to find pid.
