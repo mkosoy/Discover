@@ -123,3 +123,9 @@ Next hill-climb candidates:
 - investigations route: stale-while-revalidate (600s fresh) — cold ADS-B fill takes 15s+, never blocks the rail after first fill.
 - sky layer global: OpenSky /states/all stride-sampled to ~2600 airborne aircraft, 69KB payload, 45s cache. Visually validated — subtle shimmer at globe scale.
 - GOTCHA: `pkill -f next-server` / pgrep loops kill BOTH dev and prod (same process name) AND the invoking shell itself. Use ss -tlnp + port to find pid.
+
+## Round V — shareability (Nov 26 ~15:20 PT)
+- Share button now copies ?d=<id> query links instead of hash URLs (hash never reaches server → no OG possible).
+- app/page.tsx generateMetadata resolves ?d= against live catalog (10min in-process cache) → dynamic og:title/description + discovery mediaImage when available. Registry fallback for any camera-* id. Validated: /?d=iss-over-earth renders "The ISS is crossing the planet in silence".
+- Cold first shared hit pays investigations fill (~14s with ADS-B throttle) once per 10min cache window — accepted, crawler-only traffic.
+- Mobile 390x844 validated: bottom sheet card, globe with aircraft specks, action dock all render correctly.
