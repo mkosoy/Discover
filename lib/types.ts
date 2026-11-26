@@ -11,6 +11,8 @@ export type Discovery = {
   score: number;
   freshness: string;
   visual: 'nasa-live' | 'orbital' | 'seismic' | 'aurora' | 'fire' | 'ocean' | 'city' | 'launch';
+  entityId?: string;
+  occurredAt?: string;
   mediaImage?: string;
   mediaAlt?: string;
   connections?: { id: string; title: string; reason: string; strength: number }[];

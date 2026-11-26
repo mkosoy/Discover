@@ -62,6 +62,8 @@ export default function DiscoverApp() {
     setMode('discover');
     try {
       const params = new URLSearchParams({ topic: label, label: active.location.label, lat: String(active.location.lat), lon: String(active.location.lon) });
+      if (active.entityId) params.set('entityId', active.entityId);
+      if (active.occurredAt) params.set('occurredAt', active.occurredAt);
       const response = await fetch(`/api/context?${params}`);
       const data = await response.json();
       setLens(data.lens ?? { topic: label, facts: [{ label: 'Evidence', value: 'Unavailable', kind: 'question' }] });

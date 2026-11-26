@@ -33,6 +33,8 @@ export async function GET(request: Request) {
   const lat = Number(url.searchParams.get('lat'));
   const lon = Number(url.searchParams.get('lon'));
   const t = topic.toLowerCase();
+  const entityId = url.searchParams.get('entityId');
+  const occurredAt = url.searchParams.get('occurredAt');
 
   if (t.includes('solar wind')) {
     const [plasma, mag, xrays] = await Promise.all([
@@ -55,8 +57,9 @@ export async function GET(request: Request) {
   }
 
   if (t.includes('launch') || t.includes('mission trajectory') || t.includes('pad camera') || t.includes('weather constraint')) {
-    const launches = await json<any>('https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=1&mode=detailed');
-    const launch = launches?.results?.[0];
+    const launch = entityId
+      ? await json<any>(`https://ll.thespacedevs.com/2.3.0/launches/${encodeURIComponent(entityId)}/?mode=detailed`)
+      : (await json<any>('https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=1&mode=detailed'))?.results?.[0];
     if (!launch) return answer(topic, 'Launch schedule unavailable', [
       { label: 'Launch evidence', value: 'The public launch schedule was unavailable at retrieval time.', kind: 'question' },
       { label: 'Insight', value: 'No launch-specific inference is made without the current published schedule.', kind: 'interpretation' }
@@ -78,16 +81,17 @@ export async function GET(request: Request) {
   }
 
   if (t.includes('aftershock')) {
-    const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const fallbackStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const start = occurredAt && !Number.isNaN(new Date(occurredAt).getTime()) ? new Date(occurredAt).toISOString() : fallbackStart;
     const bbox = Number.isFinite(lat) && Number.isFinite(lon) ? `&minlatitude=${lat - 4}&maxlatitude=${lat + 4}&minlongitude=${lon - 4}&maxlongitude=${lon + 4}` : '';
-    const aftershocks = bbox ? await json<any>(`https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=${start}&minmagnitude=2.5&orderby=time${bbox}`) : null;
-    const events = aftershocks?.features ?? [];
+    const aftershocks = bbox ? await json<any>(`https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=${encodeURIComponent(start)}&minmagnitude=2.5&orderby=time${bbox}`) : null;
+    const events = (aftershocks?.features ?? []).filter((event: any) => event.id !== entityId && (!occurredAt || new Date(event.properties?.time ?? 0).getTime() >= new Date(occurredAt).getTime()));
     const largest = events.reduce((a: any, b: any) => (b.properties?.mag ?? 0) > (a?.properties?.mag ?? 0) ? b : a, events[0]);
     return answer(topic, label, [
-      { label: 'Nearby M2.5+ earthquakes', value: events.length ? String(events.length) : 'None in sample', kind: 'observed' },
+      { label: 'Subsequent nearby M2.5+ earthquakes', value: events.length ? String(events.length) : 'None since selected event', kind: 'observed' },
       { label: 'Largest in sequence', value: largest?.properties?.mag ? `M${largest.properties.mag.toFixed(1)}` : '—', kind: 'observed' },
       { label: 'Most recent', value: events[0]?.properties?.time ? new Date(events[0].properties.time).toLocaleString() : '—', kind: 'observed' },
-      { label: 'Insight', value: events.length ? 'A clustered sequence can reflect aftershocks, but earthquake catalogs cannot reliably predict the timing or size of the next event.' : 'No nearby M2.5+ events appear in this seven-day sample; absence in the catalog means no recorded events above that threshold, not zero seismic risk.', kind: 'interpretation' },
+      { label: 'Insight', value: events.length ? 'A clustered sequence can reflect aftershocks, but earthquake catalogs cannot reliably predict the timing or size of the next event.' : 'No subsequent nearby M2.5+ events appear in the catalog sample; absence means no recorded events above that threshold after the selected earthquake, not zero seismic risk.', kind: 'interpretation' },
       { label: 'Next evidence', value: 'Official regional seismic-network review', kind: 'question' }
     ]);
   }
