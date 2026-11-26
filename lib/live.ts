@@ -194,7 +194,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const bz = mag?.gsm_bz ?? mag?.gse_bz;
     out.push({
       id: 'solar-wind-stream', template: 'atmosphere', title: 'The solar wind is pressing against near-Earth space', kicker: 'NOAA real-time space weather', visual: 'orbital', score: 86 + Math.max(0, Math.min(8, (speed - 400) / 50)), freshness: plasma?.time_tag ? ago(plasma.time_tag) : 'minutes ago',
-      mediaImage: 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png', mediaAlt: 'Latest NOAA GOES solar ultraviolet image',
+      mediaImage: `https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png?v=${Date.now()}`, mediaAlt: 'Latest NOAA GOES solar ultraviolet image',
       location: { lat: 72, lon: -40, label: 'Sun–Earth L1 → polar magnetosphere' },
       summary: 'ACE measures solar-wind particles and magnetic fields upstream of Earth while GOES watches the Sun in X-rays. The map marker represents the downstream polar impact region, not the spacecraft position.',
       facts: [

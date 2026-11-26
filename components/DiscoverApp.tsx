@@ -118,7 +118,7 @@ export default function DiscoverApp() {
         .map(d => ({ d, distance: angularDistance(point.lat, point.lon, d.location.lat, d.location.lon) }))
         .sort((a, b) => a.distance - b.distance)
         .slice(0, 3)
-        .map(({ d, distance }) => ({ id: d.id, title: d.title, reason: `${Math.round(distance)}° away — nearest concurrent public signal`, strength: Math.round(100 - distance) }));
+        .map(({ d, distance }) => ({ id: d.id, title: d.title, reason: `${Math.round(distance)}° away — nearest concurrent public signal`, strength: Math.max(1, Math.round(100 - distance)) }));
       setActive({
         id: `place-${point.lat.toFixed(2)}-${point.lon.toFixed(2)}`, template: 'atmosphere', title: `A live pulse from ${place.label}`, kicker: 'You found this place', visual: place.country ? 'city' : 'ocean', score: 72, freshness: 'current conditions',
         location: { lat: point.lat, lon: point.lon, label: place.label },
