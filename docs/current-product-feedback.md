@@ -92,3 +92,7 @@ Next hill-climb candidates:
 - Watch mode cinematic polish (auto-advance works at 11s cadence)
 - discovery-card uniqueness beyond cameras (eonet/gdacs event cards still generic-ish)
 - deploy when Vercel quota frees; then validate production end-to-end
+- `dede7b3` seismic-pulse-week liveLink → largest quake of week, with fallback synthesized discovery card (week-catalog quakes may not be in the 24h discoveries feed — link never dead-ends)
+- production build green after all investigation work; dev server restarted on port 3000 (plain `next dev` default — 3100 was never scripted)
+- surprise-loop validation: Kīlauea crater card showed actual glowing lava in live USGS frame with honest daylight/volcano-status framing — demo-quality moment
+- deploy retry at ~13:50 PT still quota-blocked (`api-deployments-free-per-day`, rolling 24h)
