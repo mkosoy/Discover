@@ -15,6 +15,7 @@ export default function DiscoverApp() {
   const [mode, setMode] = useState<'discover' | 'investigate'>('discover');
   const [selectedInvestigation, setSelectedInvestigation] = useState<Investigation>();
   const [watching, setWatching] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,6 +35,7 @@ export default function DiscoverApp() {
     if (!discoveries.length) return;
     const pool = discoveries.filter(d => d.id !== active?.id);
     setActive(pool[Math.floor(Math.random() * pool.length)] ?? discoveries[0]);
+    setPanelOpen(true);
     setMode('discover');
   };
 
@@ -57,8 +59,8 @@ export default function DiscoverApp() {
     </header>
 
     <section className="heroCopy">
-      <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>Live Earth intelligence</motion.p>
-      <motion.h1 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .08 }}>Discover what’s happening.<br /><span>Understand what it means.</span></motion.h1>
+      <motion.p>Live Earth intelligence</motion.p>
+      <motion.h1>Discover what’s happening.<br /><span>Understand what it means.</span></motion.h1>
     </section>
 
     <div className="actionDock">
@@ -67,9 +69,10 @@ export default function DiscoverApp() {
     </div>
 
     <AnimatePresence mode="wait">
-      {mode === 'discover' && active && <motion.aside key={active.id} className="discoveryPanel" initial={{ opacity: 0, y: 42, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 26, scale: .985 }} transition={{ type: 'spring', damping: 26, stiffness: 230 }}>
+      {mode === 'discover' && active && panelOpen && <motion.aside key={active.id} className="discoveryPanel" initial={{ opacity: 0, y: 42, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 26, scale: .985 }} transition={{ type: 'spring', damping: 26, stiffness: 230 }}>
+        <button className="panelClose" aria-label="Hide discovery" onClick={() => setPanelOpen(false)}><X size={17} /></button>
         <div className="panelMedia">{active.visual === 'nasa-live' ?
-          <iframe title="NASA live video" src="https://www.youtube.com/embed/live_stream?channel=UCLA_DiR1FfKNvjuUpBHmylQ&rel=0" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen /> :
+          <iframe title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen /> :
           <VisualMotif kind={active.visual} />}
           <div className="mediaTag"><Radio size={13} />{active.visual === 'nasa-live' ? 'Official live video' : 'Animated evidence visualization'}</div>
         </div>
@@ -94,6 +97,7 @@ export default function DiscoverApp() {
     </AnimatePresence>
 
     {mode === 'investigate' && investigations.length > 1 && <div className="investRail">{investigations.map(i => <button key={i.id} onClick={() => setSelectedInvestigation(i)} className={i.id === inv?.id ? 'active' : ''}>{i.title}</button>)}</div>}
+    {mode === 'discover' && active && !panelOpen && <button className="reopen" onClick={() => setPanelOpen(true)}>{active.kicker}</button>}
     {loading && <div className="loading"><Loader2 className="spin" />Listening to public Earth signals…</div>}
   </main>;
 }
