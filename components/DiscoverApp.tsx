@@ -169,9 +169,10 @@ export default function DiscoverApp() {
       {mode === 'discover' && active && panelOpen && <motion.aside key={active.id} className="discoveryPanel" initial={{ opacity: 0, y: 42, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 26, scale: .985 }} transition={{ type: 'spring', damping: 26, stiffness: 230 }}>
         <button className="panelClose" aria-label="Hide discovery" onClick={() => setPanelOpen(false)}><X size={17} /></button>
         <div className="panelMedia">{active.visual === 'nasa-live' ?
-          <iframe title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen /> :
+          <iframe title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen /> : active.mediaVideo ?
+          <iframe title={`${active.title} live video`} src={active.mediaVideo} allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen /> :
           <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
-          <div className="mediaTag"><Radio size={13} />{active.visual === 'nasa-live' ? 'Official live video' : active.mediaImage ? 'Live public imagery + visualization' : 'Animated evidence visualization'}</div>
+          <div className="mediaTag"><Radio size={13} />{active.visual === 'nasa-live' || active.mediaVideo ? 'Authorized live video embed' : active.mediaImage ? 'Live public imagery + visualization' : 'Animated evidence visualization'}</div>
         </div>
         <div className="panelBody">
           <div className="eyebrow"><Sparkles size={14} />{active.kicker}</div>

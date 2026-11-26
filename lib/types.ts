@@ -13,6 +13,7 @@ export type Discovery = {
   visual: 'nasa-live' | 'orbital' | 'seismic' | 'aurora' | 'fire' | 'ocean' | 'city' | 'launch';
   entityId?: string;
   occurredAt?: string;
+  mediaVideo?: string;
   mediaImage?: string;
   mediaAlt?: string;
   connections?: { id: string; title: string; reason: string; strength: number }[];
