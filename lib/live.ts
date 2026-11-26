@@ -3,10 +3,10 @@ import { ago, until } from './time';
 
 const now = () => new Date().toISOString();
 const src = (label: string, url: string) => ({ label, url, retrievedAt: now() });
-async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
+async function json<T>(url: string, init?: RequestInit, timeoutMs = 5000): Promise<T | null> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const res = await fetch(url, { signal: controller.signal, ...init, next: { revalidate: 60 } });
     clearTimeout(timer);
     if (!res.ok) return null;
@@ -42,7 +42,7 @@ function xmlValue(block: string, tag: string) {
 
 function parseGoogleNews(xml: string | null) {
   if (!xml) return [];
-  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 50).map(match => {
+  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 100).map(match => {
     const block = match[1];
     const source = xmlValue(block, 'source');
     return { title: xmlValue(block, 'title'), url: xmlValue(block, 'link'), seendate: xmlValue(block, 'pubDate'), domain: source || 'Google News', sourcecountry: 'Unknown', language: 'RSS edition' };
@@ -109,6 +109,14 @@ function geometryCentroid(geometry: any): [number, number] | null {
   return [points.reduce((sum, point) => sum + point[1], 0) / points.length, points.reduce((sum, point) => sum + point[0], 0) / points.length];
 }
 
+
+function compactArea(value: string | undefined) {
+  if (!value) return 'NWS alert area';
+  const parts = value.split(';').map(part => part.trim()).filter(Boolean);
+  const joined = parts.length > 2 ? `${parts.slice(0, 2).join('; ')} +${parts.length - 2} more zones` : (parts.join('; ') || value);
+  return joined.length > 150 ? `${joined.slice(0, 147).trim()}…` : joined;
+}
+
 function connectionReason(a: Discovery, b: Discovery): string | null {
   const pair = [a.id, b.id].join('|');
   if (pair.includes('solar-wind') && pair.includes('aurora-watch')) return 'Solar wind and magnetic orientation upstream can shape aurora conditions downstream.';
@@ -161,7 +169,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     text('https://www.gdacs.org/xml/rss.xml'),
     json<any>('https://api.open-meteo.com/v1/forecast?latitude=-23.65&longitude=15.95&current=temperature_2m,weather_code,wind_speed_10m,is_day&timezone=auto'),
     head('https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg'),
-    json<any>('https://api.weather.gov/alerts/active?status=actual&message_type=alert', { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } })
+    json<any>('https://api.weather.gov/alerts/active?status=actual', { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } })
   ]);
   const out: Discovery[] = [];
   if (iss?.latitude != null) out.push({
@@ -219,8 +227,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   if (goesHead) {
     const modified = goesHead.get('last-modified');
     out.push({
-      id: 'goes-atlantic-watch', template: 'atmosphere', title: 'A weather satellite is watching the Atlantic seaboard evolve', kicker: 'NOAA near-real-time imagery', visual: 'aurora', score: 84,
-      freshness: modified ? ago(modified) : 'updated within minutes', mediaImage: 'https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg', mediaAlt: 'Latest NOAA GOES-East geocolor image of the northeast United States and western Atlantic',
+      id: 'goes-atlantic-watch', template: 'atmosphere', title: 'A weather satellite is watching the Atlantic seaboard evolve', kicker: 'NOAA near-real-time imagery', visual: 'storm', score: 84,
+      freshness: modified ? ago(modified) : 'updated within minutes', mediaImage: `https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg${modified ? `?v=${new Date(modified).getTime()}` : ''}`, mediaAlt: 'Latest NOAA GOES-East geocolor image of the northeast United States and western Atlantic',
       location: { lat: 40.3, lon: -70.2, label: 'Northeast US / western Atlantic' },
       summary: 'GOES-East geocolor imagery is updated by NOAA in near-real time. It shows clouds, snow, smoke and daylight patterns from orbit; interpretation still requires ground truth.',
       facts: [
@@ -233,7 +241,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     });
   }
 
-  const rankedAlerts = (nwsAlerts?.features ?? [])
+  const alertCandidates = (nwsAlerts?.features ?? [])
     .map((alert: any) => {
       const props = alert.properties ?? {};
       const centroid = geometryCentroid(alert.geometry);
@@ -242,19 +250,25 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const certainty = { Observed: 2, Likely: 1 }[props.certainty as 'Observed' | 'Likely'] ?? 0;
       return { alert, props, centroid, rank: severity * 10 + urgency * 3 + certainty };
     })
-    .filter((row: any) => row.centroid && row.props.event)
+    .filter((row: any) => row.props.event)
     .sort((a: any, b: any) => b.rank - a.rank || new Date(b.props.sent ?? 0).getTime() - new Date(a.props.sent ?? 0).getTime());
+  const rankedAlerts = (await Promise.all(alertCandidates.slice(0, 10).map(async (row: any) => {
+    if (row.centroid) return row;
+    const zoneUrl = row.props.affectedZones?.[0];
+    const zone = zoneUrl ? await json<any>(zoneUrl, { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }, 2800) : null;
+    return { ...row, centroid: geometryCentroid(zone?.geometry) };
+  }))).filter((row: any) => row.centroid);
   const activeAlert = rankedAlerts[0];
   if (activeAlert) {
     const [alertLat, alertLon] = activeAlert.centroid;
     const eventName = activeAlert.props.event as string;
     const isWater = /flood|surf|marine|storm surge|coastal/i.test(eventName);
     out.push({
-      id: `nws-alert-${activeAlert.alert.id ?? activeAlert.props.identifier ?? eventName}`, entityId: activeAlert.props.identifier, occurredAt: activeAlert.props.sent,
+      id: `nws-alert-${activeAlert.alert.id ?? activeAlert.props.identifier ?? eventName}`, entityId: activeAlert.props.id ?? activeAlert.alert.id, occurredAt: activeAlert.props.sent,
       template: isWater ? 'ocean' : /fire|smoke/i.test(eventName) ? 'wildfire' : 'atmosphere',
-      title: `${eventName} is active in the United States`, kicker: 'National Weather Service live alert', visual: isWater ? 'ocean' : 'aurora', score: 72 + activeAlert.rank,
+      title: `${eventName} is active in the United States`, kicker: 'National Weather Service live alert', visual: isWater ? 'ocean' : /fire|smoke/i.test(eventName) ? 'fire' : 'storm', score: 62 + Math.min(28, activeAlert.rank),
       freshness: activeAlert.props.sent ? ago(activeAlert.props.sent) : 'active now',
-      location: { lat: alertLat, lon: alertLon, label: activeAlert.props.areaDesc ?? 'NWS alert area' },
+      location: { lat: alertLat, lon: alertLon, label: compactArea(activeAlert.props.areaDesc) },
       summary: 'The National Weather Service is actively warning or advising this area. Elsewhere treats the alert itself as verified evidence, while local damage and casualties remain separate questions.',
       facts: [
         { label: 'Severity', value: activeAlert.props.severity ?? '—', kind: 'verified' },
@@ -269,7 +283,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   const gdacs = parseGdacs(gdacsXml);
   if (gdacs) {
     const typeName = { EQ: 'earthquake', TC: 'tropical cyclone', FL: 'flood', VO: 'volcanic activity', TS: 'tsunami', DR: 'drought', WF: 'wildfire' }[gdacs.eventType as 'EQ' | 'TC' | 'FL' | 'VO' | 'TS' | 'DR' | 'WF'] ?? 'natural disaster';
-    const visual = gdacs.eventType === 'VO' || gdacs.eventType === 'EQ' ? 'seismic' : gdacs.eventType === 'DR' || gdacs.eventType === 'WF' ? 'fire' : 'aurora';
+    const visual = gdacs.eventType === 'VO' || gdacs.eventType === 'EQ' ? 'seismic' : gdacs.eventType === 'DR' || gdacs.eventType === 'WF' ? 'fire' : gdacs.eventType === 'FL' || gdacs.eventType === 'TS' ? 'ocean' : 'storm';
     const regionParts = (gdacs.country || '').split(',').map((part: string) => part.trim()).filter(Boolean);
     const region = regionParts.length > 2 ? `${regionParts.slice(0, 2).join(', ')} +${regionParts.length - 2} more` : regionParts.join(', ');
     out.push({
@@ -442,7 +456,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const sudanCityWeather = sudanRows.map((row: any, i: number) => ({ city: sudanCities[i] ?? `Point ${i + 1}`, current: row.current })).filter((row: any) => row.current);
   const sudanArticles = parseGoogleNews(sudanNewsXml).filter((article: any) => {
     const title = article.title ?? '';
-    return /sudan/i.test(title) && !/south sudan/i.test(title) && /war|conflict|rsf|army|saf|attack|strike|violence|aid|humanitarian|ceasefire|peace|displace|hunger|famine|refugee/i.test(title);
+    return /sudan/i.test(title) && !/south sudan/i.test(title) && /war|conflict|rsf|army|saf|attack|strike|violence|aid|humanitarian|ceasefire|peace|dialogue|mediation|diplomat|security council|chemical weapons|troops|arms|displace|hunger|famine|refugee/i.test(title);
   });
   const sudanDomains = new Set(sudanArticles.map((a: any) => a.domain).filter(Boolean));
   const sudanArticleTimes = sudanArticles.map((article: any) => newsTime(article.seendate)).filter(Number.isFinite);

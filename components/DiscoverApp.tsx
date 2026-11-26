@@ -175,7 +175,7 @@ export default function DiscoverApp() {
     setMode('investigate');
   };
 
-  return <main className={`mode-${mode}`}>
+  return <main className={`mode-${mode} ${panelOpen ? 'panel-open' : 'panel-closed'}`}>
     <Globe active={globeFocus} discoveries={discoveries} investigations={investigations} onSelect={selectDiscovery} onSelectInvestigation={selectInvestigation} />
     <header className="topbar">
       <div className="brand"><Globe2 size={22} /><span>Elsewhere</span></div>
@@ -200,10 +200,10 @@ export default function DiscoverApp() {
       {mode === 'discover' && active && panelOpen && <motion.aside key={active.id} className="discoveryPanel" initial={{ opacity: 0, y: 42, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 26, scale: .985 }} transition={{ type: 'spring', damping: 26, stiffness: 230 }}>
         <button className="panelClose" aria-label="Hide discovery" onClick={() => setPanelOpen(false)}><X size={17} /></button>
         <div className="panelMedia">{active.visual === 'nasa-live' ?
-          <iframe title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0&autoplay=1&mute=1&playsinline=1" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen /> : active.mediaVideo ?
-          <iframe title={`${active.title} live video`} src={active.mediaVideo} allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen /> :
+          <LiveVideo title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0&autoplay=1&mute=1&playsinline=1" /> : active.mediaVideo ?
+          <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} /> :
           <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
-          <div className="mediaTag"><Radio size={13} />{active.visual === 'nasa-live' || active.mediaVideo ? 'Authorized live video embed' : active.mediaImage ? 'Live public imagery + visualization' : 'Animated evidence visualization'}</div>
+          {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? 'Live public imagery + visualization' : 'Animated evidence visualization'}</div>}
         </div>
         <div className="panelBody">
           <div className="eyebrow"><Sparkles size={14} />{active.kicker}</div>
@@ -235,6 +235,18 @@ export default function DiscoverApp() {
   </main>;
 }
 
+
+function LiveVideo({ src, title }: { src: string; title: string }) {
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => setPlaying(false), [src]);
+  const id = src.match(/embed\/([^?]+)/)?.[1];
+  if (playing || !id) return <iframe title={title} src={src} allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen />;
+  return <button className="videoPoster" onClick={() => setPlaying(true)} aria-label={`Play ${title}`}>
+    <img src={`https://img.youtube.com/vi/${id}/hqdefault.jpg`} alt="" />
+    <span><Play size={18} />Live video</span>
+  </button>;
+}
+
 function LiveImage({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
@@ -249,8 +261,9 @@ function VisualMotif({ kind }: { kind: Discovery['visual'] }) {
     {kind === 'fire' && <><div className="fireGlow" /><i className="smoke sm1" /><i className="smoke sm2" /><i className="smoke sm3" /><i className="flameCore" /><div className="ridge" />{Array.from({ length: 18 }, (_, i) => <i key={i} className="ember" style={{ left: `${7 + i * 5}%`, animationDelay: `${(i % 7) * .42}s` }} />)}</>}
     {kind === 'launch' && <><svg className="trajectory" viewBox="0 0 420 180"><path d="M35 172 C120 145 190 92 376 20" /></svg><i className="rocket" /><i className="flame" /><div className="pad" /></>}
     {kind === 'ocean' && <><i className="moon" />{Array.from({ length: 4 }, (_, i) => <i key={i} className={`swell w${i + 1}`} />)}<div className="beam" /></>}
+    {kind === 'storm' && <><i className="stormCloud sc1" /><i className="stormCloud sc2" /><i className="lightningBolt" />{Array.from({ length: 14 }, (_, i) => <i key={i} className="raindrop" style={{ left: `${16 + i * 5}%`, animationDelay: `${(i % 6) * .18}s` }} />)}<div className="stormHorizon" /></>}
     {kind === 'city' && <><i className="sunrise" /><div className="skyline">{Array.from({ length: 12 }, (_, i) => <i key={i} style={{ height: `${24 + (i * 17) % 58}px` }} />)}</div></>}
     {(kind === 'orbital' || kind === 'nasa-live') && <><i className="orbitLine" /><i className="satelliteDot" /><i className="scan" /></>}
-    {!['aurora','seismic','fire','launch','ocean','city','orbital','nasa-live'].includes(kind) && <><div className="pulse" /><div className="ring r1" /><div className="ring r2" /></>}
+    {!['aurora','seismic','fire','launch','ocean','storm','city','orbital','nasa-live'].includes(kind) && <><div className="pulse" /><div className="ring r1" /><div className="ring r2" /></>}
   </div>;
 }

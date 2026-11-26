@@ -10,7 +10,7 @@ export type Discovery = {
   altitude?: number;
   score: number;
   freshness: string;
-  visual: 'nasa-live' | 'orbital' | 'seismic' | 'aurora' | 'fire' | 'ocean' | 'city' | 'launch';
+  visual: 'nasa-live' | 'orbital' | 'seismic' | 'aurora' | 'fire' | 'ocean' | 'city' | 'launch' | 'storm';
   entityId?: string;
   occurredAt?: string;
   mediaVideo?: string;

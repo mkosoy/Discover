@@ -13,6 +13,23 @@ async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
   } catch { return null; }
 }
 
+
+async function head(url: string): Promise<Headers | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(url, { method: 'HEAD', signal: controller.signal, redirect: 'follow', next: { revalidate: 60 } });
+    clearTimeout(timer);
+    return res.ok ? res.headers : null;
+  } catch { return null; }
+}
+
+function ageMinutes(input?: string | null) {
+  if (!input) return null;
+  const ms = Date.now() - new Date(input).getTime();
+  return Number.isFinite(ms) ? Math.max(0, Math.round(ms / 60000)) : null;
+}
+
 function answer(topic: string, place: string, facts: Fact[]) {
   return NextResponse.json({ lens: { topic, place, facts, retrievedAt: new Date().toISOString() } });
 }
@@ -108,6 +125,51 @@ export async function GET(request: Request) {
     ]);
   }
 
+
+  if (t.includes('alert timing') || t.includes('local impact evidence') || (t.includes('satellite context') && entityId)) {
+    const alerts = await json<any>('https://api.weather.gov/alerts/active?status=actual', { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } });
+    const feature = (alerts?.features ?? []).find((entry: any) => entry.properties?.id === entityId || entry.id === entityId || entry.properties?.identifier === entityId) ?? (alerts?.features ?? [])[0];
+    const props = feature?.properties;
+    if (!props) return answer(topic, label, [
+      { label: 'Alert evidence', value: 'The active-alert feed is unavailable or no matching alert is active now.', kind: 'question' },
+      { label: 'Insight', value: 'A missing or expired alert cannot be treated as current evidence.', kind: 'interpretation' }
+    ]);
+    const expired = props.expires ? new Date(props.expires).getTime() < Date.now() : false;
+    return answer(topic, props.areaDesc ?? label, [
+      { label: 'Alert', value: props.event ?? 'Weather alert', kind: 'verified' },
+      { label: 'Issued / effective', value: props.sent ? new Date(props.sent).toLocaleString() : 'Unavailable', kind: 'verified' },
+      { label: 'Expires', value: props.expires ? new Date(props.expires).toLocaleString() : 'Unavailable', kind: 'verified' },
+      { label: 'Severity / urgency', value: `${props.severity ?? 'Unknown'} / ${props.urgency ?? 'Unknown'}`, kind: 'verified' },
+      { label: 'Current status', value: expired ? 'Expired in current feed' : 'Listed as active by NWS', kind: 'verified' },
+      { label: 'Insight', value: t.includes('impact') ? 'An NWS alert is authoritative forecast or warning evidence, but it is not by itself confirmation of damage, casualties or infrastructure failure on the ground.' : t.includes('satellite') ? 'Satellite imagery can show the broader cloud system evolving, but imagery alone does not verify impacts at street or community level.' : 'The useful timing comparison is onset versus expiration: it tells users whether this is emerging, ongoing or expected to end soon, not whether impacts have been observed.', kind: 'interpretation' },
+      { label: 'Next evidence', value: t.includes('impact') ? 'Local storm reports, emergency-management statements or verified imagery' : 'NWS local storm reports plus current radar/satellite evolution', kind: 'question' }
+    ]);
+  }
+
+  if (t.includes('cloud motion') || t.includes('storm context') || t.includes('solar illumination') || t.includes('satellite context')) {
+    const imageUrl = 'https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg';
+    const [imageHead, weather] = await Promise.all([
+      head(imageUrl),
+      Number.isFinite(lat) && Number.isFinite(lon) ? json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=cloud_cover,precipitation,wind_speed_10m,is_day&timezone=auto`) : null
+    ]);
+    const age = ageMinutes(imageHead?.get('last-modified'));
+    const current = weather?.current;
+    const insight = t.includes('cloud motion')
+      ? 'One latest-frame image cannot measure motion by itself. It is evidence of current cloud structure; actual motion requires comparing a time sequence or a dedicated satellite animation product.'
+      : t.includes('storm context')
+        ? 'The image gives regional atmospheric context, but storm severity and local impacts require radar, warnings, ground reports or emergency-management evidence.'
+        : 'Solar illumination helps explain what the imager can see: visible geocolor detail is strongest in daylight, while nighttime interpretation depends more on city lights and infrared-derived products.';
+    return answer(topic, 'GOES-East Northeast sector', [
+      { label: 'Image freshness', value: age == null ? 'Unavailable' : age < 2 ? 'Under 2m old' : `${age}m old`, kind: age == null ? 'question' : 'observed' },
+      { label: 'Sector', value: 'Northeast United States / western Atlantic', kind: 'verified' },
+      { label: 'Local cloud cover', value: current ? `${Math.round(current.cloud_cover)}%` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Local daylight', value: current ? (current.is_day ? 'Daylight' : 'Night') : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Local precipitation', value: current ? `${current.precipitation ?? 0} mm` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Insight', value: insight, kind: 'interpretation' },
+      { label: 'Next evidence', value: 'A time sequence, radar product or verified local observation', kind: 'question' }
+    ]);
+  }
+
   if (t.includes('night light')) {
     const weather = Number.isFinite(lat) && Number.isFinite(lon) ? await json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=cloud_cover,is_day&timezone=auto`) : null;
     return answer(topic, label, [
@@ -135,7 +197,7 @@ export async function GET(request: Request) {
   facts.push({ label: 'Place context', value: placeName || label, kind: placeName ? 'verified' : 'question' });
 
   let insight = 'This layer grounds the story in current local conditions rather than treating the original signal as self-explanatory.';
-  if (t.includes('aurora') || t.includes('cloud')) insight = current ? `Cloud cover is the immediate visibility constraint: ${Math.round(current.cloud_cover)}% coverage means aurora or sky observation is ${current.cloud_cover > 70 ? 'unlikely without a break in clouds' : current.cloud_cover > 30 ? 'possible only through gaps' : 'more favorable, darkness permitting'}.` : insight;
+  if (t.includes('aurora') || (t.includes('cloud') && label.toLowerCase().includes('aurora'))) insight = current ? `Cloud cover is the immediate visibility constraint: ${Math.round(current.cloud_cover)}% coverage means aurora or sky observation is ${current.cloud_cover > 70 ? 'unlikely without a break in clouds' : current.cloud_cover > 30 ? 'possible only through gaps' : 'more favorable, darkness permitting'}.` : insight;
   if (t.includes('wind') || t.includes('fire')) insight = current ? `Surface wind is a real measured variable here (${Math.round(current.wind_speed_10m)} km/h), but Elsewhere does not infer fire spread without fuel, humidity and authoritative incident data.` : insight;
   if (t.includes('tsunami')) insight = 'A tsunami cannot be inferred from an earthquake alone. The next evidence needed is an official tsunami bulletin, sea-level gauge anomaly or verified coastal observation.';
   if (t.includes('camera')) insight = 'No direct camera feed is assumed. A useful next step is finding an authorized local camera or official stream, then comparing it with the measured conditions shown here.';
