@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 
-async function json<T>(url: string): Promise<T | null> {
+async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(url, { signal: controller.signal, next: { revalidate: 120 } });
+    const res = await fetch(url, { signal: controller.signal, ...init, next: { revalidate: 120 } });
     clearTimeout(timer);
     if (!res.ok) return null;
     return await res.json() as T;
@@ -30,11 +30,12 @@ export async function GET(request: Request) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return NextResponse.json({ error: 'invalid coordinates' }, { status: 400 });
   const [weather, place, air] = await Promise.all([
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,weather_code,wind_speed_10m,wind_direction_10m&timezone=auto`),
-    json<any>(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`),
+    json<any>(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=en`, { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }),
     json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,ozone&timezone=auto`)
   ]);
   const current = weather?.current;
-  const placeName = [place?.locality, place?.principalSubdivision, place?.countryName].filter(Boolean).join(', ') || place?.countryName || (Math.abs(lat) > 66 ? 'Polar region' : 'Open ocean / unpopulated area');
+  const address = place?.address ?? {};
+  const placeName = place?.display_name || [address.city, address.town, address.village, address.municipality, address.county, address.state, address.country].filter(Boolean).join(', ') || (Math.abs(lat) > 66 ? 'Polar region' : 'Open ocean / unpopulated area');
   const facts = [
     current ? { label: 'Weather', value: `${weatherText(current.weather_code)}, ${Math.round(current.temperature_2m)}°C`, kind: 'observed' } : { label: 'Weather', value: 'Unavailable', kind: 'question' },
     current ? { label: 'Wind', value: `${Math.round(current.wind_speed_10m)} km/h from ${Math.round(current.wind_direction_10m)}°`, kind: 'observed' } : null,
@@ -42,12 +43,12 @@ export async function GET(request: Request) {
     air?.current?.pm2_5 != null ? { label: 'PM2.5', value: `${Math.round(air.current.pm2_5)} μg/m³ model`, kind: 'interpretation' } : null,
     weather?.elevation != null ? { label: 'Elevation', value: `${Math.round(weather.elevation)} m`, kind: 'verified' } : null,
     weather?.timezone ? { label: 'Local timezone', value: weather.timezone.replace('_', ' '), kind: 'verified' } : null,
-    { label: 'Attribution', value: 'Weather is model/grid data; reverse geocoding is approximate', kind: 'question' }
+    { label: 'Attribution', value: 'Weather is model/grid data; reverse geocoding is approximate; populated places may be coarse', kind: 'question' }
   ].filter(Boolean);
   return NextResponse.json({
     place: {
       lat, lon, label: placeName,
-      locality: place?.locality, country: place?.countryName,
+      locality: address.city ?? address.town ?? address.village ?? place?.name, country: address.country,
       timezone: weather?.timezone,
       facts,
       retrievedAt: new Date().toISOString()
