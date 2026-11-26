@@ -37,5 +37,10 @@ export type Investigation = {
   visuals?: { label: string; value: number; display: string; highlight?: boolean }[];
   visualTitle?: string;
   visualCaption?: string;
+  pulses?: { label: string; values: number[]; display: string }[];
+  pulseTitle?: string;
+  pulseCaption?: string;
+  mediaImage?: string;
+  mediaAlt?: string;
   sources: { label: string; url: string }[];
 };

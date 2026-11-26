@@ -74,6 +74,21 @@ function storyClusters(articles: any[]) {
   return { clusters, independent: clusters.length, repeated: clusters.reduce((sum, group) => sum + Math.max(0, group.length - 1), 0), largest: clusters[0] ?? [] };
 }
 
+function attentionCadence(articles: any[]) {
+  const values = Array(12).fill(0) as number[];
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  let counted = 0;
+  for (const article of articles) {
+    const time = newsTime(article.seendate);
+    if (!Number.isFinite(time) || time < cutoff) continue;
+    const ageHours = (Date.now() - time) / 3600000;
+    const index = Math.max(0, Math.min(11, Math.floor((24 - ageHours) / 2)));
+    values[index] += 1;
+    counted += 1;
+  }
+  return counted ? [{ label: 'Attention items / 2h', values, display: `${counted} sampled` }] : [];
+}
+
 function parseGdacs(xml: string | null) {
   if (!xml) return null;
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(match => {
@@ -497,6 +512,8 @@ export async function getInvestigations(): Promise<Investigation[]> {
       id: 'ukraine-live-signal',
       title: 'Ukraine: what the live public record can — and cannot — say',
       dek: 'A country-level synthesis of current weather stress, global attention patterns, humanitarian funding flows and public datasets. It intentionally avoids tactical battlefield tracking and instead asks what conditions mean for civilians and infrastructure resilience.',
+      mediaImage: 'https://wvs.earthdata.nasa.gov/api/v1/snapshot?REQUEST=GetSnapshot&BBOX=43%2C20%2C53%2C42&CRS=EPSG%3A4326&LAYERS=MODIS_Terra_CorrectedReflectance_TrueColor&FORMAT=image%2Fjpeg&WIDTH=900&HEIGHT=520',
+      mediaAlt: 'NASA MODIS latest available true-color satellite swath over Ukraine and surrounding regions',
       status: evidenceStrength >= 3 ? 'developing' : 'uncertain',
       location: { lat: 49.2, lon: 31.4, label: 'Ukraine, country-level synthesis' },
       updatedAt: now(),
@@ -505,13 +522,14 @@ export async function getInvestigations(): Promise<Investigation[]> {
         { label: 'Coldest feels-like', value: coldest ? `${Math.round(coldest.current.apparent_temperature)}°C` : '—', delta: coldest ? coldest.city : '5-city grid' },
         { label: 'Attention breadth', value: articles.length ? (gdeltArticles.length ? `${attentionBreadth} countries` : `${domains.size} outlets`) : 'unavailable', delta: articles.length ? `${articles.length} ${attentionSource} items / 24h · latest ${latestCoverage}` : 'attention sources unavailable' },
         { label: 'Narrative independence', value: articles.length ? `${ukraineStories.independent} story clusters` : 'unavailable', delta: articles.length ? `${ukraineStories.repeated} duplicate/repeated items` : 'headline clustering unavailable' },
-        { label: 'Attention mix', value: articles.length ? `${military} conflict / ${diplomacy} diplomacy` : 'unavailable', delta: 'rough title analysis' },
+        { label: 'Attention mix', value: articles.length ? `${military} conflict` : 'unavailable', delta: articles.length ? `${diplomacy} diplomacy · rough title analysis` : 'headline mix unavailable' },
         { label: 'Public aircraft contrast', value: ukraineAircraft != null ? `${ukraineAircraft} Ukraine-centered` : 'unavailable', delta: maxNeighboringAircraft != null ? `vs up to ${maxNeighboringAircraft} in neighboring 250 km samples` : 'comparison feed unavailable' },
         { label: 'Humanitarian funding', value: funding ? `$${(funding / 1e9).toFixed(2)}B` : '—', delta: `${flowCount} FTS flows in ${currentYear}` },
         { label: 'Displaced people', value: idpNow ? `${(idpNow / 1e6).toFixed(1)}M IDPs` : '—', delta: latestDisplacement ? `${(refugeesNow / 1e6).toFixed(1)}M refugees abroad · ${latestDisplacement.year}` : 'UNHCR' },
         { label: 'Public datasets', value: String(datasetCount), delta: `${freshDatasets} updated in sample / 30d` }
       ],
       evidence: [
+        { kind: 'observed', text: 'NASA MODIS true-color imagery supplies the latest available daylight satellite-swath context for Ukraine. Cloud, snow and orbital gaps mean it is not continuous surveillance and cannot verify military activity or local damage.', source: 'https://worldview.earthdata.nasa.gov/' },
         { kind: 'observed', text: `Across a five-city Open-Meteo grid, ${coldest?.city ?? 'the coldest sampled city'} currently feels like ${coldest ? Math.round(coldest.current.apparent_temperature) : '—'}°C; ${windiest?.city ?? 'the windiest sampled city'} has ${windiest ? Math.round(windiest.current.wind_speed_10m) : '—'} km/h winds. This is current weather, not a damage report.` },
         { kind: 'observed', text: articles.length ? `${articles.length} recent Ukraine-related items came from ${domains.size} outlets/domains${gdeltArticles.length ? ` in ${countries.size} source countries and ${languages.size} languages` : ''} via ${attentionSource}. Rough title analysis: ${military} conflict-related and ${diplomacy} diplomacy/aid-related mentions; ${lastHourCoverage} items appear within roughly the latest hour.` : 'Both attention samples were unavailable at retrieval time, so no claim is made about current article volume.', source: gdeltArticles.length ? 'https://www.gdeltproject.org/' : 'https://news.google.com/' },
         { kind: 'observed', text: ukraineAircraft != null ? `Public ADS-B aggregation returned ${ukraineAircraft} aircraft transponders within a 250 km sample centered on Ukraine, compared with ${airspaceSamples.slice(1).filter(sample => sample.count != null).map(sample => `${sample.count} in the ${sample.label.toLowerCase()} sample`).join(', ') || 'no available neighboring comparisons'}. These are coarse aggregate counts only; they do not identify aircraft, military activity, routing or precise positions.` : 'Public ADS-B aggregation was unavailable for the Ukraine-centered sample, so no airspace contrast is claimed.', source: 'https://api.adsb.lol/' },
@@ -531,9 +549,13 @@ export async function getInvestigations(): Promise<Investigation[]> {
       })),
       visualTitle: 'Live public aircraft comparison',
       visualCaption: 'coarse 250 km aggregate samples',
+      pulses: attentionCadence(articles),
+      pulseTitle: '24h attention cadence',
+      pulseCaption: `${attentionSource} sample counts per 2h, oldest → latest; capped samples show shape, not total volume`,
       sources: [
         { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' },
         { label: `${attentionSource} 24h Ukraine attention sample`, url: gdeltArticles.length ? 'https://www.gdeltproject.org/' : 'https://news.google.com/' },
+        { label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/' },
         { label: 'adsb.lol open ADS-B aggregation', url: 'https://api.adsb.lol/' },
         { label: 'OCHA Financial Tracking Service', url: 'https://fts.unocha.org/' },
         { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' },
@@ -593,7 +615,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
         { label: 'Hottest feels-like', value: hottestSudan ? `${Math.round(hottestSudan.current.apparent_temperature)}°C` : '—', delta: hottestSudan ? hottestSudan.city : '5-city grid' },
         { label: 'Attention breadth', value: sudanArticles.length ? `${sudanDomains.size} outlets` : 'unavailable', delta: sudanArticles.length ? `${sudanArticles.length} Google News items / 24h · latest ${sudanLatestCoverage}` : 'attention unavailable' },
         { label: 'Narrative independence', value: sudanArticles.length ? `${sudanStories.independent} story clusters` : 'unavailable', delta: sudanArticles.length ? `${sudanStories.repeated} duplicate/repeated items` : 'headline clustering unavailable' },
-        { label: 'Attention mix', value: sudanArticles.length ? `${sudanMilitary} conflict / ${sudanDiplomacy} diplomacy` : 'unavailable', delta: 'rough title analysis' },
+        { label: 'Attention mix', value: sudanArticles.length ? `${sudanMilitary} conflict` : 'unavailable', delta: sudanArticles.length ? `${sudanDiplomacy} diplomacy · rough title analysis` : 'headline mix unavailable' },
         { label: 'Humanitarian funding', value: sudanFunding ? `$${(sudanFunding / 1e9).toFixed(2)}B` : '—', delta: `${sudanFlowCount} FTS flows in ${currentYear}` },
         { label: 'Displaced people', value: sudanIdps ? `${(sudanIdps / 1e6).toFixed(1)}M IDPs` : '—', delta: latestSudanDisplacement ? `${(sudanRefugees / 1e6).toFixed(1)}M refugees abroad · ${latestSudanDisplacement.year}` : 'UNHCR' },
         { label: 'Funding per IDP', value: sudanFundingPerIdp ? `$${Math.round(sudanFundingPerIdp)}` : '—', delta: 'rough ratio, not allocation' },
@@ -615,6 +637,9 @@ export async function getInvestigations(): Promise<Investigation[]> {
       visuals: attentionVisuals.length > 1 ? attentionVisuals : undefined,
       visualTitle: 'Attention per million displaced people',
       visualCaption: '24h attention sample divided by UNHCR IDP stock estimates',
+      pulses: attentionCadence(sudanArticles),
+      pulseTitle: '24h attention cadence',
+      pulseCaption: 'Google News sample counts per 2h, oldest → latest; capped samples show shape, not total volume',
       sources: [
         { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' },
         { label: 'Google News RSS 24h Sudan attention sample', url: 'https://news.google.com/' },

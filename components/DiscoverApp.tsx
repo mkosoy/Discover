@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowRight, Check, Compass, Eye, Globe2, Loader2, Newspaper, Play, Radio, Share2, Shuffle, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Check, Compass, Eye, Globe2, Loader2, Newspaper, Play, Radio, Satellite, Share2, Shuffle, Sparkles, X } from 'lucide-react';
 import Globe from './Globe';
 import type { Discovery, Investigation } from '@/lib/types';
 
@@ -329,16 +329,23 @@ export default function DiscoverApp() {
       </motion.aside>}
 
       {mode === 'investigate' && inv && <motion.aside key={inv.id} className="discoveryPanel investigation" initial={{ opacity: 0, y: 42 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 26 }}>
+        {inv.mediaImage && <div className="panelMedia"><img className="liveImage" src={inv.mediaImage} alt={inv.mediaAlt ?? inv.title} /><div className="mediaTag"><Satellite size={13} /> Latest satellite swath</div></div>}
+        <div className="panelBody investigationBody">
         <div className="investHeader"><div><div className="eyebrow"><Eye size={14} />Beyond the headlines</div><h2>{inv.title}</h2><p className="location">{inv.location.label} · confidence {inv.confidence}%</p></div><button onClick={() => setMode('discover')}><X size={18} /></button></div>
         <p className="summary">{inv.dek}</p>
         {Boolean(inv.visuals?.length) && <div className="signalBars"><div className="signalBarsHeader"><span>{inv.visualTitle ?? 'Live evidence comparison'}</span><small>{inv.visualCaption ?? 'current public data'}</small></div>{inv.visuals?.map(v => {
           const max = Math.max(...(inv.visuals ?? []).map(item => item.value), 1);
           return <div key={v.label} className={v.highlight ? 'signalBar highlight' : 'signalBar'}><span>{v.label}</span><div><i style={{ width: `${Math.max(2, Math.round(v.value / max * 100))}%` }} /></div><b>{v.display}</b></div>;
         })}</div>}
+        {Boolean(inv.pulses?.length) && <div className="pulseBlock"><div className="signalBarsHeader"><span>{inv.pulseTitle ?? 'Signal cadence'}</span><small>{inv.pulseCaption ?? 'oldest → latest'}</small></div>{inv.pulses?.map(row => {
+          const max = Math.max(...row.values, 1);
+          return <div key={row.label} className="pulseRow"><span>{row.label}</span><div className="pulseColumns">{row.values.map((value, index) => <i key={index} style={{ height: `${Math.max(8, Math.round(value / max * 100))}%` }} title={`${value} sampled items`} />)}</div><b>{row.display}</b></div>;
+        })}</div>}
         <div className="factGrid metrics">{inv.metrics.map(m => <div key={m.label} className="fact"><span>{m.label}</span><strong>{m.value}</strong><em>{m.delta}</em></div>)}</div>
         <div className="evidence">{inv.evidence.slice(0, 5).map((e, i) => <div key={i} className={`line ${e.kind}`}><b>{kindLabel[e.kind]}</b><p>{e.text}</p></div>)}</div>
         {inv.evidence.length > 5 && <details className="moreEvidence"><summary>Deeper evidence and caveats · {inv.evidence.length - 5} more</summary><div className="evidence">{inv.evidence.slice(5).map((e, i) => <div key={i + 5} className={`line ${e.kind}`}><b>{kindLabel[e.kind]}</b><p>{e.text}</p></div>)}</div></details>}
         <details className="sources" open><summary>Sources</summary>{inv.sources.map(s => <a key={s.url} href={s.url} target="_blank">{s.label}</a>)}</details>
+        </div>
       </motion.aside>}
     </AnimatePresence>
 
