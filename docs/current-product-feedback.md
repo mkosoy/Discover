@@ -73,3 +73,22 @@
 - Validated in real desktop Chrome via CDP: globe/day-night/pins/ISS card render correctly on desktop and mobile widths. The earlier black-screen was a dev-server artifact: `npm run build` overwrites `.next` and breaks a running `next dev`; restart dev or rm -rf .next.
 - Dev server: `next dev` port 3100. Production build passes (First Load ~393 kB). Vercel deploy still quota-blocked; do not push.
 - Next best hill-climb items: Skyline offline-camera detection, deeper cross-signal linking, Beyond the Headlines depth, more real footage quality (YouTube poster freshness), iOS/native strategy.
+
+## Session checkpoint — 2026-11-26 late (investigation depth phase)
+
+Commits after `f386a43` (all local-only, unpushed):
+- orbital-cadence + space-weather-now investigations, NOAA freshness sorting, LL memory cache (was uncommitted at prior checkpoint; committed since)
+- `c32cf09` camera look-ins night-aware scoring + honest time-of-day framing (aurora cameras boosted at night, nature cameras demoted, city cameras fine anytime)
+- `eeea8d4` air-divide-now investigation: same-hour PM2.5 across 16 major cities, worst-vs-best divide metric (Open-Meteo air quality API, keyless, batched multi-city fetch)
+- `413a69f` investigation rail robustness: module-level memory carries last-good investigations (1h TTL) across transient upstream failures — rail never silently empties
+- `fb168b8` liveLinks on investigations: volcano → Etna/Kilauea/Iceland camera jumps, space-weather → Utsjoki aurora camera; UI "LIVE LOOK-INS" row validated
+- reverse links: camera discoveries show "Part of the investigation" jump back to parent investigation (validated in browser)
+
+State: 10 investigations generating consistently (attention gap, air divide, volcanoes, seismic week, space weather, orbital cadence, ukraine, sudan, seismic ripple, event attention gap). Production still Vercel-quota-blocked (rolling 24h, `api-deployments-free-per-day`); everything local-only per user instruction. PR #1 last pushed commit `ce45ada` is far behind local.
+
+Next hill-climb candidates:
+- more investigation breadth (IODA internet outages timed out — retry or find alternative; ReliefWeb keyless; UK grid carbon intensity keyless)
+- globe pin declutter in dense regions (Europe overlap)
+- Watch mode cinematic polish (auto-advance works at 11s cadence)
+- discovery-card uniqueness beyond cameras (eonet/gdacs event cards still generic-ish)
+- deploy when Vercel quota frees; then validate production end-to-end
