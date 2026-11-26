@@ -95,6 +95,11 @@ function connectionReason(a: Discovery, b: Discovery): string | null {
   if (pair.includes('tokyo-air-corridor') && pair.includes('tokyo-waking')) return 'Aviation, weather and air quality are simultaneous layers over the same megacity.';
   if (pair.includes('nazare-swell') && pair.includes('storm')) return 'Ocean waves and storm systems can share atmospheric forcing.';
   const distance = angularDistance(a, b);
+  if (pair.includes('quake-') && pair.includes('gdacs-EQ') && distance < 2) return 'USGS observations and GDACS impact modeling are looking at the same seismic event; agreement strengthens location evidence, while damage remains unconfirmed.';
+  if (pair.includes('eonet-') && pair.includes('gdacs-WF') && distance < 5) return 'NASA event tracking and GDACS humanitarian modeling both point to nearby wildfire activity; neither alone confirms local damage.';
+  if (pair.includes('eonet-') && pair.includes('gdacs-FL') && distance < 5) return 'NASA event tracking and GDACS humanitarian modeling both point to nearby flood or storm conditions; compare them as corroborating signals, not proof of impact.';
+  if (pair.includes('gdacs-FL') && pair.includes('nazare-swell') && distance < 22) return 'Both are water and weather signals around the eastern Atlantic; they can be compared as concurrent model evidence, but no shared cause is established.';
+  if (pair.includes('gdacs') && pair.includes('uk-grid-wind-pulse') && distance < 22) return 'Severe weather can matter for energy demand and infrastructure resilience, but this connection is contextual rather than causal.';
   if ((a.template === 'geology' && b.template === 'ocean' || b.template === 'geology' && a.template === 'ocean') && distance < 25) return 'The earthquake is close enough to this coastline to make sea-level evidence worth checking, but no tsunami is established.';
   if (distance < 12) return `Nearby on the globe (${Math.round(distance)}° apart), worth comparing as simultaneous regional conditions.`;
   return null;
