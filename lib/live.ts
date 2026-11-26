@@ -271,7 +271,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
   const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
   const currentYear = new Date().getFullYear();
-  const [quake, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet] = await Promise.all([
+  const [quake, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
     json<any>('https://api.gdeltproject.org/api/v2/doc/doc?query=ukraine&mode=ArtList&maxrecords=30&format=json&timespan=24h'),
@@ -279,7 +279,12 @@ export async function getInvestigations(): Promise<Investigation[]> {
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${ukraineCities}&longitude=${ukraineLons}&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&timezone=Europe%2FKyiv`),
     json<any>(`https://api.hpc.tools/v1/public/fts/flow?countryISO3=UKR&year=${currentYear}`),
     json<any>('https://api.unhcr.org/population/v1/population/?coo=UKR&limit=100'),
-    json<any>('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=6')
+    json<any>('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=6'),
+    text('https://news.google.com/rss/search?q=Sudan%20conflict%20when%3A1d&hl=en-US&gl=US&ceid=US%3Aen'),
+    json<any>('https://api.open-meteo.com/v1/forecast?latitude=15.50,13.63,12.05,19.62,15.45&longitude=32.56,25.35,24.88,37.22,36.40&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&timezone=Africa%2FKhartoum'),
+    json<any>(`https://api.hpc.tools/v1/public/fts/flow?countryISO3=SDN&year=${currentYear}`),
+    json<any>('https://api.unhcr.org/population/v1/population/?coo=SUD&limit=100'),
+    json<any>('https://data.humdata.org/api/3/action/package_search?q=sudan&rows=12')
   ]);
   const q = quake?.features?.[0];
   const out: Investigation[] = [];
@@ -350,6 +355,70 @@ export async function getInvestigations(): Promise<Investigation[]> {
       sources: [
         { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' },
         { label: `${attentionSource} 24h Ukraine attention sample`, url: gdeltArticles.length ? 'https://www.gdeltproject.org/' : 'https://news.google.com/' },
+        { label: 'OCHA Financial Tracking Service', url: 'https://fts.unocha.org/' },
+        { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' },
+        { label: 'UNHCR Refugee Data Finder', url: 'https://www.unhcr.org/refugee-statistics/' }
+      ]
+    });
+  }
+
+  const sudanCities = ['Khartoum', 'El Fasher', 'Nyala', 'Port Sudan', 'Kassala'];
+  const sudanRows = Array.isArray(sudanWeather) ? sudanWeather : sudanWeather ? [sudanWeather] : [];
+  const sudanCityWeather = sudanRows.map((row: any, i: number) => ({ city: sudanCities[i] ?? `Point ${i + 1}`, current: row.current })).filter((row: any) => row.current);
+  const sudanArticles = parseGoogleNews(sudanNewsXml);
+  const sudanDomains = new Set(sudanArticles.map((a: any) => a.domain).filter(Boolean));
+  const sudanArticleTimes = sudanArticles.map((article: any) => newsTime(article.seendate)).filter(Number.isFinite);
+  const sudanLatestCoverage = sudanArticleTimes.length ? ago(Math.max(...sudanArticleTimes)) : 'unknown';
+  const sudanMilitary = sudanArticles.filter((a: any) => /strike|missile|drone|attack|front|war|violence|rsf|army|defen[cs]e/i.test(a.title ?? '')).length;
+  const sudanDiplomacy = sudanArticles.filter((a: any) => /peace|talks|ceasefire|aid|funding|minister|negotiat|humanitarian/i.test(a.title ?? '')).length;
+  const hottestSudan = sudanCityWeather.reduce((a: any, b: any) => !a || b.current.apparent_temperature > a.current.apparent_temperature ? b : a, null);
+  const windiestSudan = sudanCityWeather.reduce((a: any, b: any) => !a || b.current.wind_speed_10m > a.current.wind_speed_10m ? b : a, null);
+  const sudanFunding = sudanFts?.data?.incoming?.fundingTotal ?? 0;
+  const sudanFlowCount = sudanFts?.data?.incoming?.flowCount ?? 0;
+  const sudanDisplacementRows = sudanUnhcr?.items ?? [];
+  const latestSudanDisplacement = sudanDisplacementRows.reduce((a: any, b: any) => Number(b.year) > Number(a?.year ?? 0) ? b : a, sudanDisplacementRows[0]);
+  const priorSudanDisplacement = latestSudanDisplacement ? sudanDisplacementRows.find((row: any) => Number(row.year) === Number(latestSudanDisplacement.year) - 1) : null;
+  const sudanIdps = num(latestSudanDisplacement?.idps);
+  const sudanPriorIdps = num(priorSudanDisplacement?.idps);
+  const sudanRefugees = num(latestSudanDisplacement?.refugees);
+  const sudanIdpDelta = sudanIdps - sudanPriorIdps;
+  const sudanDatasets = sudanHdx?.result?.results ?? [];
+  const sudanDatasetCount = sudanHdx?.result?.count ?? sudanDatasets.length ?? 0;
+  const sudanFreshDatasets = sudanDatasets.filter((d: any) => Date.now() - new Date(d.metadata_modified ?? 0).getTime() < 1000 * 60 * 60 * 24 * 30).length;
+  const sudanFundingPerIdp = sudanFunding && sudanIdps ? sudanFunding / sudanIdps : 0;
+
+  if (sudanCityWeather.length || sudanArticles.length || sudanFunding) {
+    const evidenceStrength = [sudanCityWeather.length >= 4, sudanArticles.length >= 8, sudanFunding > 0, sudanIdps > 0, sudanDatasetCount > 100].filter(Boolean).length;
+    out.push({
+      id: 'sudan-attention-gap',
+      title: 'Sudan: a vast displacement crisis moving through a thin attention window',
+      dek: 'A non-tactical humanitarian signal comparing current heat and weather exposure, one-day global attention, funding flow and UNHCR displacement scale. It is designed to reveal attention gaps rather than track battlefield positions.',
+      status: evidenceStrength >= 4 ? 'developing' : 'uncertain',
+      location: { lat: 15.6, lon: 30.4, label: 'Sudan, country-level synthesis' },
+      updatedAt: now(),
+      confidence: 44 + evidenceStrength * 9,
+      metrics: [
+        { label: 'Hottest feels-like', value: hottestSudan ? `${Math.round(hottestSudan.current.apparent_temperature)}°C` : '—', delta: hottestSudan ? hottestSudan.city : '5-city grid' },
+        { label: 'Attention breadth', value: sudanArticles.length ? `${sudanDomains.size} outlets` : 'unavailable', delta: sudanArticles.length ? `${sudanArticles.length} Google News items / 24h · latest ${sudanLatestCoverage}` : 'attention unavailable' },
+        { label: 'Humanitarian funding', value: sudanFunding ? `$${(sudanFunding / 1e9).toFixed(2)}B` : '—', delta: `${sudanFlowCount} FTS flows in ${currentYear}` },
+        { label: 'Displaced people', value: sudanIdps ? `${(sudanIdps / 1e6).toFixed(1)}M IDPs` : '—', delta: latestSudanDisplacement ? `${(sudanRefugees / 1e6).toFixed(1)}M refugees abroad · ${latestSudanDisplacement.year}` : 'UNHCR' },
+        { label: 'Funding per IDP', value: sudanFundingPerIdp ? `$${Math.round(sudanFundingPerIdp)}` : '—', delta: 'rough ratio, not allocation' }
+      ],
+      evidence: [
+        { kind: 'observed', text: `Across the sampled Sudan grid, ${hottestSudan?.city ?? 'the hottest sampled city'} currently feels like ${hottestSudan ? Math.round(hottestSudan.current.apparent_temperature) : '—'}°C; ${windiestSudan?.city ?? 'the windiest sampled city'} has ${windiestSudan ? Math.round(windiestSudan.current.wind_speed_10m) : '—'} km/h winds. This is current environmental exposure, not a damage report.` },
+        { kind: 'observed', text: sudanArticles.length ? `${sudanArticles.length} recent Sudan-conflict-related items came from ${sudanDomains.size} outlets/domains via Google News RSS. Rough title analysis: ${sudanMilitary} conflict-related and ${sudanDiplomacy} diplomacy/aid-related mentions; latest item is ${sudanLatestCoverage}.` : 'The Sudan attention sample was unavailable at retrieval time, so no claim is made about current article volume.', source: 'https://news.google.com/' },
+        { kind: 'verified', text: `OCHA FTS reports $${(sudanFunding / 1e9).toFixed(2)}B in ${currentYear} incoming humanitarian funding for Sudan across ${sudanFlowCount} flows.`, source: 'https://fts.unocha.org/' },
+        { kind: 'verified', text: latestSudanDisplacement ? `UNHCR population statistics for origin-country Sudan list ${sudanIdps.toLocaleString()} internally displaced people and ${sudanRefugees.toLocaleString()} refugees abroad in ${latestSudanDisplacement.year}; IDPs are ${sudanIdpDelta >= 0 ? 'up' : 'down'} ${Math.abs(sudanIdpDelta).toLocaleString()} versus ${Number(latestSudanDisplacement.year) - 1}. These are stock estimates and can reflect methodological revisions, not just movement.` : 'UNHCR displacement data was unavailable at retrieval time.', source: 'https://www.unhcr.org/refugee-statistics/' },
+        { kind: 'verified', text: `HDX indexes ${sudanDatasetCount} Sudan-related datasets; ${sudanFreshDatasets} in the sampled first page were modified within the last 30 days. Dataset availability is not the same as field verification.`, source: 'https://data.humdata.org/' },
+        { kind: 'interpretation', text: hottestSudan && hottestSudan.current.apparent_temperature >= 38 ? 'Extreme feels-like heat makes displacement, water access, shelter and transport more dangerous; these public feeds do not prove conditions in any specific camp or city.' : 'Current sampled heat is important context but not extreme across the whole grid; humanitarian exposure still depends on shelter, water and security conditions.' },
+        { kind: 'interpretation', text: sudanArticles.length && sudanIdps ? `The central signal is asymmetry: ${(sudanIdps / 1e6).toFixed(1)}M IDPs are represented through a 24-hour sample of only ${sudanArticles.length} attention items. That does not mean events are absent; it means the global public record may be thin relative to human scale.` : 'News volume and displacement measure different things, so a small attention sample cannot be treated as evidence of low humanitarian severity.' },
+        { kind: 'interpretation', text: sudanFundingPerIdp ? `Dividing total FTS funding by IDPs gives roughly $${Math.round(sudanFundingPerIdp)} per displaced person, but this is only a scale comparison: FTS funding is not allocated exclusively or evenly to IDPs.` : 'Funding per displaced person cannot be calculated because one of the inputs is unavailable.' },
+        { kind: 'question', text: 'Which local, appropriately aggregated sources could corroborate access to water, food, health care and safe movement without exposing vulnerable people or tactical positions?' },
+        { kind: 'question', text: 'How much coverage is independent reporting versus repetition of the same wire copy or institutional statements?' }
+      ],
+      sources: [
+        { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' },
+        { label: 'Google News RSS 24h Sudan attention sample', url: 'https://news.google.com/' },
         { label: 'OCHA Financial Tracking Service', url: 'https://fts.unocha.org/' },
         { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' },
         { label: 'UNHCR Refugee Data Finder', url: 'https://www.unhcr.org/refugee-statistics/' }
