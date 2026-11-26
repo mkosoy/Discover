@@ -565,7 +565,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
   const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
   const currentYear = new Date().getFullYear();
-  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace, volcanoXml, myanmarNewsXml, haitiNewsXml, drcNewsXml, yemenNewsXml, myanmarUnhcr, haitiUnhcr, drcUnhcr, yemenUnhcr, upcomingLaunches, kpIndexRaw, plasmaRaw, xrayRaw] = await Promise.all([
+  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace, volcanoXml, myanmarNewsXml, haitiNewsXml, drcNewsXml, yemenNewsXml, myanmarUnhcr, haitiUnhcr, drcUnhcr, yemenUnhcr, upcomingLaunches, kpIndexRaw, plasmaRaw, xrayRaw, cityAir] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
@@ -596,7 +596,8 @@ export async function getInvestigations(): Promise<Investigation[]> {
     upcomingLaunchesJson(),
     json<any>('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
     json<any[]>('https://services.swpc.noaa.gov/json/ace/swepam/ace_swepam_1h.json'),
-    json<any[]>('https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json')
+    json<any[]>('https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json'),
+    json<any>('https://air-quality-api.open-meteo.com/v1/air-quality?latitude=28.6,31.5,39.9,19.07,30.04,6.52,19.43,34.05,51.5,35.68,-33.87,-33.92,-23.55,55.75,40.71,1.35&longitude=77.2,74.3,116.4,72.87,31.23,3.37,-99.13,-118.24,-0.12,139.69,151.2,18.42,-46.63,37.6,-74,103.8&current=pm2_5,us_aqi&timezone=auto')
   ]);
   const q = quake?.features?.[0];
   const evt = eonet?.events?.[0];
@@ -1183,6 +1184,53 @@ export async function getInvestigations(): Promise<Investigation[]> {
     });
   }
 
-  const investigationPriority = ['crisis-attention-index', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
+
+  // --- The air divide: who is breathing what, right now ---
+  const airCities: Array<[string, number, number]> = [
+    ['Delhi', 28.6, 77.2], ['Lahore', 31.5, 74.3], ['Beijing', 39.9, 116.4], ['Mumbai', 19.07, 72.87],
+    ['Cairo', 30.04, 31.23], ['Lagos', 6.52, 3.37], ['Mexico City', 19.43, -99.13], ['Los Angeles', 34.05, -118.24],
+    ['London', 51.5, -0.12], ['Tokyo', 35.68, 139.69], ['Sydney', -33.87, 151.2], ['Cape Town', -33.92, 18.42],
+    ['São Paulo', -23.55, -46.63], ['Moscow', 55.75, 37.6], ['New York', 40.71, -74], ['Singapore', 1.35, 103.8]
+  ];
+  const airRows = (Array.isArray(cityAir) ? cityAir : cityAir ? [cityAir] : []).map((row: any, i: number) => ({
+    city: airCities[i]?.[0] ?? `City ${i}`, lat: airCities[i]?.[1] ?? 0, lon: airCities[i]?.[2] ?? 0,
+    pm25: Number(row?.current?.pm2_5 ?? NaN), aqi: Number(row?.current?.us_aqi ?? NaN)
+  })).filter((row: any) => Number.isFinite(row.pm25) && row.pm25 > 0);
+  if (airRows.length >= 8) {
+    const dirtiest = [...airRows].sort((a: any, b: any) => b.pm25 - a.pm25)[0];
+    const cleanest = [...airRows].sort((a: any, b: any) => a.pm25 - b.pm25)[0];
+    const divide = cleanest.pm25 > 1 ? dirtiest.pm25 / cleanest.pm25 : NaN;
+    const unhealthyCount = airRows.filter((row: any) => row.aqi > 100).length;
+    const whoSevere = airRows.filter((row: any) => row.aqi > 150).length;
+    out.push({
+      id: 'air-divide-now',
+      title: `Right now, the air in ${dirtiest.city} is ${Number.isFinite(divide) ? `${Math.round(divide)}×` : 'many times'} dirtier than in ${cleanest.city}`,
+      dek: 'This is not a seasonal report — it is the current modelled measurement across sixteen major cities, taken in the same hour. The gap between the best and worst air on Earth is one of the largest invisible inequalities on the planet.',
+      status: dirtiest.aqi > 150 ? 'developing' : 'uncertain',
+      location: { lat: dirtiest.lat, lon: dirtiest.lon, label: `${dirtiest.city} — worst air of 16 major cities right now` },
+      updatedAt: now(),
+      confidence: 78,
+      metrics: [
+        { label: 'Dirtiest air', value: dirtiest.city, delta: `${Math.round(dirtiest.pm25)} µg/m³ PM2.5 · AQI ${Math.round(dirtiest.aqi)}` },
+        { label: 'Cleanest air', value: cleanest.city, delta: `${Math.round(cleanest.pm25)} µg/m³ PM2.5 · AQI ${Math.round(cleanest.aqi)}` },
+        { label: 'The divide', value: Number.isFinite(divide) ? `${Math.round(divide)}×` : '—', delta: 'worst vs best, same hour' },
+        { label: 'Unhealthy now', value: `${unhealthyCount} of ${airRows.length}`, delta: 'cities above US AQI 100' },
+        { label: 'Severe', value: `${whoSevere} of ${airRows.length}`, delta: 'cities above US AQI 150' }
+      ],
+      evidence: [
+        { kind: 'observed', text: `Atmospheric chemistry models currently estimate ${Math.round(dirtiest.pm25)} µg/m³ of PM2.5 in ${dirtiest.city} versus ${Math.round(cleanest.pm25)} µg/m³ in ${cleanest.city}. These are modelled concentrations blending satellite and ground observations, not single-sensor readings.`, source: 'https://open-meteo.com/' },
+        ...[...airRows].sort((a: any, b: any) => b.pm25 - a.pm25).slice(0, 4).map((row: any) => ({ kind: 'observed' as const, text: `${row.city}: ${Math.round(row.pm25)} µg/m³ PM2.5, US AQI ${Math.round(row.aqi)}${row.aqi > 150 ? ' — severe enough that everyone, not just sensitive groups, faces measurable health effects.' : row.aqi > 100 ? ' — unhealthy for sensitive groups.' : '.'}`, source: 'https://open-meteo.com/' })),
+        { kind: 'interpretation', text: 'Air quality is weather, geography and policy superimposed: the same human activity produces radically different exposure depending on ventilation, season and inversion layers. A bad-air day in one city is often invisible wind transport from somewhere else.' },
+        { kind: 'interpretation', text: 'The divide is not static — it flips with seasons, wildfire plumes and dust storms. What makes it worth watching is not any single reading but the persistent pattern: the worst air is almost never in the richest cities.' },
+        { kind: 'question', text: 'Which of today\'s readings are driven by episodic events — fire, dust, inversions — versus chronic emissions? The model cannot separate them alone, but cross-referencing fire and weather signals can.' }
+      ],
+      visuals: [...airRows].sort((a: any, b: any) => b.pm25 - a.pm25).slice(0, 7).map((row: any) => ({ label: row.city, value: Math.round(row.pm25), display: `${Math.round(row.pm25)} µg/m³`, highlight: row.city === dirtiest.city })),
+      visualTitle: 'PM2.5 right now — worst seven of sixteen major cities',
+      visualCaption: 'modelled concentration, same hour · WHO annual guideline is 5 µg/m³',
+      sources: [{ label: 'Open-Meteo air quality API', url: 'https://open-meteo.com/' }]
+    });
+  }
+
+  const investigationPriority = ['crisis-attention-index', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
   return out.sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
 }
