@@ -323,7 +323,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
 
   if (cityWeather.length || articles.length || funding) {
     const coldStress = coldest && coldest.current.apparent_temperature <= 0;
-    const attentionBreadth = countries.size;
+    const attentionBreadth = gdeltArticles.length ? countries.size : domains.size;
     const evidenceStrength = [cityWeather.length >= 4, articles.length >= 8, funding > 0, datasetCount > 100].filter(Boolean).length;
     out.unshift({
       id: 'ukraine-live-signal',
