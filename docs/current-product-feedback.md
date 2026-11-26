@@ -66,3 +66,10 @@
 4. Globe labels are minimal; marker affordance and tap feedback can become more magical.
 5. Investigations have their first visual comparisons but still need richer editorial presentation and more comparative evidence types.
 6. Real mobile-device validation is still needed for embed behavior, panel scrolling, investigation rail usability and WebGL performance.
+
+## Session state checkpoint
+
+- Latest local commits (not pushed, local-only per user): `4aba9a7` Cache large NWS alert payload in memory; `9f95a5b` landscape orientation; `1e1f87f` mobile dock overlap fix; `a894c38` docs; `3ca6b0b` Webcam Galore countries.
+- Validated in real desktop Chrome via CDP: globe/day-night/pins/ISS card render correctly on desktop and mobile widths. The earlier black-screen was a dev-server artifact: `npm run build` overwrites `.next` and breaks a running `next dev`; restart dev or rm -rf .next.
+- Dev server: `next dev` port 3100. Production build passes (First Load ~393 kB). Vercel deploy still quota-blocked; do not push.
+- Next best hill-climb items: Skyline offline-camera detection, deeper cross-signal linking, Beyond the Headlines depth, more real footage quality (YouTube poster freshness), iOS/native strategy.
