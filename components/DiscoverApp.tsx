@@ -95,7 +95,7 @@ export default function DiscoverApp() {
   const [lensLoading, setLensLoading] = useState(false);
   const [path, setPath] = useState<Discovery[]>([]);
   const [copied, setCopied] = useState(false);
-  const [initialHash] = useState(() => typeof window === 'undefined' ? '' : decodeURIComponent(window.location.hash.replace(/^#/, '')));
+  const [initialHash] = useState(() => typeof window === 'undefined' ? '' : decodeURIComponent(new URLSearchParams(window.location.search).get('d') || window.location.hash.replace(/^#/, '')));
   const activeRef = useRef<Discovery>();
   const recentSurprisesRef = useRef<string[]>([]);
 
@@ -167,12 +167,16 @@ export default function DiscoverApp() {
   }, []);
 
   const shareCurrent = async () => {
+    // Query-param links (?d=) instead of hash links: the fragment never reaches the server,
+    // so shared hash URLs can't render rich social previews. The app resolves both.
+    const hash = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+    const shareUrl = hash ? `${window.location.origin}${window.location.pathname}?d=${encodeURIComponent(hash)}` : window.location.href;
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      window.prompt('Copy this Elsewhere link', window.location.href);
+      window.prompt('Copy this Elsewhere link', shareUrl);
     }
   };
 
