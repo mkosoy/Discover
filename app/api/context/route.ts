@@ -30,6 +30,25 @@ function ageMinutes(input?: string | null) {
   return Number.isFinite(ms) ? Math.max(0, Math.round(ms / 60000)) : null;
 }
 
+
+async function text(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(url, { signal: controller.signal, next: { revalidate: 300 } });
+    clearTimeout(timer);
+    return res.ok ? await res.text() : null;
+  } catch { return null; }
+}
+function xmlValue(block: string, tag: string) {
+  return block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`))?.[1]?.trim() ?? '';
+}
+function degreesApart(aLat: number, aLon: number, bLat: number, bLon: number) {
+  const rad = Math.PI / 180, x = (bLat - aLat) * rad, y = (bLon - aLon) * rad;
+  const h = Math.sin(x / 2) ** 2 + Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin(y / 2) ** 2;
+  return 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)) / rad;
+}
+
 function answer(topic: string, place: string, facts: Fact[]) {
   return NextResponse.json({ lens: { topic, place, facts, retrievedAt: new Date().toISOString() } });
 }
@@ -51,6 +70,7 @@ export async function GET(request: Request) {
   const lon = Number(url.searchParams.get('lon'));
   const t = topic.toLowerCase();
   const entityId = url.searchParams.get('entityId');
+  const subject = (url.searchParams.get('subject') ?? label).toLowerCase();
   const occurredAt = url.searchParams.get('occurredAt');
 
   if (t.includes('solar wind')) {
@@ -126,9 +146,30 @@ export async function GET(request: Request) {
   }
 
 
-  if (t.includes('alert timing') || t.includes('local impact evidence') || (t.includes('satellite context') && entityId)) {
+
+  if (t.includes('satellite context')) {
+    const imageUrl = 'https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg';
+    const [imageHead, alerts, weather] = await Promise.all([
+      head(imageUrl),
+      json<any>('https://api.weather.gov/alerts/active?status=actual', { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }),
+      Number.isFinite(lat) && Number.isFinite(lon) ? json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=cloud_cover,precipitation,is_day&timezone=auto`) : null
+    ]);
+    const feature = entityId ? (alerts?.features ?? []).find((entry: any) => entry.properties?.id === entityId || entry.id === entityId || entry.properties?.identifier === entityId) : null;
+    const age = ageMinutes(imageHead?.get('last-modified'));
+    const current = weather?.current;
+    return answer(topic, feature?.properties?.areaDesc ?? 'GOES-East Northeast sector', [
+      { label: 'Satellite image freshness', value: age == null ? 'Unavailable' : age < 2 ? 'Under 2m old' : `${age}m old`, kind: age == null ? 'question' : 'observed' },
+      { label: 'Alert context', value: feature?.properties?.event ?? 'No matching active NWS alert', kind: feature ? 'verified' : 'question' },
+      { label: 'Local cloud cover', value: current ? `${Math.round(current.cloud_cover)}%` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Local precipitation', value: current ? `${current.precipitation ?? 0} mm` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Insight', value: 'The satellite image can corroborate the broader cloud system and its evolution, but it cannot verify street-level flooding, wind damage or casualties without ground evidence.', kind: 'interpretation' },
+      { label: 'Next evidence', value: 'Radar sequence, local storm reports or emergency-management observations', kind: 'question' }
+    ]);
+  }
+
+  if (t.includes('alert timing') || t.includes('local impact evidence')) {
     const alerts = await json<any>('https://api.weather.gov/alerts/active?status=actual', { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } });
-    const feature = (alerts?.features ?? []).find((entry: any) => entry.properties?.id === entityId || entry.id === entityId || entry.properties?.identifier === entityId) ?? (alerts?.features ?? [])[0];
+    const feature = (alerts?.features ?? []).find((entry: any) => entry.properties?.id === entityId || entry.id === entityId || entry.properties?.identifier === entityId);
     const props = feature?.properties;
     if (!props) return answer(topic, label, [
       { label: 'Alert evidence', value: 'The active-alert feed is unavailable or no matching alert is active now.', kind: 'question' },
@@ -137,7 +178,9 @@ export async function GET(request: Request) {
     const expired = props.expires ? new Date(props.expires).getTime() < Date.now() : false;
     return answer(topic, props.areaDesc ?? label, [
       { label: 'Alert', value: props.event ?? 'Weather alert', kind: 'verified' },
-      { label: 'Issued / effective', value: props.sent ? new Date(props.sent).toLocaleString() : 'Unavailable', kind: 'verified' },
+      { label: 'Issued', value: props.sent ? new Date(props.sent).toLocaleString() : 'Unavailable', kind: 'verified' },
+      { label: 'Hazard starts', value: props.onset ? new Date(props.onset).toLocaleString() : props.effective ? new Date(props.effective).toLocaleString() : 'Unavailable', kind: 'verified' },
+      { label: 'Hazard ends', value: props.ends ? new Date(props.ends).toLocaleString() : 'Not specified', kind: props.ends ? 'verified' : 'question' },
       { label: 'Expires', value: props.expires ? new Date(props.expires).toLocaleString() : 'Unavailable', kind: 'verified' },
       { label: 'Severity / urgency', value: `${props.severity ?? 'Unknown'} / ${props.urgency ?? 'Unknown'}`, kind: 'verified' },
       { label: 'Current status', value: expired ? 'Expired in current feed' : 'Listed as active by NWS', kind: 'verified' },
@@ -181,6 +224,87 @@ export async function GET(request: Request) {
     ]);
   }
 
+
+  if (t.includes('exposure model') || t.includes('relief data')) {
+    const xml = await text('https://www.gdacs.org/xml/rss.xml');
+    const events = xml ? [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(match => {
+      const block = match[1];
+      return { title: xmlValue(block, 'title'), type: xmlValue(block, 'gdacs:eventtype'), alert: xmlValue(block, 'gdacs:alertlevel') || 'Green', severity: xmlValue(block, 'gdacs:severity'), population: xmlValue(block, 'gdacs:population'), vulnerability: xmlValue(block, 'gdacs:vulnerability'), country: xmlValue(block, 'gdacs:country'), modified: xmlValue(block, 'gdacs:datemodified') || xmlValue(block, 'pubDate'), lat: Number(xmlValue(block, 'geo:lat')), lon: Number(xmlValue(block, 'geo:long')), current: xmlValue(block, 'gdacs:iscurrent') };
+    }).filter(event => Number.isFinite(event.lat) && Number.isFinite(event.lon) && event.current !== 'false') : [];
+    const event = events.sort((a, b) => degreesApart(lat, lon, a.lat, a.lon) - degreesApart(lat, lon, b.lat, b.lon))[0];
+    if (!event) return answer(topic, label, [
+      { label: 'GDACS model', value: 'Unavailable', kind: 'question' },
+      { label: 'Insight', value: 'No modeled exposure claim is made without the current GDACS bulletin.', kind: 'interpretation' }
+    ]);
+    return answer(topic, event.country || label, [
+      { label: 'Modeled event', value: event.title || 'GDACS event', kind: 'verified' },
+      { label: 'Alert level', value: event.alert, kind: 'verified' },
+      { label: 'Modeled severity', value: event.severity || 'Unavailable', kind: 'verified' },
+      { label: 'Exposed population', value: event.population || 'Unavailable', kind: 'verified' },
+      { label: 'Vulnerability context', value: event.vulnerability || 'Unavailable', kind: 'verified' },
+      { label: 'Insight', value: t.includes('relief') ? 'GDACS models potential humanitarian impact; it is not a relief allocation or needs assessment. Actual response requires OCHA, agency and local operational evidence.' : 'The exposure model estimates who may be affected using event magnitude, population and vulnerability. It is not direct confirmation of casualties, damage or current conditions on the ground.', kind: 'interpretation' },
+      { label: 'Next evidence', value: t.includes('relief') ? 'OCHA relief updates, agency appeals and local needs assessments' : 'Verified local reports or official damage assessments', kind: 'question' }
+    ]);
+  }
+
+  if (t.includes('event timeline') && entityId) {
+    const event = await json<any>(`https://eonet.gsfc.nasa.gov/api/v3/events/${encodeURIComponent(entityId)}`);
+    const geometry = event?.geometry ?? [];
+    const first = geometry[0], latest = geometry.at(-1);
+    const firstDate = first?.date ? new Date(first.date).getTime() : NaN;
+    const latestDate = latest?.date ? new Date(latest.date).getTime() : NaN;
+    const span = Number.isFinite(firstDate) && Number.isFinite(latestDate) ? Math.max(0, Math.round((latestDate - firstDate) / 86400000)) : null;
+    const movement = first && latest ? degreesApart(first.coordinates[1], first.coordinates[0], latest.coordinates[1], latest.coordinates[0]) : null;
+    return answer(topic, event?.title ?? label, [
+      { label: 'Tracked positions', value: geometry.length ? String(geometry.length) : 'Unavailable', kind: geometry.length ? 'observed' : 'question' },
+      { label: 'First / latest geometry', value: first?.date && latest?.date ? `${new Date(first.date).toLocaleDateString()} → ${new Date(latest.date).toLocaleDateString()}` : 'Unavailable', kind: first && latest ? 'observed' : 'question' },
+      { label: 'Tracked span', value: span == null ? 'Unavailable' : span === 0 ? 'Same-day sample' : `${span} days`, kind: span == null ? 'question' : 'observed' },
+      { label: 'Position shift', value: movement == null ? 'Unavailable' : `${movement.toFixed(1)}° across track`, kind: movement == null ? 'question' : 'observed' },
+      { label: 'Insight', value: 'The event timeline shows persistence and movement in the public track. It does not measure intensity, damage or whether conditions are improving without additional evidence.', kind: 'interpretation' },
+      { label: 'Next evidence', value: 'Current satellite imagery, weather and verified local reporting', kind: 'question' }
+    ]);
+  }
+
+  if (t.includes('storm surge') || t.includes('coastal currents') || t.includes('coastal cameras')) {
+    const marine = Number.isFinite(lat) && Number.isFinite(lon) ? await json<any>(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=wave_height,wave_period,swell_wave_height,swell_wave_period&hourly=wave_height&forecast_days=1&timezone=auto`) : null;
+    const current = marine?.current;
+    const waves = (marine?.hourly?.wave_height ?? []).filter((v: any) => Number.isFinite(v));
+    const maxWave = waves.length ? Math.max(...waves) : null;
+    return answer(topic, label, [
+      { label: 'Current wave height', value: current ? `${current.wave_height?.toFixed?.(1) ?? current.wave_height} m` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Swell height / period', value: current ? `${current.swell_wave_height?.toFixed?.(1) ?? current.swell_wave_height} m / ${Math.round(current.swell_wave_period ?? 0)}s` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Next 24h modeled max', value: maxWave != null ? `${maxWave.toFixed(1)} m` : 'Unavailable', kind: maxWave != null ? 'prediction' : 'question' },
+      { label: 'Insight', value: t.includes('camera') ? 'No direct coastal camera is assumed. Wave and swell measurements can guide what to look for, but only authorized imagery or local observation can confirm what the coast looks like.' : 'Wave and swell conditions are evidence of ocean energy, but they are not a storm-surge measurement. Surge requires sea-level, pressure, wind and coastal geometry evidence.', kind: 'interpretation' },
+      { label: 'Next evidence', value: 'Tide gauge, pressure field, authorized coastal camera or local observation', kind: 'question' }
+    ]);
+  }
+
+  if (t.includes('air quality')) {
+    const air = Number.isFinite(lat) && Number.isFinite(lon) ? await json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,ozone,aerosol_optical_depth&timezone=auto`) : null;
+    const current = air?.current;
+    return answer(topic, label, [
+      { label: 'PM2.5', value: current ? `${Math.round(current.pm2_5)} µg/m³` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'PM10', value: current ? `${Math.round(current.pm10)} µg/m³` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Ozone', value: current ? `${Math.round(current.ozone)} µg/m³` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Aerosol optical depth', value: current?.aerosol_optical_depth != null ? current.aerosol_optical_depth.toFixed(2) : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Insight', value: 'Air quality is an independent city-scale layer: it can corroborate smoke, pollution or atmospheric stillness, but it does not explain causes by itself.', kind: 'interpretation' },
+      { label: 'Next evidence', value: 'Wind, fire, traffic and satellite aerosol evidence', kind: 'question' }
+    ]);
+  }
+
+  if (t.includes('historical comparison')) {
+    const intensity = await json<any>('https://api.carbonintensity.org.uk/intensity/date');
+    const rows = (intensity?.data ?? []).map((row: any) => row?.intensity?.actual ?? row?.intensity?.forecast).filter((v: any) => Number.isFinite(v));
+    const latest = rows.at(-1), average = rows.length ? rows.reduce((a: number, b: number) => a + b, 0) / rows.length : null;
+    return answer(topic, label, [
+      { label: 'Latest carbon intensity', value: latest != null ? `${Math.round(latest)} gCO₂/kWh` : 'Unavailable', kind: latest != null ? 'observed' : 'question' },
+      { label: 'Today’s sampled average', value: average != null ? `${Math.round(average)} gCO₂/kWh` : 'Unavailable', kind: average != null ? 'observed' : 'question' },
+      { label: 'Day range', value: rows.length ? `${Math.round(Math.min(...rows))}–${Math.round(Math.max(...rows))} gCO₂/kWh` : 'Unavailable', kind: rows.length ? 'observed' : 'question' },
+      { label: 'Insight', value: latest != null && average != null ? (latest < average ? 'The grid is currently cleaner than today’s sampled average, consistent with strong low-carbon generation, but not proof of cause.' : 'The grid is currently dirtier than today’s sampled average; compare wind output and demand before inferring why.') : 'Historical grid comparison is unavailable right now.', kind: 'interpretation' },
+      { label: 'Next evidence', value: 'Wind generation, demand and interconnectors for the same interval', kind: 'question' }
+    ]);
+  }
+
   const [weather, place] = await Promise.all([
     Number.isFinite(lat) && Number.isFinite(lon) ? json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,weather_code,wind_speed_10m&timezone=auto`) : null,
     Number.isFinite(lat) && Number.isFinite(lon) ? json<any>(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=en`, { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }) : null
@@ -197,7 +321,7 @@ export async function GET(request: Request) {
   facts.push({ label: 'Place context', value: placeName || label, kind: placeName ? 'verified' : 'question' });
 
   let insight = 'This layer grounds the story in current local conditions rather than treating the original signal as self-explanatory.';
-  if (t.includes('aurora') || (t.includes('cloud') && label.toLowerCase().includes('aurora'))) insight = current ? `Cloud cover is the immediate visibility constraint: ${Math.round(current.cloud_cover)}% coverage means aurora or sky observation is ${current.cloud_cover > 70 ? 'unlikely without a break in clouds' : current.cloud_cover > 30 ? 'possible only through gaps' : 'more favorable, darkness permitting'}.` : insight;
+  if (t.includes('aurora') || (t.includes('cloud') && subject.includes('aurora'))) insight = current ? `Cloud cover is the immediate visibility constraint: ${Math.round(current.cloud_cover)}% coverage means aurora or sky observation is ${current.cloud_cover > 70 ? 'unlikely without a break in clouds' : current.cloud_cover > 30 ? 'possible only through gaps' : 'more favorable, darkness permitting'}.` : insight;
   if (t.includes('wind') || t.includes('fire')) insight = current ? `Surface wind is a real measured variable here (${Math.round(current.wind_speed_10m)} km/h), but Elsewhere does not infer fire spread without fuel, humidity and authoritative incident data.` : insight;
   if (t.includes('tsunami')) insight = 'A tsunami cannot be inferred from an earthquake alone. The next evidence needed is an official tsunami bulletin, sea-level gauge anomaly or verified coastal observation.';
   if (t.includes('camera')) insight = 'No direct camera feed is assumed. A useful next step is finding an authorized local camera or official stream, then comparing it with the measured conditions shown here.';
