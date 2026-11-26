@@ -256,6 +256,7 @@ function connectionReason(a: Discovery, b: Discovery): string | null {
   const pair = [a.id, b.id].join('|');
   if (pair.includes('solar-wind') && pair.includes('aurora-watch')) return 'Solar wind and magnetic orientation upstream can shape aurora conditions downstream.';
   if (pair.includes('solar-wind') && pair.includes('iss-over-earth')) return 'Both are part of the same near-Earth space environment.';
+  if (pair.includes('aurora-watch') && pair.includes('camera-utsjoki-aurora')) return 'The K-index measurement and the Lapland sky camera are two halves of the same checklist — one measures the cause, the other shows the effect.';
   if (pair.includes('launch') && pair.includes('solar-wind')) return 'Space weather is operational context for spacecraft and communications, not a launch decision by itself.';
   if (pair.includes('tokyo-air-corridor') && pair.includes('tokyo-waking')) return 'Aviation, weather and air quality are simultaneous layers over the same megacity.';
   if (pair.includes('nazare-swell') && pair.includes('storm')) return 'Ocean waves and storm systems can share atmospheric forcing.';
@@ -473,9 +474,25 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   }
 
   const latestKp = Array.isArray(kp?.[0]) ? kp.filter(Array.isArray).slice(1).at(-1) : kp?.at(-1);
-  if (latestKp) out.push({ id: 'aurora-watch', template: 'atmosphere', title: 'Aurora conditions are being measured above the polar night', kicker: 'NOAA space weather', visual: 'aurora', score: 74 + Number(latestKp?.Kp ?? latestKp?.[1] ?? 0) * 3, freshness: 'updated minutes ago', mediaImage: 'https://services.swpc.noaa.gov/images/aurora-forecast-northern-hemisphere.jpg', mediaAlt: 'NOAA northern hemisphere aurora forecast', location: { lat: 64.2, lon: -21.1, label: 'Iceland / polar oval' }, summary: 'The planetary K index is a real-time geomagnetic measurement. Aurora visibility still depends on darkness and cloud cover, so Elsewhere labels the opportunity as conditional rather than a promise.', facts: [
-    { label: 'Kp index', value: String(latestKp?.Kp ?? latestKp?.[1] ?? "—"), kind: 'observed' }, { label: 'Visibility', value: 'Depends on clouds and darkness', kind: 'interpretation' }, { label: 'Camera match', value: 'Needs local verification', kind: 'question' }
-  ], sources: [src('NOAA SWPC K-index', 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'), src('NOAA aurora forecast', 'https://www.swpc.noaa.gov/products/aurora-30-minute-forecast')], related: ['Cloud cover', 'Northern webcams', 'Solar wind speed'] });
+  const kpValue = Number(latestKp?.Kp ?? latestKp?.[1] ?? 0);
+  const utsjokiIndex = featuredCameraIds.indexOf('utsjoki-aurora');
+  const utsjokiSky = utsjokiIndex >= 0 && Array.isArray(cameraWeather) ? cameraWeather[utsjokiIndex]?.current : null;
+  const skyDark = utsjokiSky ? !utsjokiSky.is_day : null;
+  const skyCloud = utsjokiSky ? Number(utsjokiSky.cloud_cover) : null;
+  const auroraAligned = skyDark === true && skyCloud != null && skyCloud < 45 && kpValue >= 3;
+  if (latestKp) out.push({ id: 'aurora-watch', template: 'atmosphere',
+    title: auroraAligned ? 'Aurora conditions are aligned over Lapland right now — the camera is the check' : 'Aurora conditions are being measured above the polar night',
+    kicker: auroraAligned ? 'Live composite: space weather + darkness + sky clarity' : 'NOAA space weather', visual: 'aurora',
+    score: 74 + kpValue * 3 + (auroraAligned ? 14 : 0), freshness: 'updated minutes ago', mediaImage: 'https://services.swpc.noaa.gov/images/aurora-forecast-northern-hemisphere.jpg', mediaAlt: 'NOAA northern hemisphere aurora forecast', location: { lat: 69.9, lon: 27.0, label: 'Utsjoki, Finnish Lapland' },
+    summary: auroraAligned
+      ? 'Three independent signals currently agree over Finnish Lapland: geomagnetic activity is elevated, it is dark, and the sky is mostly clear. That combination is the actual aurora checklist — the live sky camera in Utsjoki is the ground-truth check, one tap away.'
+      : 'The planetary K index is a real-time geomagnetic measurement. Aurora visibility still depends on darkness and cloud cover, so Elsewhere labels the opportunity as conditional rather than a promise.',
+    facts: [
+    { label: 'Kp index', value: String(latestKp?.Kp ?? latestKp?.[1] ?? "—"), kind: 'observed' },
+    { label: 'Darkness at the camera', value: skyDark == null ? 'Unavailable' : skyDark ? 'Yes — polar night' : 'No — daylight', kind: skyDark == null ? 'question' : 'observed' },
+    { label: 'Cloud cover at the camera', value: skyCloud == null ? 'Unavailable' : `${Math.round(skyCloud)}%`, kind: skyCloud == null ? 'question' : 'observed' },
+    { label: 'Composite verdict', value: auroraAligned ? 'Conditions aligned — check the live sky' : skyDark === false ? 'Blocked by daylight' : skyCloud != null && skyCloud >= 45 ? 'Blocked by cloud' : kpValue < 3 ? 'Geomagnetic activity too quiet' : 'Conditional', kind: 'interpretation' }
+  ], sources: [src('NOAA SWPC K-index', 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'), src('NOAA aurora forecast', 'https://www.swpc.noaa.gov/products/aurora-30-minute-forecast'), src('Open-Meteo sky conditions at Utsjoki', 'https://open-meteo.com/')], related: ['Cloud cover', 'Northern webcams', 'Solar wind speed'] });
 
   const flightRows = flights?.ac ?? [];
   const flightCount = flights?.total ?? flightRows.length;
