@@ -530,11 +530,22 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const copy = cameraCopy[camera.id];
     if (!copy) return;
     const current = Array.isArray(cameraWeather) ? cameraWeather[index]?.current : null;
+    const night = current ? !current.is_day : false;
+    const nightAdjustment = !current ? 0 : camera.kind === 'aurora' ? (night ? 5 : -16) : camera.kind === 'city' ? (night ? 2 : 0) : (night ? -14 : 0);
+    const timeContext = !current ? '' : night
+      ? camera.kind === 'aurora'
+        ? ' It is dark there right now — exactly when this camera matters.'
+        : camera.kind === 'city'
+          ? ' It is night there now — the city is lit up and working its other shift.'
+          : ' It is night at the camera site, so expect darkness or infrared rather than scenery; that is honest live texture, not a broken feed.'
+      : camera.kind === 'aurora'
+        ? ' It is daylight there now, so the sky watch is quiet; aurora needs darkness.'
+        : ' It is daylight there right now — the scene is fully visible.';
     out.push({
       id: `camera-${camera.id}`, template: copy.template, title: copy.title, kicker: 'Live look-in', visual: copy.visual,
-      score: Math.min(92, camera.quality - 2), freshness: 'live camera + current weather', mediaVideo: cameraEmbed(camera),
+      score: Math.min(92, camera.quality - 2) + nightAdjustment, freshness: 'live camera + current weather', mediaVideo: cameraEmbed(camera),
       location: { lat: camera.lat, lon: camera.lon, label: camera.place },
-      summary: copy.summary,
+      summary: copy.summary + timeContext,
       facts: [
         { label: 'Camera source', value: 'Authorized public YouTube embed', kind: 'verified' },
         { label: 'Temperature', value: current ? `${Math.round(current.temperature_2m)}°C` : 'Unavailable', kind: current ? 'observed' : 'question' },
