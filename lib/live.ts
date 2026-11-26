@@ -26,7 +26,7 @@ async function text(url: string): Promise<string | null> {
 }
 
 function xmlValue(block: string, tag: string) {
-  const match = block.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</${tag}>`));
+  const match = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`));
   return match?.[1]?.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim() ?? '';
 }
 
@@ -37,6 +37,26 @@ function parseGoogleNews(xml: string | null) {
     const source = xmlValue(block, 'source');
     return { title: xmlValue(block, 'title'), url: xmlValue(block, 'link'), seendate: xmlValue(block, 'pubDate'), domain: source || 'Google News', sourcecountry: 'Unknown', language: 'RSS edition' };
   }).filter(article => article.title);
+}
+
+function parseGdacs(xml: string | null) {
+  if (!xml) return null;
+  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(match => {
+    const block = match[1];
+    const decode = (value: string) => value.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    const alert = xmlValue(block, 'gdacs:alertlevel') || 'Green';
+    const severityBlock = block.match(/<gdacs:severity[^>]*value="([^"]+)"[^>]*>([\s\S]*?)<\/gdacs:severity>/);
+    const severity = severityBlock?.[2]?.trim() || xmlValue(block, 'gdacs:severity');
+    return {
+      title: xmlValue(block, 'title'), link: decode(xmlValue(block, 'link')), published: xmlValue(block, 'gdacs:datemodified') || xmlValue(block, 'pubDate'),
+      lat: Number(xmlValue(block, 'geo:lat')), lon: Number(xmlValue(block, 'geo:long')), eventType: xmlValue(block, 'gdacs:eventtype'), alert,
+      alertScore: Number(xmlValue(block, 'gdacs:alertscore')) || ({ Red: 3, Orange: 2, Green: 1 } as Record<string, number>)[alert] || 0,
+      severity, country: xmlValue(block, 'gdacs:country'), population: xmlValue(block, 'gdacs:population'), vulnerability: xmlValue(block, 'gdacs:vulnerability'),
+      image: block.match(/<enclosure[^>]+url="([^"]+)"/)?.[1]
+    };
+  }).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lon));
+  const recentHazards = items.filter(item => item.eventType !== 'DR' && Date.now() - new Date(item.published).getTime() < 1000 * 60 * 60 * 72);
+  return (recentHazards.length ? recentHazards : items).sort((a, b) => b.alertScore - a.alertScore || new Date(b.published).getTime() - new Date(a.published).getTime())[0] ?? null;
 }
 
 function xrayClass(flux?: number) {
@@ -87,13 +107,12 @@ function connectDiscoveries(out: Discovery[]) {
 
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
-  const [iss, quakes, eonet, kp, launches, tides, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation] = await Promise.all([
+  const [iss, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
     json<any>('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=10'),
     json<any[]>('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
     json<any>('https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=4&mode=detailed'),
-    json<any>('https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?date=latest&station=9414290&product=water_level&datum=MLLW&time_zone=gmt&units=english&format=json'),
     json<any>('https://api.open-meteo.com/v1/forecast?latitude=35.68&longitude=139.69&current=temperature_2m,weather_code,wind_speed_10m&daily=sunrise,sunset&timezone=auto'),
     json<any[]>('https://services.swpc.noaa.gov/json/ace/swepam/ace_swepam_1h.json'),
     json<any[]>('https://services.swpc.noaa.gov/json/ace/mag/ace_mag_1h.json'),
@@ -102,7 +121,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://air-quality-api.open-meteo.com/v1/air-quality?latitude=35.68&longitude=139.69&current=pm2_5,pm10,ozone,aerosol_optical_depth&timezone=auto'),
     json<any>('https://api.adsb.lol/v2/lat/35.68/lon/139.69/dist/100'),
     json<any>('https://api.carbonintensity.org.uk/intensity'),
-    json<any>('https://api.carbonintensity.org.uk/generation')
+    json<any>('https://api.carbonintensity.org.uk/generation'),
+    text('https://www.gdacs.org/xml/rss.xml')
   ]);
   const out: Discovery[] = [];
   if (iss?.latitude != null) out.push({
@@ -157,6 +177,26 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       { label: 'Category', value: cat, kind: 'verified' }, { label: 'Last geometry', value: ago(geom.date), kind: 'observed' }, { label: 'Live imagery', value: 'Not assumed', kind: 'question' }
     ], sources: [src('NASA EONET', evt.link ?? 'https://eonet.gsfc.nasa.gov/')], related: ['Wind direction', 'Nearby cameras', 'Historical comparison'] });
   }
+  const gdacs = parseGdacs(gdacsXml);
+  if (gdacs) {
+    const typeName = { EQ: 'earthquake', TC: 'tropical cyclone', FL: 'flood', VO: 'volcanic activity', TS: 'tsunami', DR: 'drought' }[gdacs.eventType as 'EQ' | 'TC' | 'FL' | 'VO' | 'TS' | 'DR'] ?? 'natural disaster';
+    const visual = gdacs.eventType === 'VO' || gdacs.eventType === 'EQ' ? 'seismic' : gdacs.eventType === 'DR' ? 'fire' : 'aurora';
+    const regionParts = (gdacs.country || '').split(',').map((part: string) => part.trim()).filter(Boolean);
+    const region = regionParts.length > 2 ? `${regionParts.slice(0, 2).join(', ')} +${regionParts.length - 2} more` : regionParts.join(', ');
+    out.push({
+      id: `gdacs-${gdacs.eventType}-${gdacs.lat.toFixed(1)}-${gdacs.lon.toFixed(1)}`, template: gdacs.eventType === 'EQ' || gdacs.eventType === 'VO' ? 'geology' : gdacs.eventType === 'FL' ? 'ocean' : 'atmosphere',
+      title: `${gdacs.alert} ${typeName} signal near ${region || 'an exposed region'}`, kicker: 'GDACS humanitarian disaster model', visual, score: 72 + gdacs.alertScore * 8,
+      freshness: gdacs.published ? ago(gdacs.published) : 'current bulletin', mediaImage: gdacs.image, mediaAlt: `GDACS impact map for ${gdacs.title}`,
+      location: { lat: gdacs.lat, lon: gdacs.lon, label: region || 'GDACS event area' },
+      summary: 'GDACS combines event measurements with exposure and vulnerability models to estimate potential humanitarian impact. The alert is a model output, not confirmation of damage on the ground.',
+      facts: [
+        { label: 'Alert level', value: gdacs.alert, kind: 'interpretation' }, { label: 'Severity', value: gdacs.severity || '—', kind: 'observed' },
+        { label: 'Impact model', value: 'Exposure + vulnerability', kind: 'verified' }, { label: 'Confirmed damage', value: 'Not established', kind: 'question' }
+      ],
+      sources: [src('GDACS disaster alert feed', gdacs.link || 'https://www.gdacs.org/')], related: ['Exposure model', 'Weather context', 'Relief data']
+    });
+  }
+
   const latestKp = Array.isArray(kp?.[0]) ? kp.filter(Array.isArray).slice(1).at(-1) : kp?.at(-1);
   if (latestKp) out.push({ id: 'aurora-watch', template: 'atmosphere', title: 'Aurora conditions are being measured above the polar night', kicker: 'NOAA space weather', visual: 'aurora', score: 74 + Number(latestKp?.Kp ?? latestKp?.[1] ?? 0) * 3, freshness: 'updated minutes ago', mediaImage: 'https://services.swpc.noaa.gov/images/aurora-forecast-northern-hemisphere.jpg', mediaAlt: 'NOAA northern hemisphere aurora forecast', location: { lat: 64.2, lon: -21.1, label: 'Iceland / polar oval' }, summary: 'The planetary K index is a real-time geomagnetic measurement. Aurora visibility still depends on darkness and cloud cover, so Elsewhere labels the opportunity as conditional rather than a promise.', facts: [
     { label: 'Kp index', value: String(latestKp?.Kp ?? latestKp?.[1] ?? "—"), kind: 'observed' }, { label: 'Visibility', value: 'Depends on clouds and darkness', kind: 'interpretation' }, { label: 'Camera match', value: 'Needs local verification', kind: 'question' }
@@ -188,10 +228,6 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     { label: 'Carbon intensity', value: carbonNow?.actual ? `${carbonNow.actual} gCO₂/kWh` : carbonNow?.forecast ? `${carbonNow.forecast} forecast` : '—', kind: carbonNow?.actual ? 'observed' : 'interpretation' }, { label: 'Wind share', value: `${windShare}%`, kind: 'observed' }, { label: 'Gas share', value: `${gasShare}%`, kind: 'observed' }, { label: 'Grid stress', value: 'Not inferable', kind: 'question' }
   ], sources: [src('Carbon Intensity API', 'https://carbonintensity.org.uk/')], related: ['Grid weather context', 'Night lights', 'Historical comparison'] });
 
-  const tide = tides?.data?.[0];
-  if (tide) out.push({ id: 'sf-tide-pulse', template: 'ocean', title: 'San Francisco Bay is breathing with the tide', kicker: 'NOAA coastal observation', visual: 'ocean', score: 48, freshness: ago(tide.t), location: { lat: 37.8, lon: -122.47, label: 'San Francisco Bay' }, summary: 'A tide gauge is measuring the bay right now. As supporting context, it becomes useful when connected to storm surge, tsunami questions or coastal infrastructure rather than treated as a standalone spectacle.', facts: [
-    { label: 'Water level', value: `${tide.v} ft`, kind: 'observed' }, { label: 'Station', value: 'NOAA 9414290', kind: 'verified' }, { label: 'Coastal impact', value: 'Depends on local terrain', kind: 'interpretation' }
-  ], sources: [src('NOAA CO-OPS', 'https://tidesandcurrents.noaa.gov/')], related: ['Golden Gate currents', 'Storm surge', 'Coastal cameras'] });
   if (tokyo?.current) out.push({ id: 'tokyo-waking', mediaVideo: 'https://www.youtube.com/embed/5B4LmH4JbnY?rel=0', template: 'city', title: 'Tokyo is moving through its evening atmosphere', kicker: 'Open-Meteo city pulse', visual: 'city', score: 66, freshness: 'current conditions', location: { lat: 35.68, lon: 139.69, label: 'Tokyo' }, summary: 'Weather, air quality, aircraft activity and local time combine into a portrait of a megacity changing state. Air quality is modeled current data, not a direct roadside sensor reading.', facts: [
     { label: 'Temperature', value: `${Math.round(tokyo.current.temperature_2m)}°C`, kind: 'observed' }, { label: 'Wind', value: `${Math.round(tokyo.current.wind_speed_10m)} km/h`, kind: 'observed' }, { label: 'PM2.5', value: tokyoAir?.current?.pm2_5 != null ? `${Math.round(tokyoAir.current.pm2_5)} μg/m³ model` : '—', kind: 'interpretation' }, { label: 'Sunrise', value: tokyo.daily?.sunrise?.[0]?.slice(11) ?? '—', kind: 'verified' }
   ], sources: [src('Open-Meteo', 'https://open-meteo.com/'), src('Open-Meteo air quality', 'https://open-meteo.com/en/docs/air-quality-api')], related: ['Transit pulse', 'City cameras', 'Night lights'] });

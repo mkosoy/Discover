@@ -11,6 +11,22 @@ async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
   } catch { return null; }
 }
 
+async function text(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(url, { signal: controller.signal, next: { revalidate: 300 } });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    return await res.text();
+  } catch { return null; }
+}
+
+function xmlValue(block: string, tag: string) {
+  const match = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`));
+  return match?.[1]?.trim() ?? '';
+}
+
 function weatherText(code?: number) {
   if (code == null) return 'Current conditions';
   if (code === 0) return 'Clear sky';
@@ -23,23 +39,53 @@ function weatherText(code?: number) {
   return 'Changing weather';
 }
 
+function distanceKm(latA: number, lonA: number, latB: number, lonB: number) {
+  const rad = Math.PI / 180;
+  const dLat = (latB - latA) * rad;
+  const dLon = (lonB - lonA) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(latA * rad) * Math.cos(latB * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const lat = Number(url.searchParams.get('lat'));
   const lon = Number(url.searchParams.get('lon'));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return NextResponse.json({ error: 'invalid coordinates' }, { status: 400 });
-  const [weather, place, air] = await Promise.all([
-    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,weather_code,wind_speed_10m,wind_direction_10m&timezone=auto`),
+  const [weather, place, air, quakes, gdacsXml] = await Promise.all([
+    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,weather_code,wind_speed_10m,wind_direction_10m,is_day&daily=sunrise,sunset&timezone=auto`),
     json<any>(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=en`, { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }),
-    json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,ozone&timezone=auto`)
+    json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,ozone&timezone=auto`),
+    json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson'),
+    text('https://www.gdacs.org/xml/rss.xml')
   ]);
   const current = weather?.current;
   const address = place?.address ?? {};
   const placeName = place?.display_name || [address.city, address.town, address.village, address.municipality, address.county, address.state, address.country].filter(Boolean).join(', ') || (Math.abs(lat) > 66 ? 'Polar region' : 'Open ocean / unpopulated area');
+  const nearbyQuakes = (quakes?.features ?? [])
+    .map((feature: any) => ({ feature, distance: distanceKm(lat, lon, feature.geometry?.coordinates?.[1], feature.geometry?.coordinates?.[0]) }))
+    .filter((row: any) => Number.isFinite(row.distance) && row.distance <= 500)
+    .sort((a: any, b: any) => a.distance - b.distance);
+  const nearestQuake = nearbyQuakes[0];
+  const gdacsEvents = (gdacsXml ? [...gdacsXml.matchAll(/<item>([\s\S]*?)<\/item>/g)] : [])
+    .map(match => {
+      const block = match[1];
+      return { title: xmlValue(block, 'title'), alert: xmlValue(block, 'gdacs:alertlevel') || 'Green', type: xmlValue(block, 'gdacs:eventtype'), lat: Number(xmlValue(block, 'geo:lat')), lon: Number(xmlValue(block, 'geo:long')) };
+    })
+    .filter(event => Number.isFinite(event.lat) && Number.isFinite(event.lon))
+    .map(event => ({ ...event, distance: distanceKm(lat, lon, event.lat, event.lon) }))
+    .filter(event => event.distance <= 1000)
+    .sort((a, b) => a.distance - b.distance);
+  const nearestHazard = gdacsEvents[0];
+  const daylight = current?.is_day == null ? null : current.is_day ? 'Daylight now' : 'Dark now';
   const facts = [
     current ? { label: 'Weather', value: `${weatherText(current.weather_code)}, ${Math.round(current.temperature_2m)}°C`, kind: 'observed' } : { label: 'Weather', value: 'Unavailable', kind: 'question' },
     current ? { label: 'Wind', value: `${Math.round(current.wind_speed_10m)} km/h from ${Math.round(current.wind_direction_10m)}°`, kind: 'observed' } : null,
     current ? { label: 'Cloud cover', value: `${Math.round(current.cloud_cover)}%`, kind: 'observed' } : null,
+    daylight ? { label: 'Light', value: daylight, kind: 'observed' } : null,
+    { label: 'Recent seismicity', value: nearbyQuakes.length ? `${nearbyQuakes.length} recorded within 500 km in 24h` : 'None recorded within 500 km in 24h', kind: nearbyQuakes.length ? 'observed' : 'verified' },
+    nearestQuake ? { label: 'Nearest quake', value: `M${Number(nearestQuake.feature.properties?.mag ?? 0).toFixed(1)}, ${Math.round(nearestQuake.distance)} km away`, kind: 'observed' } : null,
+    nearestHazard ? { label: 'Hazard model nearby', value: `${nearestHazard.alert} ${nearestHazard.type || 'event'}, ${Math.round(nearestHazard.distance)} km away`, kind: 'interpretation' } : { label: 'Hazard model nearby', value: 'No GDACS alert within 1,000 km', kind: 'verified' },
     air?.current?.pm2_5 != null ? { label: 'PM2.5', value: `${Math.round(air.current.pm2_5)} μg/m³ model`, kind: 'interpretation' } : null,
     weather?.elevation != null ? { label: 'Elevation', value: `${Math.round(weather.elevation)} m`, kind: 'verified' } : null,
     weather?.timezone ? { label: 'Local timezone', value: weather.timezone.replace('_', ' '), kind: 'verified' } : null,
@@ -51,6 +97,12 @@ export async function GET(request: Request) {
       locality: address.city ?? address.town ?? address.village ?? place?.name, country: address.country,
       timezone: weather?.timezone,
       facts,
+      sources: [
+        { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/', retrievedAt: new Date().toISOString() },
+        { label: 'OpenStreetMap Nominatim reverse geocode', url: 'https://nominatim.openstreetmap.org/', retrievedAt: new Date().toISOString() },
+        { label: 'USGS 24-hour earthquake feed', url: 'https://earthquake.usgs.gov/earthquakes/feed/', retrievedAt: new Date().toISOString() },
+        { label: 'GDACS current disaster alerts', url: 'https://www.gdacs.org/', retrievedAt: new Date().toISOString() }
+      ],
       retrievedAt: new Date().toISOString()
     }
   });

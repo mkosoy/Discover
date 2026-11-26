@@ -119,10 +119,7 @@ export default function DiscoverApp() {
         location: { lat: point.lat, lon: point.lon, label: place.label },
         summary: 'You selected this point directly. Elsewhere is grounding it in current modeled weather, air quality and geography, then connecting it to the nearest concurrent live signals rather than pretending local events are known.',
         facts: place.facts ?? [], connections: nearest,
-        sources: [
-          { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/', retrievedAt: place.retrievedAt ?? new Date().toISOString() },
-          { label: 'OpenStreetMap Nominatim reverse geocode', url: 'https://nominatim.openstreetmap.org/', retrievedAt: place.retrievedAt ?? new Date().toISOString() }
-        ],
+        sources: place.sources ?? [],
         related: ['Local weather', 'Nearby signals', 'Night lights']
       });
     } catch {
