@@ -445,7 +445,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const region = regionParts.length > 2 ? `${regionParts.slice(0, 2).join(', ')} +${regionParts.length - 2} more` : regionParts.join(', ');
     out.push({
       id: `gdacs-${gdacs.eventType}-${gdacs.lat.toFixed(1)}-${gdacs.lon.toFixed(1)}`, template: gdacs.eventType === 'EQ' || gdacs.eventType === 'VO' ? 'geology' : gdacs.eventType === 'FL' ? 'ocean' : gdacs.eventType === 'WF' ? 'wildfire' : 'atmosphere',
-      title: `${gdacs.alert} ${typeName} signal near ${region || 'an exposed region'}`, kicker: 'GDACS humanitarian disaster model', visual, score: 72 + gdacs.alertScore * 8,
+      title: gdacs.alert === 'Green' ? `${typeName.charAt(0).toUpperCase() + typeName.slice(1)} being tracked near ${region || 'an exposed region'}` : `${gdacs.alert} alert: ${typeName} near ${region || 'an exposed region'}`, kicker: 'GDACS humanitarian disaster model', visual, score: 68 + gdacs.alertScore * 9,
       freshness: gdacs.published ? ago(gdacs.published) : 'current bulletin', mediaImage: gdacs.image, mediaAlt: `GDACS impact map for ${gdacs.title}`,
       location: { lat: gdacs.lat, lon: gdacs.lon, label: region || 'GDACS event area' },
       summary: 'GDACS combines event measurements with exposure and vulnerability models to estimate potential humanitarian impact. The alert is a model output, not confirmation of damage on the ground.',
