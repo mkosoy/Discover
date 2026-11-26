@@ -218,8 +218,8 @@ function SkyTraffic({ positions }: { positions: { lat: number; lon: number }[] }
     ref.current.instanceMatrix.needsUpdate = true;
   }, [positions]);
   return <instancedMesh key={`sky-${positions.length}`} ref={ref} args={[undefined, undefined, Math.max(1, positions.length)]}>
-    <sphereGeometry args={[.006, 6, 6]} />
-    <meshBasicMaterial color="#ffe9b8" transparent opacity={.5} />
+    <sphereGeometry args={[.0095, 6, 6]} />
+    <meshBasicMaterial color="#ffd98a" transparent opacity={.62} />
   </instancedMesh>;
 }
 
