@@ -75,19 +75,20 @@ function storyClusters(articles: any[]) {
   return { clusters, independent: clusters.length, repeated: clusters.reduce((sum, group) => sum + Math.max(0, group.length - 1), 0), largest: clusters[0] ?? [] };
 }
 
-function attentionCadence(articles: any[]) {
+function attentionCadence(articles: any[], hours = 24) {
   const values = Array(12).fill(0) as number[];
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - hours * 60 * 60 * 1000;
+  const binHours = hours / 12;
   let counted = 0;
   for (const article of articles) {
     const time = newsTime(article.seendate);
     if (!Number.isFinite(time) || time < cutoff) continue;
     const ageHours = (Date.now() - time) / 3600000;
-    const index = Math.max(0, Math.min(11, Math.floor((24 - ageHours) / 2)));
+    const index = Math.max(0, Math.min(11, Math.floor((hours - ageHours) / binHours)));
     values[index] += 1;
     counted += 1;
   }
-  return counted ? [{ label: 'Attention items / 2h', values, display: `${counted} sampled` }] : [];
+  return counted ? [{ label: `Attention items / ${binHours}h`, values, display: `${counted} sampled` }] : [];
 }
 
 function parseGdacs(xml: string | null) {
@@ -171,6 +172,14 @@ function shortHash(value: string) {
   let hash = 0;
   for (let index = 0; index < value.length; index += 1) hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
   return hash.toString(36);
+}
+
+function distanceKm(latA: number, lonA: number, latB: number, lonB: number) {
+  const rad = Math.PI / 180;
+  const dLat = (latB - latA) * rad;
+  const dLon = (lonB - lonA) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(latA * rad) * Math.cos(latB * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
 function connectionReason(a: Discovery, b: Discovery): string | null {
@@ -443,8 +452,9 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
   const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
   const currentYear = new Date().getFullYear();
-  const [quake, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace] = await Promise.all([
+  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
+    json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
     json<any>('https://api.gdeltproject.org/api/v2/doc/doc?query=ukraine%20conflict&mode=ArtList&maxrecords=30&format=json&timespan=24h'),
     text('https://news.google.com/rss/search?q=Ukraine%20conflict%20when%3A1d&hl=en-US&gl=US&ceid=US%3Aen'),
@@ -463,6 +473,24 @@ export async function getInvestigations(): Promise<Investigation[]> {
     json<any>('https://api.adsb.lol/v2/lat/51.1/lon/10.4/dist/250')
   ]);
   const q = quake?.features?.[0];
+  const [quakeNewsXml, quakeWeather] = q ? await Promise.all([
+    text(`https://news.google.com/rss/search?q=${encodeURIComponent(`${q.properties.place} earthquake when:2d`)}&hl=en-US&gl=US&ceid=US%3Aen`),
+    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${q.geometry.coordinates[1]}&longitude=${q.geometry.coordinates[0]}&current=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m&timezone=auto`)
+  ]) : [null, null];
+  const quakeArticles = parseGoogleNews(quakeNewsXml);
+  const quakeArticleTimes = quakeArticles.map((article: any) => newsTime(article.seendate)).filter(Number.isFinite);
+  const quakeLatestCoverage = quakeArticleTimes.length ? ago(Math.max(...quakeArticleTimes)) : 'unknown';
+  const regionalQuakes = q ? (allQuakes?.features ?? [])
+    .map((feature: any) => ({
+      feature,
+      time: Number(feature.properties?.time ?? 0),
+      distance: distanceKm(q.geometry.coordinates[1], q.geometry.coordinates[0], feature.geometry?.coordinates?.[1], feature.geometry?.coordinates?.[0])
+    }))
+    .filter((row: any) => Number.isFinite(row.distance) && row.distance <= 300) : [];
+  const aftershocks = q ? regionalQuakes.filter((row: any) => row.time > q.properties.time && row.feature.id !== q.id) : [];
+  const priorDayCount = q ? regionalQuakes.filter((row: any) => row.time < q.properties.time && q.properties.time - row.time < 86400000).length : 0;
+  const largestAftershock = aftershocks.sort((a: any, b: any) => Number(b.feature.properties?.mag ?? 0) - Number(a.feature.properties?.mag ?? 0))[0];
+  const hoursSinceQuake = q ? Math.max(1, (Date.now() - Number(q.properties.time)) / 3600000) : 1;
   const out: Investigation[] = [];
   const cityNames = ['Kyiv', 'Kharkiv', 'Dnipro', 'Odesa', 'Lviv'];
   const weatherRows = Array.isArray(ukraineWeather) ? ukraineWeather : ukraineWeather ? [ukraineWeather] : [];
@@ -660,14 +688,48 @@ export async function getInvestigations(): Promise<Investigation[]> {
 
   if (q) {
     const [lon, lat, depth] = q.geometry.coordinates;
-    out.push({ id: 'seismic-ripple', title: 'What follows a significant earthquake?', dek: 'An evidence-first reconstruction combining USGS observations, humanitarian-data availability and attention gaps.', mediaImage: worldviewSnapshot(lat, lon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${q.properties.place}`, status: 'uncertain', location: { lat, lon, label: q.properties.place }, updatedAt: new Date(q.properties.time).toISOString(), confidence: 52, metrics: [
-      { label: 'Magnitude', value: q.properties.mag?.toFixed(1) ?? '—' }, { label: 'Depth', value: `${Math.round(depth)} km` }, { label: 'Felt reports', value: String(q.properties.felt ?? 0), delta: 'USGS crowd reports' }, { label: 'Impact evidence', value: 'Unresolved', delta: 'needs corroboration' }
-    ], evidence: [
-      { kind: 'observed', text: 'NASA MODIS imagery provides latest-available visual context for the broad region; orbital gaps, clouds and timing mean it does not verify damage from this earthquake.', source: 'https://worldview.earthdata.nasa.gov/' },
-      { kind: 'observed', text: `USGS recorded magnitude ${q.properties.mag?.toFixed(1)} at ${Math.round(depth)} km depth near ${q.properties.place}.`, source: q.properties.url },
-      { kind: 'interpretation', text: 'Humanitarian consequence cannot be inferred from magnitude alone; depth, exposure, building stock and reporting lag matter.' },
-      { kind: 'question', text: 'What independent evidence would show whether infrastructure, shelter or lifeline services are deteriorating?' }
-    ], sources: [{ label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/' }, { label: 'USGS significant earthquakes', url: 'https://earthquake.usgs.gov/' }, { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' }] });
+    const currentQuakeWeather = quakeWeather?.current;
+    out.push({
+      id: 'seismic-ripple',
+      title: 'What follows a significant earthquake?',
+      dek: 'An evidence-first reconstruction combining the mainshock, later seismic sequence, current environmental exposure, satellite context and attention gaps.',
+      mediaImage: worldviewSnapshot(lat, lon, 8, 12),
+      mediaAlt: `NASA MODIS latest available true-color satellite swath around ${q.properties.place}`,
+      status: 'uncertain',
+      location: { lat, lon, label: q.properties.place },
+      updatedAt: new Date(q.properties.time).toISOString(),
+      confidence: 58,
+      metrics: [
+        { label: 'Magnitude', value: q.properties.mag?.toFixed(1) ?? '—', delta: `${Math.round(depth)} km deep` },
+        { label: 'Later nearby events', value: String(aftershocks.length), delta: `within 300 km since mainshock` },
+        { label: 'Largest later event', value: largestAftershock ? `M${Number(largestAftershock.feature.properties?.mag ?? 0).toFixed(1)}` : 'None in catalog', delta: largestAftershock ? ago(largestAftershock.time) : 'USGS all-week catalog' },
+        { label: 'Prior day nearby', value: String(priorDayCount), delta: 'context, not a baseline model' },
+        { label: 'Attention sample', value: String(quakeArticles.length), delta: quakeArticles.length ? `latest ${quakeLatestCoverage}` : 'Google News unavailable' },
+        { label: 'Felt reports', value: String(q.properties.felt ?? 0), delta: 'USGS crowd reports' }
+      ],
+      evidence: [
+        { kind: 'observed', text: 'NASA MODIS imagery provides latest-available visual context for the broad region; orbital gaps, clouds and timing mean it does not verify damage from this earthquake.', source: 'https://worldview.earthdata.nasa.gov/' },
+        { kind: 'observed', text: `USGS recorded magnitude ${q.properties.mag?.toFixed(1)} at ${Math.round(depth)} km depth near ${q.properties.place}.`, source: q.properties.url },
+        { kind: 'observed', text: `The USGS all-week catalog currently lists ${aftershocks.length} later earthquakes within 300 km of the mainshock, about ${(aftershocks.length / hoursSinceQuake).toFixed(1)}/hour since the event; ${priorDayCount} cataloged events occurred in the same broad region during the prior 24h. Catalog completeness varies by magnitude and network coverage.`, source: 'https://earthquake.usgs.gov/earthquakes/feed/' },
+        largestAftershock ? { kind: 'observed', text: `The largest later nearby catalog event is magnitude ${Number(largestAftershock.feature.properties?.mag ?? 0).toFixed(1)}, ${ago(largestAftershock.time)}, roughly ${Math.round(largestAftershock.distance)} km from the mainshock.` } : { kind: 'verified', text: 'No larger later nearby event appears in the current USGS all-week catalog; absence in a short catalog window is not evidence that seismic risk has ended.' },
+        currentQuakeWeather ? { kind: 'observed', text: `Current modeled conditions near the epicenter are ${Math.round(currentQuakeWeather.temperature_2m)}°C with ${Math.round(currentQuakeWeather.cloud_cover)}% cloud cover, ${Number(currentQuakeWeather.precipitation ?? 0).toFixed(1)} mm precipitation and ${Math.round(currentQuakeWeather.wind_speed_10m)} km/h winds. Weather can complicate exposure and response, but this does not verify impacts.`, source: 'https://open-meteo.com/' } : { kind: 'question', text: 'Current weather near the epicenter was unavailable, so environmental response conditions cannot be assessed.' },
+        { kind: 'observed', text: quakeArticles.length ? `A two-day Google News sample returned ${quakeArticles.length} items related to this earthquake/place, latest ${quakeLatestCoverage}. This measures public attention, not the scale of damage or need.` : 'The two-day public attention sample was unavailable or empty, so no conclusion is drawn about media coverage.', source: 'https://news.google.com/' },
+        { kind: 'interpretation', text: 'The later-event sequence is descriptive evidence of what has already been cataloged. It is not a forecast, and a quiet interval does not establish that risk has passed.' },
+        { kind: 'interpretation', text: 'Humanitarian consequence cannot be inferred from magnitude alone; depth, exposure, building stock, weather, terrain, reporting lag and vulnerability matter.' },
+        { kind: 'question', text: 'What independent evidence would show whether infrastructure, shelter, lifeline services or access are deteriorating?' }
+      ],
+      pulses: attentionCadence(quakeArticles, 48),
+      pulseTitle: '48h attention cadence',
+      pulseCaption: 'Google News sample counts per 4h, oldest → latest; sparse samples show shape, not total volume',
+      sources: [
+        { label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/' },
+        { label: 'USGS significant earthquakes', url: 'https://earthquake.usgs.gov/' },
+        { label: 'USGS all-week earthquake catalog', url: 'https://earthquake.usgs.gov/earthquakes/feed/' },
+        { label: 'Google News earthquake attention sample', url: 'https://news.google.com/' },
+        { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' },
+        { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' }
+      ]
+    });
   }
   const evt = eonet?.events?.[0];
   const evtLat = evt?.geometry?.at(-1)?.coordinates?.[1] ?? 0;
