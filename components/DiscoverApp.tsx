@@ -17,7 +17,7 @@ function angularDistance(latA: number, lonA: number, latB: number, lonB: number)
 
 function unavailableSharedDiscovery(id: string): Discovery {
   return {
-    id: `shared-missing-${id}`, template: 'atmosphere', title: 'This live signal has moved on', kicker: 'Shared link', visual: 'orbital', score: 40, freshness: 'no longer in the live feed',
+    id, unavailable: true, template: 'atmosphere', title: 'This live signal has moved on', kicker: 'Shared link', visual: 'orbital', score: 40, freshness: 'no longer in the live feed',
     location: { lat: 0, lon: 0, label: 'Live feed snapshot unavailable' },
     summary: 'The shared discovery is not in the current public feed. Because Elsewhere does not fabricate or replay unverified evidence, this link cannot reconstruct the original live card.',
     facts: [
@@ -25,7 +25,7 @@ function unavailableSharedDiscovery(id: string): Discovery {
       { label: 'Current evidence', value: 'Unavailable from the live feed', kind: 'question' },
       { label: 'What happened', value: 'Live signals expire as public data updates', kind: 'interpretation' }
     ],
-    sources: [], related: ['Nearby signals']
+    sources: [], related: []
   };
 }
 
@@ -60,11 +60,12 @@ export default function DiscoverApp() {
       setDiscoveries(nextDiscoveries);
       setInvestigations(nextInvestigations);
       const currentActive = activeRef.current;
+      const rediscovered = currentActive ? nextDiscoveries.find((item: Discovery) => item.id === currentActive.id) : undefined;
       const nextActive = !currentActive
         ? nextDiscoveries[0]
         : currentActive.id.startsWith('place-')
           ? currentActive
-          : nextDiscoveries.find((item: Discovery) => item.id === currentActive.id) ?? nextDiscoveries[0] ?? currentActive;
+          : rediscovered ?? (currentActive.unavailable ? currentActive : nextDiscoveries[0] ?? currentActive);
       const activeMoved = Boolean(nextActive && currentActive && nextActive.id === currentActive.id && (
         Math.abs(nextActive.location.lat - currentActive.location.lat) > 0.5 ||
         Math.abs(nextActive.location.lon - currentActive.location.lon) > 0.5
@@ -249,7 +250,7 @@ export default function DiscoverApp() {
 
   const locationLine = useMemo(() => active ? `${active.location.label} · ${active.freshness}` : 'Reading live Earth signals', [active]);
   const inv = selectedInvestigation ?? investigations[0];
-  const globeFocus = mode === 'investigate' && inv ? { id: inv.id, location: inv.location } : active;
+  const globeFocus = mode === 'investigate' && inv ? { id: inv.id, location: inv.location } : active?.unavailable ? undefined : active;
 
   useEffect(() => {
     if (typeof window === 'undefined' || loading) return;
@@ -304,7 +305,7 @@ export default function DiscoverApp() {
           <div className="factGrid">{active.facts.map(f => <div key={f.label} className={`fact ${f.kind}`}><span>{f.label}</span><strong>{f.value}</strong><em>{kindLabel[f.kind]}</em></div>)}</div>
           {path.length > 1 && <div className="evidencePath"><span>Evidence path</span><div>{path.map((d, i) => <button key={`${d.id}-${i}`} onClick={() => selectDiscovery(d, undefined, true)} className={d.id === active.id ? 'active' : ''}>{d.title}</button>)}</div></div>}
           {Boolean(active.connections?.length) && <div className="connections"><span>Connected signals</span>{active.connections?.map(c => <button key={c.id} onClick={() => followConnection(c.id)}><b>{c.title}</b><small>{c.reason}</small></button>)}</div>}
-          <div className="rabbit"><span>Explore further</span>{active.related.map(r => <button key={r} onClick={() => exploreRelated(r)}>{r}<ArrowRight size={13} /></button>)}</div>
+          {Boolean(active.related.length) && <div className="rabbit"><span>Explore further</span>{active.related.map(r => <button key={r} onClick={() => exploreRelated(r)}>{r}<ArrowRight size={13} /></button>)}</div>}
           {lensLoading && <div className="contextLens"><b>Reading local evidence…</b></div>}
           {lens && <div className="contextLens"><b>{lens.topic}</b>{lens.retrievedAt && <small className="lensTime">retrieved {new Date(lens.retrievedAt).toLocaleTimeString()}</small>}<div className="lensGrid">{lens.facts?.map((f: any) => <div key={f.label} className={`lensFact ${f.kind}`}><span>{f.label}</span><p>{f.value}</p></div>)}</div></div>}
           <details className="sources"><summary>Evidence and sources</summary>{active.sources.map(s => <a key={s.url} href={s.url} target="_blank">{s.label}<small>{new Date(s.retrievedAt).toLocaleTimeString()}</small></a>)}</details>

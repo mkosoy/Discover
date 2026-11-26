@@ -16,6 +16,7 @@ export type Discovery = {
   mediaVideo?: string;
   mediaImage?: string;
   mediaAlt?: string;
+  unavailable?: boolean;
   connections?: { id: string; title: string; reason: string; strength: number }[];
   facts: { label: string; value: string; kind: EvidenceKind }[];
   sources: { label: string; url: string; retrievedAt: string }[];
