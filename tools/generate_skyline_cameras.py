@@ -16,7 +16,7 @@ def load_cities():
     z=zipfile.ZipFile(io.BytesIO(requests.get('https://download.geonames.org/export/dump/cities15000.zip',timeout=25).content))
     rows=[]
     for row in csv.reader(io.TextIOWrapper(z.open('cities15000.txt'),encoding='utf-8'),delimiter='\t'):
-        try:rows.append({'name':row[1],'ascii':row[2],'lat':float(row[4]),'lon':float(row[5]),'country':row[8],'pop':int(row[14] or 0)})
+        try:rows.append({'name':row[1],'ascii':row[2],'alts':row[3],'lat':float(row[4]),'lon':float(row[5]),'country':row[8],'pop':int(row[14] or 0)})
         except:pass
     return rows
 def embeds(vid):
@@ -35,7 +35,7 @@ def detail(url):
     # Detail requests intermittently fail under concurrent load; one immediate retry recovers many real cameras.
     if not text:text=get(url)
     if not text:return None
-    m=re.search(r'videoId:\s*["\']([\w-]{11})',text)
+    m=re.search(r'videoId:\s*["\']([\w-]{11})',text) or re.search(r'youtube\.com/embed/([\w-]{11})',text)
     embed_id=(re.search(r'data-e="(\d+)"',text) or [None,None])[1] if re.search(r'data-e="(\d+)"',text) else None
     if (not m or not embeds(m.group(1))) and not embed_id:return None
     title=re.search(r'<title>(.*?)</title>',text,re.S)
@@ -53,7 +53,7 @@ def main():
     slug_aliases={
         'Brazil':['brasil'],'Spain':['espana'],'Germany':['deutschland'],'Greece':['ellada'],'Czechia':['czech-republic'],
         'Netherlands':['nederland','netherlands'],'Italy':['italia','italy'],'Austria':['osterreich','austria'],
-        'Switzerland':['schweiz','switzerland'],'Türkiye':['turkey','turkiye'],'South Korea':['south-korea','korea'],
+        'Switzerland':['schweiz','switzerland'],'Serbia':['srbija','serbia'],'Türkiye':['turkey','turkiye'],'South Korea':['south-korea','korea'],
         'United Arab Emirates':['united-arab-emirates'],'Saudi Arabia':['saudi-arabia'],'South Africa':['south-africa'],
         'Ivory Coast':['ivory-coast','cote-d-ivoire'],'Cabo Verde':['cape-verde','cabo-verde'],
         'San Marino':['republic-of-san-marino','san-marino'],'United Kingdom':['united-kingdom'],
@@ -102,9 +102,10 @@ def main():
             parts=link[:-5].split('/')
             city_slug=parts[-2].replace('-',' ') if len(parts)>=5 else ''
             cc=c.get('cca2','');local=sorted([x for x in cities if x['country']==cc],key=lambda x:-x['pop'])
-            hit=next((x for x in local if norm(x['ascii'])==norm(city_slug) or norm(x['name'])==norm(city_slug)),None)
+            def city_names(x):return [x['name'],x['ascii']]+(x.get('alts') or '').split(',')
+            hit=next((x for x in local if any(norm(n)==norm(city_slug) for n in city_names(x))),None)
             if not hit and city_slug:
-                hit=next((x for x in local if norm(city_slug) in norm(x['ascii']) or norm(x['ascii']) in norm(city_slug)),None)
+                hit=next((x for x in local if any(norm(city_slug) in norm(n) or norm(n) in norm(city_slug) for n in city_names(x) if len(norm(n))>3)),None)
             fallback=(c.get('capitalInfo') or {}).get('latlng') or c.get('latlng') or [0,0]
             lat=hit['lat'] if hit else fallback[0];lon=hit['lon'] if hit else fallback[1]
             place=(hit['ascii'] if hit else city_slug.title() if city_slug else (c.get('capital') or [c['name']['common']])[0])+', '+c['name']['common']

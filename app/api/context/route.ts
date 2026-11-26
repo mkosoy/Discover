@@ -3,10 +3,10 @@ import { cameraCoverage, cameraEmbed, nearestPublicCameras } from '@/lib/cameras
 
 type Fact = { label: string; value: string; kind: 'observed' | 'verified' | 'interpretation' | 'prediction' | 'question' };
 
-async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
+async function json<T>(url: string, init?: RequestInit, timeoutMs = 5000): Promise<T | null> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const res = await fetch(url, { signal: controller.signal, ...init, next: { revalidate: 120 } });
     clearTimeout(timer);
     if (!res.ok) return null;
@@ -334,20 +334,56 @@ export async function GET(request: Request) {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return answer(topic, label, [
       { label: 'Camera evidence', value: 'A location is required to rank public cameras.', kind: 'question' }
     ]);
-    const cameras = nearestPublicCameras(lat, lon, 3);
+    const [weather, openEye] = await Promise.all([
+      json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=cloud_cover,is_day&timezone=auto`),
+      json<any>(`https://api.openeye.cam/v1/catalog?near=${lat},${lon}&radius_km=250&limit=12`, undefined, 2400)
+    ]);
+    const registryCameras = nearestPublicCameras(lat, lon, 5).map(camera => ({
+      title: camera.title,
+      place: camera.place,
+      distance: Math.round(camera.distance),
+      src: cameraEmbed(camera),
+      youtubeId: camera.youtubeId,
+      quality: camera.quality,
+      approximate: camera.approximate,
+      confidence: camera.confidence,
+      image: camera.stillImage,
+      sourceUrl: camera.sourceUrl,
+      sourceLabel: camera.sourceName ?? 'public camera registry'
+    }));
+    const openEyeCameras = (openEye?.items ?? [])
+      .filter((row: any) => row?.live === true && row?.view?.render === 'image' && row?.view?.url && row?.lat != null && row?.lon != null)
+      .slice(0, 5)
+      .map((row: any) => ({
+        title: row.title ?? 'Public camera',
+        place: row.title ?? 'Nearby public camera',
+        distance: Math.round(row.distance_km ?? 0),
+        src: '',
+        quality: row.category === 'traffic' ? 70 : 78,
+        approximate: false,
+        confidence: 'medium',
+        image: row.view.url,
+        sourceUrl: row.redistribution?.attribution?.url ?? row.view.url,
+        sourceLabel: row.redistribution?.attribution?.name ?? 'OpenEye public camera index',
+        category: row.category,
+        frameInterval: row.frame_interval_s
+      }));
+    const cameras = [...openEyeCameras, ...registryCameras]
+      .sort((a, b) => (a.distance + (a.approximate ? 30 : 0) - a.quality) - (b.distance + (b.approximate ? 30 : 0) - b.quality))
+      .slice(0, 5);
     const coverage = cameraCoverage();
     const best = cameras[0];
-    const weather = await json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=cloud_cover,is_day&timezone=auto`);
     const current = weather?.current;
-    return answer(topic, best ? `${best.place} · nearest curated public look-in` : label, [
-      { label: 'Best public look-in', value: best ? `${best.title} · ${Math.round(best.distance)} km away` : 'No curated public camera available', kind: best ? 'verified' : 'question' },
-      { label: 'Additional look-ins', value: cameras.length > 1 ? cameras.slice(1).map(camera => `${camera.title} (${Math.round(camera.distance)} km)`).join(' · ') : 'None in the curated registry', kind: cameras.length > 1 ? 'verified' : 'question' },
+    return answer(topic, best ? `${best.place} · nearest public look-in` : label, [
+      { label: 'Best public look-in', value: best ? `${best.title} · ${Math.round(best.distance)} km away` : 'No public camera available', kind: best ? 'verified' : 'question' },
+      { label: 'Additional look-ins', value: cameras.length > 1 ? cameras.slice(1).map(camera => `${camera.title} (${Math.round(camera.distance)} km)`).join(' · ') : 'None available', kind: cameras.length > 1 ? 'verified' : 'question' },
+      { label: 'Live camera index', value: openEyeCameras.length ? `${openEyeCameras.length} nearby OpenEye camera${openEyeCameras.length === 1 ? '' : 's'} plus curated video look-ins` : 'Curated registry fallback; OpenEye nearby index unavailable or not embeddable here', kind: 'observed' },
       { label: 'Local sky cover', value: current ? `${Math.round(current.cloud_cover)}% · ${current.is_day ? 'daylight' : 'dark now'}` : 'Unavailable', kind: current ? 'observed' : 'question' },
-      { label: 'Camera coverage', value: `${coverage.total} public look-ins across ${coverage.countries} countries`, kind: 'observed' },
-      { label: 'Position precision', value: best?.approximate ? 'Country-level estimate; confirm in source' : 'Camera-specific location', kind: best?.approximate ? 'question' : 'verified' },
-      { label: 'Insight', value: best && best.distance < 250 ? 'This is close enough to provide meaningful local visual context, but the camera still shows only its own field of view and cannot verify the event by itself.' : best ? 'This is the nearest curated public camera, but it is not close enough to treat as direct local evidence; use it as regional atmosphere and compare distance carefully.' : 'No camera inference is made.', kind: 'interpretation' },
+      { label: 'Camera coverage', value: `${coverage.total} curated public look-ins across ${coverage.countries} countries; OpenEye indexes hundreds of thousands of additional public cameras`, kind: 'observed' },
+      { label: 'Position precision', value: best?.approximate ? 'City/country-level estimate; confirm in source' : 'Camera-specific location', kind: best?.approximate ? 'question' : 'verified' },
+      { label: 'Insight', value: best && best.distance < 100 ? 'This is close enough to provide meaningful local visual context, but the camera still shows only its own field of view and cannot verify the event by itself.' : best ? 'This is the nearest available public camera, but it is not close enough to treat as direct local evidence; use it as regional atmosphere and compare distance carefully.' : 'No camera inference is made.', kind: 'interpretation' },
       { label: 'Next evidence', value: 'A closer authorized local stream, official incident imagery or verified ground observation', kind: 'question' }
-    ], { videos: cameras.map(camera => ({ title: camera.title, place: camera.place, distance: Math.round(camera.distance), src: cameraEmbed(camera), youtubeId: camera.youtubeId, quality: camera.quality, approximate: camera.approximate, confidence: camera.confidence, image: camera.stillImage, sourceUrl: camera.sourceUrl })) });
+    ], { videos: cameras });
   }
 
   if (t.includes('historical comparison')) {

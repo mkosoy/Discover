@@ -214,18 +214,22 @@ function CameraPins({ cameras, activeId, onSelect }: { cameras: PublicCamera[]; 
   useEffect(() => {
     if (!ref.current) return;
     const matrix = new THREE.Matrix4();
+    const color = new THREE.Color();
     inactive.forEach((camera, index) => {
       matrix.setPosition(latLon(camera.lat, camera.lon, 1.365));
       ref.current?.setMatrixAt(index, matrix);
       hitRef.current?.setMatrixAt(index, matrix);
+      color.set(camera.youtubeId ? '#74dfc8' : '#f6c96f');
+      ref.current?.setColorAt(index, color);
     });
     if (ref.current) ref.current.instanceMatrix.needsUpdate = true;
+    if (ref.current?.instanceColor) ref.current.instanceColor.needsUpdate = true;
     if (hitRef.current) hitRef.current.instanceMatrix.needsUpdate = true;
   }, [inactive]);
   return <>
     <instancedMesh key={`visual-${inactive.length}`} ref={ref} args={[undefined, undefined, Math.max(1, inactive.length)]}>
       <sphereGeometry args={[.0125, 8, 8]} />
-      <meshBasicMaterial color="#74dfc8" transparent opacity={.72} />
+      <meshBasicMaterial color="#ffffff" transparent opacity={.72} />
     </instancedMesh>
     <instancedMesh
       key={`hit-${inactive.length}`}
@@ -255,7 +259,7 @@ function ActiveCameraPin({ camera }: { camera: PublicCamera }) {
   });
   return <group ref={ref} position={pos}>
     <mesh><sphereGeometry args={[.025, 16, 16]} /><meshBasicMaterial color="#74dfc8" /></mesh>
-    <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.052, .0025, 8, 48]} /><meshBasicMaterial color="#74dfc8" transparent opacity={.72} /></mesh>
+    <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.052, .0025, 8, 48]} /><meshBasicMaterial color="#ffffff" transparent opacity={.72} /></mesh>
   </group>;
 }
 

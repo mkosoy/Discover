@@ -46,7 +46,7 @@ function discoveryForCamera(camera: PublicCamera): Discovery {
   const coverage = cameraCoverage();
   return {
     id: `camera-pin-${camera.id}`, template: 'atmosphere', title: camera.title, kicker: 'Live look-in', visual: camera.kind === 'water' ? 'ocean' : camera.kind === 'aurora' ? 'aurora' : camera.kind === 'volcano' ? 'fire' : 'city',
-    score: camera.quality, freshness: 'validated public live-camera registry',
+    score: camera.quality, freshness: camera.youtubeId ? 'validated public live-camera registry' : 'near-real-time public camera imagery registry',
     location: { lat: camera.lat, lon: camera.lon, label: camera.place },
     summary: `${camera.place} is available as an authorized public ${camera.youtubeId ? 'live video look-in' : 'near-real-time camera image'}. ${camera.approximate ? 'Its map position is a city/country-level estimate, so use distance and source context carefully.' : 'Its map position is curated to the camera location.'}`,
     facts: [
@@ -342,7 +342,7 @@ export default function DiscoverApp() {
     <section className="heroCopy">
       <motion.p>Live Earth intelligence</motion.p>
       <motion.h1>Discover what’s happening.<br /><span>Understand what it means.</span></motion.h1>
-      <motion.p className="interactionHint">Drag Earth · tap anywhere · {cameraCoverage().total} live look-ins · follow the evidence</motion.p>
+      <motion.p className="interactionHint">Drag Earth · tap anywhere · {cameraCoverage().total} look-ins · teal video · gold imagery</motion.p>
     </section>
 
     <div className="actionDock">
