@@ -398,6 +398,12 @@ export default function DiscoverApp() {
         {Boolean(inv.liveLinks?.length) && <div className="rabbit"><span>Live look-ins</span>{inv.liveLinks?.map(link => <button key={link.discoveryId} onClick={() => {
           const target = discoveries.find(d => d.id === link.discoveryId);
           if (target) selectDiscovery(target);
+          else if (Number.isFinite(link.lat) && Number.isFinite(link.lon)) selectDiscovery({
+            id: link.discoveryId, template: 'geology', title: link.label.replace('See the largest event — ', '').replace(' — on the living globe', ''), kicker: 'Seismic event', visual: 'seismic', score: 80,
+            freshness: 'from this week\'s USGS catalog', location: { lat: link.lat as number, lon: link.lon as number, label: link.placeLabel ?? 'Earthquake epicenter' },
+            summary: `This event is the largest in the complete USGS weekly catalog behind the seismic-pulse investigation. The week-scale catalog is the authoritative record; impact details remain open questions until corroborated.`,
+            facts: [{ label: 'Catalog', value: 'USGS weekly, complete', kind: 'verified' }], sources: [{ label: 'USGS earthquake catalog', url: 'https://earthquake.usgs.gov/earthquakes/feed/', retrievedAt: new Date().toISOString() }], related: []
+          } as Discovery);
         }}>{link.label}<ArrowRight size={13} /></button>)}</div>}
         <details className="sources" open><summary>Sources</summary>{inv.sources.map(s => <a key={s.url} href={s.url} target="_blank">{s.label}</a>)}</details>
         </div>

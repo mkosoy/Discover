@@ -1077,6 +1077,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
       pulses: [{ label: 'M4.5+ events per ~14h', values: bins, display: `${weekQuakes.length} total` }],
       pulseTitle: '7-day seismic cadence',
       pulseCaption: 'complete catalog binned oldest → latest',
+      liveLinks: largest?.id ? [{ label: `See the largest event — M${largest.properties.mag.toFixed(1)} — on the living globe`, discoveryId: `quake-${largest.id}`, lat: largest.geometry?.coordinates?.[1], lon: largest.geometry?.coordinates?.[0], placeLabel: largest.properties?.place }] : undefined,
       sources: [
         { label: 'USGS all-week earthquake catalog', url: 'https://earthquake.usgs.gov/earthquakes/feed/' },
         { label: 'USGS significant earthquakes', url: 'https://earthquake.usgs.gov/' }

@@ -16,7 +16,7 @@ export type Discovery = {
   mediaVideo?: string;
   mediaImage?: string;
   mediaAlt?: string;
-  liveLinks?: { label: string; discoveryId: string }[];
+  liveLinks?: { label: string; discoveryId: string; lat?: number; lon?: number; placeLabel?: string }[];
   unavailable?: boolean;
   connections?: { id: string; title: string; reason: string; strength: number }[];
   orbitTrack?: { lat: number; lon: number; minutes: number }[];
@@ -43,6 +43,6 @@ export type Investigation = {
   pulseCaption?: string;
   mediaImage?: string;
   mediaAlt?: string;
-  liveLinks?: { label: string; discoveryId: string }[];
+  liveLinks?: { label: string; discoveryId: string; lat?: number; lon?: number; placeLabel?: string }[];
   sources: { label: string; url: string }[];
 };
