@@ -237,6 +237,7 @@ export default function DiscoverApp() {
     {mode === 'investigate' && investigations.length > 1 && <div className="investRail">{investigations.map(i => <button key={i.id} onClick={() => setSelectedInvestigation(i)} className={i.id === inv?.id ? 'active' : ''}>{i.title}</button>)}</div>}
     {mode === 'discover' && active && !panelOpen && <button className="reopen" onClick={() => setPanelOpen(true)}>{active.kicker}</button>}
     {loading && <div className="loading"><Loader2 className="spin" />Listening to public Earth signals…</div>}
+    {!loading && !discoveries.length && <div className="emptyState"><b>Earth signals are temporarily quiet</b><span>Public feeds did not answer. Elsewhere will retry automatically without inventing evidence.</span></div>}
   </main>;
 }
 

@@ -41,7 +41,9 @@ async function text(url: string): Promise<string | null> {
   } catch { return null; }
 }
 function xmlValue(block: string, tag: string) {
-  return block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`))?.[1]?.trim() ?? '';
+  const inner = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`))?.[1]?.trim();
+  if (inner) return inner;
+  return block.match(new RegExp(`<${tag}[^>]*value="([^"]+)"[^>]*/>`))?.[1]?.trim() ?? '';
 }
 function degreesApart(aLat: number, aLon: number, bLat: number, bLon: number) {
   const rad = Math.PI / 180, x = (bLat - aLat) * rad, y = (bLon - aLon) * rad;
@@ -266,15 +268,21 @@ export async function GET(request: Request) {
   }
 
   if (t.includes('storm surge') || t.includes('coastal currents') || t.includes('coastal cameras')) {
-    const marine = Number.isFinite(lat) && Number.isFinite(lon) ? await json<any>(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=wave_height,wave_period,swell_wave_height,swell_wave_period&hourly=wave_height&forecast_days=1&timezone=auto`) : null;
+    const marine = Number.isFinite(lat) && Number.isFinite(lon) ? await json<any>(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=wave_height,wave_period,swell_wave_height,swell_wave_period,ocean_current_velocity,ocean_current_direction&hourly=wave_height&forecast_days=2&timezone=auto`) : null;
     const current = marine?.current;
-    const waves = (marine?.hourly?.wave_height ?? []).filter((v: any) => Number.isFinite(v));
+    const times = marine?.hourly?.time ?? [];
+    const start = Date.now(), end = start + 24 * 60 * 60 * 1000;
+    const waves = (marine?.hourly?.wave_height ?? [])
+      .map((value: any, index: number) => ({ value, time: new Date(times[index] ?? 0).getTime() }))
+      .filter((row: any) => Number.isFinite(row.value) && row.time >= start && row.time <= end)
+      .map((row: any) => row.value);
     const maxWave = waves.length ? Math.max(...waves) : null;
     return answer(topic, label, [
       { label: 'Current wave height', value: current ? `${current.wave_height?.toFixed?.(1) ?? current.wave_height} m` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Ocean current', value: current?.ocean_current_velocity != null ? `${current.ocean_current_velocity.toFixed(1)} km/h toward ${Math.round(current.ocean_current_direction ?? 0)}°` : 'Unavailable', kind: current?.ocean_current_velocity != null ? 'observed' : 'question' },
       { label: 'Swell height / period', value: current ? `${current.swell_wave_height?.toFixed?.(1) ?? current.swell_wave_height} m / ${Math.round(current.swell_wave_period ?? 0)}s` : 'Unavailable', kind: current ? 'observed' : 'question' },
       { label: 'Next 24h modeled max', value: maxWave != null ? `${maxWave.toFixed(1)} m` : 'Unavailable', kind: maxWave != null ? 'prediction' : 'question' },
-      { label: 'Insight', value: t.includes('camera') ? 'No direct coastal camera is assumed. Wave and swell measurements can guide what to look for, but only authorized imagery or local observation can confirm what the coast looks like.' : 'Wave and swell conditions are evidence of ocean energy, but they are not a storm-surge measurement. Surge requires sea-level, pressure, wind and coastal geometry evidence.', kind: 'interpretation' },
+      { label: 'Insight', value: t.includes('camera') ? 'No direct coastal camera is assumed. Wave and swell measurements can guide what to look for, but only authorized imagery or local observation can confirm what the coast looks like.' : 'Wave, swell and modeled current conditions describe ocean energy and movement, but they are not a storm-surge measurement. Surge requires sea-level, pressure, wind and coastal geometry evidence.', kind: 'interpretation' },
       { label: 'Next evidence', value: 'Tide gauge, pressure field, authorized coastal camera or local observation', kind: 'question' }
     ]);
   }
@@ -294,11 +302,11 @@ export async function GET(request: Request) {
 
   if (t.includes('historical comparison')) {
     const intensity = await json<any>('https://api.carbonintensity.org.uk/intensity/date');
-    const rows = (intensity?.data ?? []).map((row: any) => row?.intensity?.actual ?? row?.intensity?.forecast).filter((v: any) => Number.isFinite(v));
+    const rows = (intensity?.data ?? []).map((row: any) => row?.intensity?.actual).filter((v: any) => Number.isFinite(v));
     const latest = rows.at(-1), average = rows.length ? rows.reduce((a: number, b: number) => a + b, 0) / rows.length : null;
     return answer(topic, label, [
       { label: 'Latest carbon intensity', value: latest != null ? `${Math.round(latest)} gCO₂/kWh` : 'Unavailable', kind: latest != null ? 'observed' : 'question' },
-      { label: 'Today’s sampled average', value: average != null ? `${Math.round(average)} gCO₂/kWh` : 'Unavailable', kind: average != null ? 'observed' : 'question' },
+      { label: 'Today’s observed average', value: average != null ? `${Math.round(average)} gCO₂/kWh` : 'Unavailable', kind: average != null ? 'observed' : 'question' },
       { label: 'Day range', value: rows.length ? `${Math.round(Math.min(...rows))}–${Math.round(Math.max(...rows))} gCO₂/kWh` : 'Unavailable', kind: rows.length ? 'observed' : 'question' },
       { label: 'Insight', value: latest != null && average != null ? (latest < average ? 'The grid is currently cleaner than today’s sampled average, consistent with strong low-carbon generation, but not proof of cause.' : 'The grid is currently dirtier than today’s sampled average; compare wind output and demand before inferring why.') : 'Historical grid comparison is unavailable right now.', kind: 'interpretation' },
       { label: 'Next evidence', value: 'Wind generation, demand and interconnectors for the same interval', kind: 'question' }

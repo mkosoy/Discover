@@ -222,7 +222,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const cat = evt.categories?.[0]?.title ?? 'Natural event';
     out.push({ id: `eonet-${evt.id}`, entityId: evt.id, template: cat.toLowerCase().includes('fire') ? 'wildfire' : 'atmosphere', title: `${cat} unfolding in ${evt.title}`, kicker: 'NASA EONET natural event', visual: cat.toLowerCase().includes('fire') ? 'fire' : 'aurora', score: 78, freshness: ago(geom.date), location: { lat, lon, label: evt.title }, summary: `${evt.title} is being tracked in NASA's open natural-event catalog. Elsewhere combines the event position with weather and source context rather than pretending satellite imagery is live.`, facts: [
       { label: 'Category', value: cat, kind: 'verified' }, { label: 'Last geometry', value: ago(geom.date), kind: 'observed' }, { label: 'Live imagery', value: 'Not assumed', kind: 'question' }
-    ], sources: [src('NASA EONET', evt.link ?? 'https://eonet.gsfc.nasa.gov/')], related: ['Wind direction', 'Nearby cameras', 'Historical comparison'] });
+    ], sources: [src('NASA EONET', evt.link ?? 'https://eonet.gsfc.nasa.gov/')], related: ['Wind direction', 'Nearby cameras', 'Event timeline'] });
   }
   if (goesHead) {
     const modified = goesHead.get('last-modified');

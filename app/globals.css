@@ -26,3 +26,5 @@
 .videoPoster:after{content:"";position:absolute;inset:0;background:linear-gradient(transparent 35%,rgba(0,0,0,.66))}
 .videoPoster span{position:absolute;z-index:2;left:14px;bottom:12px;display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:999px;background:rgba(0,0,0,.54);backdrop-filter:blur(10px);color:#eaf8ff;font-size:12px;font-weight:700}
 .videoPoster svg{color:var(--cyan)}
+
+.emptyState{position:fixed;z-index:6;left:50%;bottom:110px;transform:translateX(-50%);display:grid;gap:5px;max-width:320px;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:rgba(5,12,26,.72);backdrop-filter:blur(18px);text-align:center}.emptyState span{color:var(--muted);font-size:12px;line-height:1.4}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
