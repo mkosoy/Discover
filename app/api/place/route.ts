@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { worldviewSnapshot } from '@/lib/satellite';
 
 async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
@@ -48,15 +49,6 @@ function weatherText(code?: number) {
   if ([71, 73, 75, 77, 85, 86].includes(code)) return 'Snow';
   if ([95, 96, 99].includes(code)) return 'Thunderstorm';
   return 'Changing weather';
-}
-
-function worldviewImage(lat: number, lon: number) {
-  const centerLon = Math.max(-174, Math.min(174, lon));
-  const latMin = Math.max(-75, lat - 4);
-  const latMax = Math.min(75, lat + 4);
-  const lonMin = centerLon - 6;
-  const lonMax = centerLon + 6;
-  return `https://wvs.earthdata.nasa.gov/api/v1/snapshot?REQUEST=GetSnapshot&BBOX=${latMin.toFixed(2)}%2C${lonMin.toFixed(2)}%2C${latMax.toFixed(2)}%2C${lonMax.toFixed(2)}&CRS=EPSG%3A4326&LAYERS=MODIS_Terra_CorrectedReflectance_TrueColor&FORMAT=image%2Fjpeg&WIDTH=900&HEIGHT=520`;
 }
 
 function distanceKm(latA: number, lonA: number, latB: number, lonB: number) {
@@ -126,7 +118,7 @@ export async function GET(request: Request) {
       lat, lon, label: placeName,
       locality: address.city ?? address.town ?? address.village ?? place?.name, country: address.country,
       timezone: weather?.timezone,
-      mediaImage: worldviewImage(lat, lon),
+      mediaImage: worldviewSnapshot(lat, lon),
       mediaAlt: `NASA MODIS latest available true-color satellite swath around ${lat.toFixed(2)}°, ${lon.toFixed(2)}°`,
       facts,
       sources: [

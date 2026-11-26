@@ -1,6 +1,7 @@
 import type { Discovery, Investigation } from './types';
 import { ago, until } from './time';
 import * as satellite from 'satellite.js';
+import { worldviewSnapshot } from './satellite';
 
 const now = () => new Date().toISOString();
 const src = (label: string, url: string) => ({ label, url, retrievedAt: now() });
@@ -512,7 +513,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
       id: 'ukraine-live-signal',
       title: 'Ukraine: what the live public record can — and cannot — say',
       dek: 'A country-level synthesis of current weather stress, global attention patterns, humanitarian funding flows and public datasets. It intentionally avoids tactical battlefield tracking and instead asks what conditions mean for civilians and infrastructure resilience.',
-      mediaImage: 'https://wvs.earthdata.nasa.gov/api/v1/snapshot?REQUEST=GetSnapshot&BBOX=43%2C20%2C53%2C42&CRS=EPSG%3A4326&LAYERS=MODIS_Terra_CorrectedReflectance_TrueColor&FORMAT=image%2Fjpeg&WIDTH=900&HEIGHT=520',
+      mediaImage: worldviewSnapshot(49.2, 31.4, 10, 22),
       mediaAlt: 'NASA MODIS latest available true-color satellite swath over Ukraine and surrounding regions',
       status: evidenceStrength >= 3 ? 'developing' : 'uncertain',
       location: { lat: 49.2, lon: 31.4, label: 'Ukraine, country-level synthesis' },
@@ -607,6 +608,8 @@ export async function getInvestigations(): Promise<Investigation[]> {
       id: 'sudan-attention-gap',
       title: 'Sudan: a vast displacement crisis moving through a thin attention window',
       dek: 'A non-tactical humanitarian signal comparing current heat and weather exposure, one-day global attention, funding flow and UNHCR displacement scale. It is designed to reveal attention gaps rather than track battlefield positions.',
+      mediaImage: worldviewSnapshot(15.6, 30.4, 14, 20),
+      mediaAlt: 'NASA MODIS latest available true-color satellite swath over Sudan and surrounding regions',
       status: evidenceStrength >= 4 ? 'developing' : 'uncertain',
       location: { lat: 15.6, lon: 30.4, label: 'Sudan, country-level synthesis' },
       updatedAt: now(),
@@ -622,6 +625,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
         { label: 'Attention / million IDPs', value: Number.isFinite(sudanAttentionPerMillion) ? sudanAttentionPerMillion.toFixed(1) : '—', delta: Number.isFinite(ukraineAttentionPerMillion) ? `Ukraine sample ${ukraineAttentionPerMillion.toFixed(1)}` : 'comparison unavailable' }
       ],
       evidence: [
+        { kind: 'observed', text: 'NASA MODIS true-color imagery supplies latest-available daylight satellite-swath context for Sudan. Cloud, dust and orbital gaps mean it is visual environmental context, not continuous monitoring or verification of local conditions.', source: 'https://worldview.earthdata.nasa.gov/' },
         { kind: 'observed', text: `Across the sampled Sudan grid, ${hottestSudan?.city ?? 'the hottest sampled city'} currently feels like ${hottestSudan ? Math.round(hottestSudan.current.apparent_temperature) : '—'}°C; ${windiestSudan?.city ?? 'the windiest sampled city'} has ${windiestSudan ? Math.round(windiestSudan.current.wind_speed_10m) : '—'} km/h winds. This is current environmental exposure, not a damage report.` },
         { kind: 'observed', text: sudanArticles.length ? `${sudanArticles.length} recent Sudan-conflict-related items came from ${sudanDomains.size} outlets/domains via Google News RSS. Rough title analysis: ${sudanMilitary} conflict-related and ${sudanDiplomacy} diplomacy/aid-related mentions; latest item is ${sudanLatestCoverage}.` : 'The Sudan attention sample was unavailable at retrieval time, so no claim is made about current article volume.', source: 'https://news.google.com/' },
         { kind: 'interpretation', text: sudanArticles.length ? `Headline clustering separates the Sudan sample into about ${sudanStories.independent} distinct story clusters; ${sudanStories.repeated} items look like repetition or wire-copy amplification. The largest cluster has ${sudanStories.largest.length} items, so outlet count is not the same as independent corroboration.` : 'Narrative independence cannot be estimated because the Sudan attention sample is unavailable.' },
@@ -641,6 +645,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
       pulseTitle: '24h attention cadence',
       pulseCaption: 'Google News sample counts per 2h, oldest → latest; capped samples show shape, not total volume',
       sources: [
+        { label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/' },
         { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' },
         { label: 'Google News RSS 24h Sudan attention sample', url: 'https://news.google.com/' },
         { label: 'OCHA Financial Tracking Service', url: 'https://fts.unocha.org/' },
@@ -652,21 +657,25 @@ export async function getInvestigations(): Promise<Investigation[]> {
 
   if (q) {
     const [lon, lat, depth] = q.geometry.coordinates;
-    out.push({ id: 'seismic-ripple', title: 'What follows a significant earthquake?', dek: 'An evidence-first reconstruction combining USGS observations, humanitarian-data availability and attention gaps.', status: 'uncertain', location: { lat, lon, label: q.properties.place }, updatedAt: new Date(q.properties.time).toISOString(), confidence: 52, metrics: [
+    out.push({ id: 'seismic-ripple', title: 'What follows a significant earthquake?', dek: 'An evidence-first reconstruction combining USGS observations, humanitarian-data availability and attention gaps.', mediaImage: worldviewSnapshot(lat, lon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${q.properties.place}`, status: 'uncertain', location: { lat, lon, label: q.properties.place }, updatedAt: new Date(q.properties.time).toISOString(), confidence: 52, metrics: [
       { label: 'Magnitude', value: q.properties.mag?.toFixed(1) ?? '—' }, { label: 'Depth', value: `${Math.round(depth)} km` }, { label: 'Felt reports', value: String(q.properties.felt ?? 0), delta: 'USGS crowd reports' }, { label: 'Impact evidence', value: 'Unresolved', delta: 'needs corroboration' }
     ], evidence: [
+      { kind: 'observed', text: 'NASA MODIS imagery provides latest-available visual context for the broad region; orbital gaps, clouds and timing mean it does not verify damage from this earthquake.', source: 'https://worldview.earthdata.nasa.gov/' },
       { kind: 'observed', text: `USGS recorded magnitude ${q.properties.mag?.toFixed(1)} at ${Math.round(depth)} km depth near ${q.properties.place}.`, source: q.properties.url },
       { kind: 'interpretation', text: 'Humanitarian consequence cannot be inferred from magnitude alone; depth, exposure, building stock and reporting lag matter.' },
       { kind: 'question', text: 'What independent evidence would show whether infrastructure, shelter or lifeline services are deteriorating?' }
-    ], sources: [{ label: 'USGS significant earthquakes', url: 'https://earthquake.usgs.gov/' }, { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' }] });
+    ], sources: [{ label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/' }, { label: 'USGS significant earthquakes', url: 'https://earthquake.usgs.gov/' }, { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' }] });
   }
   const evt = eonet?.events?.[0];
-  if (evt) out.push({ id: 'event-attention-gap', title: 'Which natural events are being missed?', dek: 'NASA event observations are compared with broad public attention to surface stories that may be under-covered.', status: 'uncertain', location: { lat: evt.geometry?.at(-1)?.coordinates?.[1] ?? 0, lon: evt.geometry?.at(-1)?.coordinates?.[0] ?? 0, label: evt.title }, updatedAt: evt.geometry?.at(-1)?.date ?? now(), confidence: 48, metrics: [
+  const evtLat = evt?.geometry?.at(-1)?.coordinates?.[1] ?? 0;
+  const evtLon = evt?.geometry?.at(-1)?.coordinates?.[0] ?? 0;
+  if (evt) out.push({ id: 'event-attention-gap', title: 'Which natural events are being missed?', dek: 'NASA event observations are compared with broad public attention to surface stories that may be under-covered.', status: 'uncertain', location: { lat: evtLat, lon: evtLon, label: evt.title }, mediaImage: worldviewSnapshot(evtLat, evtLon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${evt.title}`, updatedAt: evt.geometry?.at(-1)?.date ?? now(), confidence: 48, metrics: [
     { label: 'Open events', value: String(eonet?.events?.length ?? 0) }, { label: 'Attention proxy', value: String(articles.length), delta: 'Ukraine sample reuse' }, { label: 'Evidence quality', value: 'Mixed', delta: 'source-dependent' }
   ], evidence: [
+    { kind: 'observed', text: 'NASA MODIS imagery supplies latest-available visual context around the event; orbital gaps and clouds mean it is corroborating context rather than proof of current conditions.', source: 'https://worldview.earthdata.nasa.gov/' },
     { kind: 'observed', text: `NASA EONET is tracking ${evt.title} as an open natural event.` },
     { kind: 'interpretation', text: 'Low media attention does not imply low consequence; it creates a research question worth investigating.' },
     { kind: 'question', text: 'Can satellite imagery, weather observations or humanitarian reports corroborate change on the ground?' }
-  ], sources: [{ label: 'NASA EONET', url: 'https://eonet.gsfc.nasa.gov/' }, { label: 'GDELT', url: 'https://www.gdeltproject.org/' }] });
+  ], sources: [{ label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/' }, { label: 'NASA EONET', url: 'https://eonet.gsfc.nasa.gov/' }, { label: 'GDELT', url: 'https://www.gdeltproject.org/' }] });
   return out;
 }

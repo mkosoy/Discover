@@ -26,7 +26,7 @@
 - Ukraine now includes a non-tactical live public-aircraft contrast: coarse ADS-B counts over a Ukraine-centered sample versus neighboring-country-centered samples, with receiver/coverage caveats and a visual comparison bar.
 - Sudan includes attention-per-million-IDP normalization when samples are comparable; one-sided or capped samples are not visualized as false precision.
 - ISS now includes a smooth propagated orbital track from the current public TLE, with orbit-model freshness shown as evidence.
-- Ukraine now opens with NASA MODIS latest-available true-color satellite-swath imagery plus explicit non-surveillance caveats; attention cadence is visualized in 2h bins without claiming capped samples are total volume.
+- Ukraine now opens with NASA MODIS latest-available true-color satellite-swath imagery plus explicit non-surveillance caveats; attention cadence is visualized in 2h bins without claiming capped samples are total volume. Sudan, significant-earthquake and under-covered-event investigations also use latest-available MODIS visual context with explicit orbital/cloud/timing caveats.
 - Mount Etna live-camera discovery added, with current wind/weather and volcano-specific ash/air-quality/seismic lenses.
 - Approximate sunlight/day-night lighting, duplicate-marker spreading, shortened NWS deep-link ids, compact evidence sections and no-immediate-repeat Surprise/Watch weighting improve polish.
 - Share/deep links exist for discoveries, investigations and arbitrary tapped places, including truthful unavailable states when ephemeral live cards expire.
