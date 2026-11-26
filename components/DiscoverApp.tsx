@@ -116,7 +116,10 @@ export default function DiscoverApp() {
         setActive(camera ? discoveryForCamera(camera) : unavailableSharedDiscovery(initialHash));
       } else if (initial && initialHash && !investigationHash) {
         const targetDiscovery = nextDiscoveries.find((item: Discovery) => item.id === initialHash);
-        setActive(targetDiscovery ?? unavailableSharedDiscovery(initialHash));
+        const registryCamera = !targetDiscovery && initialHash.startsWith('camera-')
+          ? publicCameras.find(item => `camera-${item.id}` === initialHash)
+          : undefined;
+        setActive(targetDiscovery ?? (registryCamera ? discoveryForCamera(registryCamera) : unavailableSharedDiscovery(initialHash)));
       } else {
         setActive(nextActive);
       }
@@ -398,6 +401,10 @@ export default function DiscoverApp() {
         {Boolean(inv.liveLinks?.length) && <div className="rabbit"><span>Live look-ins</span>{inv.liveLinks?.map(link => <button key={link.discoveryId} onClick={() => {
           const target = discoveries.find(d => d.id === link.discoveryId);
           if (target) selectDiscovery(target);
+          else if (link.discoveryId.startsWith('camera-')) {
+            const cam = publicCameras.find(c => `camera-${c.id}` === link.discoveryId);
+            if (cam) selectCamera(cam);
+          }
           else if (Number.isFinite(link.lat) && Number.isFinite(link.lon)) selectDiscovery({
             id: link.discoveryId, template: 'geology', title: link.label.replace('See the largest event — ', '').replace(' — on the living globe', ''), kicker: 'Seismic event', visual: 'seismic', score: 80,
             freshness: 'from this week\'s USGS catalog', location: { lat: link.lat as number, lon: link.lon as number, label: link.placeLabel ?? 'Earthquake epicenter' },
