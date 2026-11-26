@@ -141,7 +141,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   const flightCount = flights?.total ?? flightRows.length;
   if (flightCount) {
     const altitudes = flightRows.map((a: any) => Number(a.alt_baro)).filter(Number.isFinite).sort((a: number, b: number) => a - b);
-    const medianAltitude = altitudes[Math.floor(altitudes.length / 2)] ?? 0;
+    const middle = Math.floor(altitudes.length / 2);
+    const medianAltitude = altitudes.length ? (altitudes.length % 2 ? altitudes[middle] : (altitudes[middle - 1] + altitudes[middle]) / 2) : 0;
     const feedAge = flights?.now ? Math.max(0, (Date.now() - Number(flights.now)) / 1000) : 0;
     const latestSeen = Math.min(...flightRows.map((a: any) => Number(a.seen_pos ?? a.seen ?? 30)).filter(Number.isFinite)) + feedAge;
     out.push({ id: 'tokyo-air-corridor', template: 'city', title: 'Aircraft are threading through Tokyo’s sky right now', kicker: 'Live ADS-B aggregation', visual: 'city', score: 74 + Math.min(10, flightCount / 20), freshness: Number.isFinite(latestSeen) ? `positions ~${Math.max(0, Math.round(latestSeen))}s old` : 'live feed', location: { lat: 35.68, lon: 139.69, label: 'Tokyo airspace, aggregated' }, summary: 'Public ADS-B receivers are seeing aircraft around Tokyo. Elsewhere aggregates the traffic instead of exposing individual aircraft identifiers; coverage is crowdsourced and not authoritative air-traffic control data.', facts: [
