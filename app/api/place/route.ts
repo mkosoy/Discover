@@ -70,9 +70,9 @@ export async function GET(request: Request) {
   const gdacsEvents = (gdacsXml ? [...gdacsXml.matchAll(/<item>([\s\S]*?)<\/item>/g)] : [])
     .map(match => {
       const block = match[1];
-      return { title: xmlValue(block, 'title'), alert: xmlValue(block, 'gdacs:alertlevel') || 'Green', type: xmlValue(block, 'gdacs:eventtype'), lat: Number(xmlValue(block, 'geo:lat')), lon: Number(xmlValue(block, 'geo:long')) };
+      return { title: xmlValue(block, 'title'), alert: xmlValue(block, 'gdacs:alertlevel') || 'Green', type: xmlValue(block, 'gdacs:eventtype'), lat: Number(xmlValue(block, 'geo:lat')), lon: Number(xmlValue(block, 'geo:long')), current: xmlValue(block, 'gdacs:iscurrent') };
     })
-    .filter(event => Number.isFinite(event.lat) && Number.isFinite(event.lon))
+    .filter(event => Number.isFinite(event.lat) && Number.isFinite(event.lon) && event.current !== 'false')
     .map(event => ({ ...event, distance: distanceKm(lat, lon, event.lat, event.lon) }))
     .filter(event => event.distance <= 1000)
     .sort((a, b) => a.distance - b.distance);

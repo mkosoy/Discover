@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 
 type Fact = { label: string; value: string; kind: 'observed' | 'verified' | 'interpretation' | 'prediction' | 'question' };
 
-async function json<T>(url: string): Promise<T | null> {
+async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(url, { signal: controller.signal, next: { revalidate: 120 } });
+    const res = await fetch(url, { signal: controller.signal, ...init, next: { revalidate: 120 } });
     clearTimeout(timer);
     if (!res.ok) return null;
     return await res.json() as T;
@@ -121,7 +121,7 @@ export async function GET(request: Request) {
 
   const [weather, place] = await Promise.all([
     Number.isFinite(lat) && Number.isFinite(lon) ? json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,weather_code,wind_speed_10m&timezone=auto`) : null,
-    Number.isFinite(lat) && Number.isFinite(lon) ? json<any>(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`) : null
+    Number.isFinite(lat) && Number.isFinite(lon) ? json<any>(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=en`, { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }) : null
   ]);
   const current = weather?.current;
   const facts: Fact[] = [];
@@ -130,7 +130,8 @@ export async function GET(request: Request) {
     facts.push({ label: 'Wind', value: `${Math.round(current.wind_speed_10m)} km/h`, kind: 'observed' });
     facts.push({ label: 'Feels like', value: `${Math.round(current.apparent_temperature)}°C`, kind: 'observed' });
   } else facts.push({ label: 'Weather', value: 'Unavailable', kind: 'question' });
-  const placeName = [place?.locality, place?.principalSubdivision, place?.countryName].filter(Boolean).join(', ');
+  const address = place?.address ?? {};
+  const placeName = place?.display_name || [address.city, address.town, address.village, address.municipality, address.county, address.state, address.country].filter(Boolean).join(', ');
   facts.push({ label: 'Place context', value: placeName || label, kind: placeName ? 'verified' : 'question' });
 
   let insight = 'This layer grounds the story in current local conditions rather than treating the original signal as self-explanatory.';

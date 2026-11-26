@@ -20,7 +20,7 @@ function vectorToLatLon(vector: THREE.Vector3) {
   return { lat, lon };
 }
 
-type FocusTarget = { id: string; location: { lat: number; lon: number } };
+type FocusTarget = { id: string; location: { lat: number; lon: number }; connections?: { id: string }[] };
 
 function Earth({ active, discoveries, investigations, onSelect, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
   const group = useRef<THREE.Group>(null);
@@ -68,13 +68,27 @@ function Earth({ active, discoveries, investigations, onSelect, onSelectInvestig
       <shaderMaterial transparent blending={THREE.AdditiveBlending} side={THREE.BackSide} vertexShader={`varying vec3 vNormal; void main(){ vNormal=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`} fragmentShader={`varying vec3 vNormal; void main(){ float intensity=pow(.72-dot(vNormal,vec3(0.,0.,1.)),2.1); gl_FragColor=vec4(.18,.55,1.,1.)*intensity;}`} />
     </mesh>
     <ConnectionArcs active={active} discoveries={discoveries} />
+    {active && !discoveries.some(d => d.id === active.id) && !investigations.some(i => i.id === active.id) && <FocusMarker active={active} />}
     {discoveries.map(d => <Marker key={d.id} discovery={d} active={active?.id === d.id} onSelect={onSelect} />)}
     {investigations.map(i => <InvestigationMarker key={i.id} investigation={i} active={active?.id === i.id} onSelect={onSelectInvestigation} />)}
   </group>;
 }
 
+function FocusMarker({ active }: { active: FocusTarget }) {
+  const ref = useRef<THREE.Group>(null);
+  const pos = useMemo(() => latLon(active.location.lat, active.location.lon, 1.405), [active.location.lat, active.location.lon]);
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    ref.current.scale.setScalar(1.05 + Math.sin(clock.elapsedTime * 5) * .12);
+  });
+  return <group ref={ref} position={pos}>
+    <mesh><sphereGeometry args={[.026, 20, 20]} /><meshBasicMaterial color="#8fe7ff" /></mesh>
+    <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.058, .0028, 8, 48]} /><meshBasicMaterial color="#8fe7ff" transparent opacity={.72} /></mesh>
+  </group>;
+}
+
 function ConnectionArcs({ active, discoveries }: { active?: FocusTarget; discoveries: Discovery[] }) {
-  const activeDiscovery = discoveries.find(d => d.id === active?.id);
+  const activeDiscovery = discoveries.find(d => d.id === active?.id) ?? (active?.connections ? active as Discovery : undefined);
   if (!activeDiscovery?.connections?.length) return null;
   return <>
     {activeDiscovery.connections.map(connection => {
