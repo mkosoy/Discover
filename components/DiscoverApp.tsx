@@ -40,12 +40,16 @@ export default function DiscoverApp() {
     const pool = discoveries.filter(d => d.id !== active?.id && d.score >= 70);
     const weighted = pool.flatMap(d => Array(Math.max(1, Math.round(d.score / 12))).fill(d));
     setActive(weighted[Math.floor(Math.random() * weighted.length)] ?? discoveries[0]);
+    setLens(undefined);
+    setLensLoading(false);
     if (reveal) setPanelOpen(true);
     setMode('discover');
   };
 
   const selectDiscovery = (discovery: Discovery) => {
     setActive(discovery);
+    setLens(undefined);
+    setLensLoading(false);
     setPanelOpen(true);
     setMode('discover');
   };
