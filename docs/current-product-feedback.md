@@ -1,21 +1,37 @@
-# Current product feedback to implement
+# Current product feedback and implementation state
 
-Latest user feedback on first Vercel version:
-- ISS/satellite-over-Earth example is especially compelling.
-- SF tide feels mundane and not unique; Surprise Me must prioritize rare/visual/conceptually spectacular moments.
-- Explore further buttons currently do nothing; every visible control must work.
-- Visuals need to be much richer, not generic SIG placeholder motifs.
-- Investigations must produce true insight, not generic API data: compare baselines, corroborate/contradict sources, explain second-order consequences, expose attention gaps and uncertainty.
-- Investigate should include conflict-zone insight, especially Ukraine, using live/near-real-time public APIs; keep sensitive data aggregated/non-tactical.
-- Globe must be physically draggable/touch-navigable.
-- Users should be able to click a place or event on the globe and find something there.
-- Keep going autonomously; optimize polish, smoothness, creativity and impressiveness.
+## User feedback themes
 
-Immediate implementation priorities:
-1. Weighted/diverse Surprise selection; remove mundane standalone tide/city items from primary rotation or make them conditional on anomalies.
-2. Functional Explore further actions that pivot into related discoveries or investigative explainers.
-3. Rich per-template animated scenes: orbit, aurora, seismic, wildfire, launch, ocean, city.
-4. Manual globe rotation with touch/mouse; preserve cinematic fly-to.
-5. Clickable event markers and eventually reverse-geocoded/local observations for arbitrary globe taps.
-6. Ukraine conflict investigation combining GDELT news attention, ReliefWeb humanitarian reports, UNHCR/displacement context, weather/life-impact data, and any keyless infrastructure/energy datasets available; clearly non-tactical and aggregated.
-7. Redeploy latest work to https://elsewhere-discover-nine.vercel.app and keep PR #1 updated.
+- ISS/satellite-over-Earth is especially compelling.
+- Mundane standalone facts such as a single tide reading are not compelling.
+- Explore Further must be functional and evidence-specific.
+- Visuals must be rich and live, not generic placeholders.
+- Investigations must produce real multi-source insight, especially conflict-zone attention/humanitarian asymmetry, while remaining non-tactical.
+- Globe must physically rotate/zoom and support tapping arbitrary places.
+- Data should be real-time or minutes-old where possible.
+- Clicking one event should reveal meaningful connections to other simultaneous world signals.
+- Continue autonomously; optimize polish, smoothness, creativity and impressiveness.
+
+## Implemented since the feedback
+
+- Standalone SF tide card removed.
+- Globe rotation/zoom/tap exploration implemented, including drag/click discrimination.
+- Arbitrary tapped places produce reverse-geocoded weather, daylight, seismic and nearby-hazard evidence plus nearest concurrent signals.
+- Connected-signal buttons and visual globe arcs implemented.
+- Namibia and Tokyo live-camera cards use poster-first authorized YouTube embeds.
+- GOES-East near-real-time imagery card added with Last-Modified freshness and cache-busting.
+- NWS active-alert card added with zone geometry, exact alert identifiers, timing lenses and impact caveats.
+- GDACS humanitarian hazard cards added with current-event filtering, impact imagery and exposure-model lenses.
+- Ukraine and Sudan investigations use conflict-filtered news attention, weather, OCHA FTS, HDX and UNHCR displacement data.
+- Mobile bottom sheet compacted; hero hides while the evidence panel is open.
+- Evidence lenses now cover satellite imagery, alert timing, exposure models, event timelines, marine conditions, air quality, grid history, launch weather, aftershocks, aurora visibility and night-light caveats.
+
+## Known gaps / next best improvements
+
+1. Production is behind PR #1 until the Vercel deployment quota resets or the plan changes.
+2. Some generic lenses remain weaker than the dedicated lenses; keep replacing them with evidence-specific views.
+3. No share/deep-link state yet.
+4. Surprise/Watch can still improve diversity scoring and avoid visually similar consecutive moments.
+5. Globe labels are minimal; marker affordance and tap feedback can become more magical.
+6. Investigations need more visual/editorial presentation, not only metric cards and prose.
+7. Real mobile-device validation is still needed for embed behavior, panel scrolling and WebGL performance.

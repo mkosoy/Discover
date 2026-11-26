@@ -2,63 +2,69 @@
 
 ## Product direction
 
-Elsewhere should feel like a cinematic live documentary interface, not a dashboard. The first version is intentionally centered on one full-screen Earth, one primary action (`Surprise Me`), one calm evidence panel, and an autonomous `Watch` mode.
+Elsewhere is a cinematic live documentary interface, not a dashboard. Earth remains the hero; evidence panels explain what is observed, what is corroborated, what is interpretation and what remains unknown.
 
-Creative principles:
-- One focal object: Earth remains the hero at all times.
-- Evidence is editorial, not analytic clutter: observed facts, reports, interpretations and open questions are visually distinct.
-- Motion communicates travel and attention; UI should never feel busy.
-- Every factual statement needs a source or an explicit uncertainty label.
-- Mobile is a first-class consumer surface, not a shrunk desktop page.
+Current principles:
+- One focal object: a physically rotatable, zoomable Earth.
+- Two flagship modes: Surprise/Watch and Beyond the Headlines.
+- Every visible control should either change the scene or open a real evidence lens.
+- Real-time claims must be traceable to public sources and retrieval times.
+- Missing evidence is shown as an open question rather than filled with generic copy.
+- Mobile is a first-class bottom-sheet experience.
 
 ## Current implementation
 
-- Next.js 14, React 18, TypeScript, Vercel-ready.
-- Three.js/react-three-fiber custom Earth with NASA Blue Marble imagery, atmosphere, stars and location markers.
-- Serverless API routes aggregate keyless public sources and degrade gracefully.
-- Current discovery sources: Where the ISS at?, USGS, NASA EONET, NOAA SWPC, NOAA CO-OPS, Open-Meteo and Launch Library 2.
-- Current investigative sources: USGS, ReliefWeb, GDELT and NASA EONET.
-- No credentials are required for the current version.
+- Next.js 14, React 18, TypeScript, Vercel serverless API routes.
+- Three.js/react-three-fiber Earth with NASA Blue Marble textures, atmosphere, markers, focus rings and evidence arcs.
+- Client refreshes discovery and investigation data every 60 seconds without discarding arbitrary tapped-place cards.
+- PWA manifest/icons are present; the iOS path is installable web first, then native value-add later.
+- Keyless public feeds currently include: ISS position, NASA video embeds, USGS earthquakes, NASA EONET, NOAA ACE/GOES/SWPC, NOAA STAR satellite imagery, NWS active alerts/zone geometry, GDACS, Open-Meteo weather/marine/air quality, adsb.lol aggregate aircraft positions, UK Carbon Intensity, Launch Library 2, Google News RSS, OCHA FTS, HDX and UNHCR.
+- Media behavior: live YouTube embeds are poster-first to avoid bot-wall/error-first rendering and improve mobile performance; satellite imagery is cache-busted by NOAA Last-Modified timestamps.
 
-## Near-term creative ideas
+## Evidence-lens architecture
 
-1. **Watch mode as an AI-directed channel:** automatic cinematic transitions, changing narration density and themed sequences (Space, Wild Earth, Human Systems).
-2. **Moment quality scoring:** rank discoveries by rarity, visual appeal, freshness, geographic diversity and evidence quality; avoid repeating the same template.
-3. **Ripple lines:** animated arcs showing relationships between events, affected places and supporting observations.
-4. **Time Machine scrubber:** replay earthquake sequences, storm evolution, launch windows and orbital passes.
-5. **City awake/asleep layer:** day-night terminator, local time, transit pulses and dawn/dusk moments.
-6. **Evidence confidence language:** compact plain-English labels instead of technical provenance jargon.
-7. **Serendipity constraints:** avoid showing the same continent/template repeatedly unless it is genuinely exceptional.
-8. **Shareable moments:** deep links that restore the same globe position, evidence panel and timestamped observation.
+Explore Further buttons call `/api/context` with topic, coordinates, subject title and stable entity ids when available. Dedicated lenses exist for:
+- solar wind/aurora coupling;
+- launch schedule and pad weather;
+- earthquake aftershock sequences;
+- ISS visibility caveats;
+- NWS alert timing, satellite context and impact evidence;
+- GOES satellite imagery freshness and interpretation limits;
+- GDACS exposure modeling and relief-data limits;
+- EONET event timelines;
+- marine waves/swell versus storm surge;
+- city air quality;
+- UK grid carbon-intensity history;
+- night-light availability caveats;
+- generic reverse-geocoded weather context.
+
+Remaining lens-quality rule: do not add a chip unless it produces evidence specific to that topic or explicitly explains what evidence is unavailable and what would be needed next.
 
 ## Mobile and iOS path
 
 ### Web/PWA first
-The Vercel web app should remain the fastest iteration surface. Mobile web UX requirements:
-- bottom-sheet evidence panel rather than desktop side panel;
-- large touch targets and one-thumb Surprise/Watch controls;
-- no hover-dependent interactions;
-- reduced clutter and collapsible evidence;
-- fast first paint and graceful WebGL fallback.
+Mobile now uses a bottom-sheet evidence panel, compact media posters, safe-area-aware controls and a hidden hero while the panel is open. Continue tuning:
+- panel height and scroll affordance;
+- globe legibility behind the sheet;
+- touch target size;
+- reduced-motion and low-power fallbacks.
 
-### iOS strategy
-The fastest credible App Store route is a native shell around the same product, not a separate codebase:
-1. Validate the responsive web experience and product value.
-2. Add PWA polish: app icon, splash screens, offline shell and install metadata.
-3. Evaluate Capacitor versus a small SwiftUI/WebView wrapper. Capacitor is likely faster; SwiftUI may feel more native.
-4. Native iOS additions that justify App Store distribution: push notifications for followed events, native share sheets, haptics, widgets/live activities, background refresh for major investigations and offline reading.
-5. Do not submit a thin wrapper without native value; Apple may reject it as a repackaged website.
-6. App Store preparation later requires Apple Developer account, bundle id, privacy nutrition labels, icons/screenshots, age rating, review notes and device testing.
+### Native iOS strategy
+Do not submit a thin web wrapper. A credible iOS app needs native value:
+1. Validate the PWA and product loop first.
+2. Use Capacitor or SwiftUI/WebView only after web quality is proven.
+3. Add push notifications for major events, native share, haptics, widgets/live activities, offline saved investigations and background refresh.
+4. Prepare Apple Developer account, bundle id, privacy labels, screenshots, age rating, review notes and device testing.
 
-## Vercel path
+## Deployment state
 
-The repo is Vercel-ready (`vercel.json`, Next.js framework). Deployment still requires either connecting the GitHub repo in Vercel or a valid Vercel token. Do not purchase anything; use the existing free/hobby path if available.
+Production exists at https://elsewhere-discover-nine.vercel.app, but Vercel free deployment quota has been exhausted (`api-deployments-free-per-day`). Latest validated work is in PR #1 and may be ahead of production. Continue local production builds and batch commits; do not burn deploy quota or rely on PR CI until quota resets/plan changes.
 
-## Immediate technical priorities
+## Immediate priorities
 
-1. Visual iteration from real screenshots at mobile and desktop sizes.
-2. Evidence panel density reduction and better mobile sheet behavior.
-3. More diverse real discovery templates using keyless APIs.
-4. Deterministic scoring/diversity logic for Surprise Me.
-5. WebGL performance/idle behavior and low-power fallback.
-6. Playwright smoke tests for API health, mobile layout, Surprise interaction and investigate mode.
+1. Keep improving evidence density and visual specificity rather than adding generic cards.
+2. Add shareable deep links for moments/evidence paths.
+3. Add diversity/no-repeat scoring to Surprise and Watch.
+4. Improve globe marker affordance, labels and tapped-place detail.
+5. Test real device mobile behavior, especially embeds and WebGL performance.
+6. Expand investigations only where they produce comparison, corroboration or attention-gap insight.
