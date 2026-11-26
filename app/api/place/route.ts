@@ -50,6 +50,15 @@ function weatherText(code?: number) {
   return 'Changing weather';
 }
 
+function worldviewImage(lat: number, lon: number) {
+  const centerLon = Math.max(-174, Math.min(174, lon));
+  const latMin = Math.max(-75, lat - 4);
+  const latMax = Math.min(75, lat + 4);
+  const lonMin = centerLon - 6;
+  const lonMax = centerLon + 6;
+  return `https://wvs.earthdata.nasa.gov/api/v1/snapshot?REQUEST=GetSnapshot&BBOX=${latMin.toFixed(2)}%2C${lonMin.toFixed(2)}%2C${latMax.toFixed(2)}%2C${lonMax.toFixed(2)}&CRS=EPSG%3A4326&LAYERS=MODIS_Terra_CorrectedReflectance_TrueColor&FORMAT=image%2Fjpeg&WIDTH=900&HEIGHT=520`;
+}
+
 function distanceKm(latA: number, lonA: number, latB: number, lonB: number) {
   const rad = Math.PI / 180;
   const dLat = (latB - latA) * rad;
@@ -109,6 +118,7 @@ export async function GET(request: Request) {
     air?.current?.pm2_5 != null ? { label: 'PM2.5', value: `${Math.round(air.current.pm2_5)} μg/m³ model`, kind: 'interpretation' } : null,
     weather?.elevation != null ? { label: 'Elevation', value: `${Math.round(weather.elevation)} m`, kind: 'verified' } : null,
     weather?.timezone ? { label: 'Local timezone', value: weather.timezone.replace('_', ' '), kind: 'verified' } : null,
+    { label: 'Satellite context', value: 'Latest daylight swath; orbital gaps possible', kind: 'observed' },
     { label: 'Attribution', value: 'Weather is model/grid data; reverse geocoding is approximate; populated places may be coarse', kind: 'question' }
   ].filter(Boolean);
   return NextResponse.json({
@@ -116,8 +126,11 @@ export async function GET(request: Request) {
       lat, lon, label: placeName,
       locality: address.city ?? address.town ?? address.village ?? place?.name, country: address.country,
       timezone: weather?.timezone,
+      mediaImage: worldviewImage(lat, lon),
+      mediaAlt: `NASA MODIS latest available true-color satellite swath around ${lat.toFixed(2)}°, ${lon.toFixed(2)}°`,
       facts,
       sources: [
+        { label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/', retrievedAt: new Date().toISOString() },
         { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/', retrievedAt: new Date().toISOString() },
         { label: 'OpenStreetMap Nominatim reverse geocode', url: 'https://nominatim.openstreetmap.org/', retrievedAt: new Date().toISOString() },
         { label: 'USGS 24-hour earthquake feed', url: 'https://earthquake.usgs.gov/earthquakes/feed/', retrievedAt: new Date().toISOString() },

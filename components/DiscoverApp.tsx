@@ -189,6 +189,7 @@ export default function DiscoverApp() {
         location: { lat: point.lat, lon: point.lon, label: place.label },
         summary: 'You selected this point directly. Elsewhere is grounding it in current modeled weather, air quality and geography, then connecting it to the nearest concurrent live signals rather than pretending local events are known.',
         facts: place.facts ?? [], connections: nearest,
+        mediaImage: place.mediaImage, mediaAlt: place.mediaAlt,
         sources: place.sources ?? [],
         related: ['Local weather', 'Nearby signals', 'Night lights']
       });
@@ -310,8 +311,8 @@ export default function DiscoverApp() {
         <div className="panelMedia">{active.visual === 'nasa-live' ?
           <LiveVideo title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0&autoplay=1&mute=1&playsinline=1" /> : active.mediaVideo ?
           <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} /> :
-          <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
-          {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? 'Live public imagery + visualization' : 'Animated evidence visualization'}</div>}
+          <>{!active.mediaImage && <VisualMotif kind={active.visual} />}{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
+          {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? 'Latest public Earth imagery' : 'Animated evidence visualization'}</div>}
         </div>
         <div className="panelBody">
           <div className="eyebrow"><Sparkles size={14} />{active.kicker}</div>
