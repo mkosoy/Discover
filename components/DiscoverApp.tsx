@@ -15,6 +15,20 @@ function angularDistance(latA: number, lonA: number, latB: number, lonB: number)
   return 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)) / rad;
 }
 
+function unavailableSharedDiscovery(id: string): Discovery {
+  return {
+    id: `shared-missing-${id}`, template: 'atmosphere', title: 'This live signal has moved on', kicker: 'Shared link', visual: 'orbital', score: 40, freshness: 'no longer in the live feed',
+    location: { lat: 0, lon: 0, label: 'Live feed snapshot unavailable' },
+    summary: 'The shared discovery is not in the current public feed. Because Elsewhere does not fabricate or replay unverified evidence, this link cannot reconstruct the original live card.',
+    facts: [
+      { label: 'Shared item', value: id || 'Unknown', kind: 'verified' },
+      { label: 'Current evidence', value: 'Unavailable from the live feed', kind: 'question' },
+      { label: 'What happened', value: 'Live signals expire as public data updates', kind: 'interpretation' }
+    ],
+    sources: [], related: ['Nearby signals']
+  };
+}
+
 export default function DiscoverApp() {
   const [discoveries, setDiscoveries] = useState<Discovery[]>([]);
   const [investigations, setInvestigations] = useState<Investigation[]>([]);
@@ -71,7 +85,13 @@ export default function DiscoverApp() {
             setMode('investigate');
           }
           const targetDiscovery = nextDiscoveries.find((item: Discovery) => item.id === initialHash);
-          if (targetDiscovery) setActive(targetDiscovery);
+          if (targetDiscovery) {
+            setActive(targetDiscovery);
+          } else if (!targetInvestigation) {
+            setActive(unavailableSharedDiscovery(initialHash));
+          } else {
+            setActive(nextActive);
+          }
         }
       } else {
         setActive(nextActive);
@@ -159,6 +179,34 @@ export default function DiscoverApp() {
       setActive(current => current ? { ...current, title: 'This point is hard to read right now', summary: 'The public place/weather services did not answer. No local claim is made.', facts: [{ label: 'Evidence', value: 'Unavailable', kind: 'question' }] } : current);
     }
   };
+
+  useEffect(() => {
+    const openHash = () => {
+      const hash = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+      if (!hash) return;
+      if (hash.startsWith('place=')) {
+        const [hashLat, hashLon] = hash.slice(6).split(',').map(Number);
+        if (Number.isFinite(hashLat) && Number.isFinite(hashLon)) void probePlace({ lat: hashLat, lon: hashLon });
+        return;
+      }
+      const hashId = hash.replace(/^investigate-/, '');
+      const targetInvestigation = investigations.find(item => item.id === hashId || `investigate-${item.id}` === hash);
+      if (targetInvestigation) {
+        setSelectedInvestigation(targetInvestigation);
+        setMode('investigate');
+        return;
+      }
+      const targetDiscovery = discoveries.find(item => item.id === hash);
+      if (targetDiscovery) selectDiscovery(targetDiscovery);
+      else {
+        setActive(unavailableSharedDiscovery(hash));
+        setMode('discover');
+        setPanelOpen(true);
+      }
+    };
+    window.addEventListener('hashchange', openHash);
+    return () => window.removeEventListener('hashchange', openHash);
+  }, [discoveries, investigations]);
 
   const followConnection = (connectionId: string) => {
     const match = discoveries.find(d => d.id === connectionId);

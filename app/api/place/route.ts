@@ -11,6 +11,17 @@ async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
   } catch { return null; }
 }
 
+async function jsonLive<T>(url: string): Promise<T | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    return await res.json() as T;
+  } catch { return null; }
+}
+
 async function text(url: string): Promise<string | null> {
   try {
     const controller = new AbortController();
@@ -58,7 +69,7 @@ export async function GET(request: Request) {
     json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,ozone&timezone=auto`),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson'),
     text('https://www.gdacs.org/xml/rss.xml'),
-    json<any>(`https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/100`)
+    jsonLive<any>(`https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/100`)
   ]);
   const current = weather?.current;
   const address = place?.address ?? {};
@@ -91,7 +102,7 @@ export async function GET(request: Request) {
     { label: 'Recent seismicity', value: nearbyQuakes.length ? `${nearbyQuakes.length} recorded within 500 km in 24h` : 'None recorded within 500 km in 24h', kind: nearbyQuakes.length ? 'observed' : 'verified' },
     nearestQuake ? { label: 'Nearest quake', value: `M${Number(nearestQuake.feature.properties?.mag ?? 0).toFixed(1)}, ${Math.round(nearestQuake.distance)} km away`, kind: 'observed' } : null,
     nearestHazard ? { label: 'Hazard model nearby', value: `${nearestHazard.alert} ${nearestHazard.type || 'event'}, ${Math.round(nearestHazard.distance)} km away`, kind: 'interpretation' } : { label: 'Hazard model nearby', value: 'No GDACS alert within 1,000 km', kind: 'verified' },
-    { label: 'Aircraft overhead', value: aircraft.length ? `${aircraft.length} live transponders within ~185 km` : 'No live transponders in the ~185 km search radius', kind: 'observed' },
+    { label: 'Aircraft overhead', value: !aircraftFeed ? 'ADS-B feed unavailable at retrieval time' : aircraft.length ? `${aircraft.length} live position reports within ~185 km` : 'No position reports returned; receiver coverage is not guaranteed', kind: aircraftFeed && aircraft.length ? 'observed' : 'question' },
     nearestAircraft ? { label: 'Nearest aircraft', value: `${(nearestAircraft.flight ?? nearestAircraft.hex ?? 'Unidentified').trim()} · ${Math.round(nearestAircraft.distance)} km away${Number.isFinite(nearestAircraft.alt_baro) ? ` at ${Math.round(nearestAircraft.alt_baro).toLocaleString()} ft` : ''}`, kind: 'observed' } : null,
     air?.current?.pm2_5 != null ? { label: 'PM2.5', value: `${Math.round(air.current.pm2_5)} μg/m³ model`, kind: 'interpretation' } : null,
     weather?.elevation != null ? { label: 'Elevation', value: `${Math.round(weather.elevation)} m`, kind: 'verified' } : null,
