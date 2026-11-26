@@ -10,7 +10,9 @@ export type PublicCamera = {
   title: string;
   lat: number;
   lon: number;
-  youtubeId: string;
+  youtubeId?: string;
+  stillImage?: string;
+  sourceUrl?: string;
   place: string;
   kind: 'city' | 'nature' | 'volcano' | 'aurora' | 'wildlife' | 'water';
   quality: number;
@@ -106,5 +108,5 @@ export function cameraCoverage() {
 }
 
 export function cameraEmbed(camera: Pick<PublicCamera, 'youtubeId'>) {
-  return `https://www.youtube.com/embed/${camera.youtubeId}?rel=0&autoplay=1&mute=1&playsinline=1`;
+  return camera.youtubeId ? `https://www.youtube.com/embed/${camera.youtubeId}?rel=0&autoplay=1&mute=1&playsinline=1` : '';
 }

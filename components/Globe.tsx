@@ -102,7 +102,7 @@ function Earth({ active, discoveries, investigations, cameras, onSelect, onSelec
       const slot = discoveries.slice(0, index).filter(samePlace).length;
       return <Marker key={d.id} discovery={d} slot={slot} active={active?.id === d.id} onSelect={onSelect} />;
     })}
-    <CameraPins cameras={cameras.filter(camera => !discoveries.some(discovery => discovery.mediaVideo?.includes(camera.youtubeId)))} activeId={active?.id?.startsWith('camera-pin-') ? active.id.slice(11) : undefined} onSelect={onSelectCamera} />
+    <CameraPins cameras={cameras.filter(camera => !discoveries.some(discovery => camera.youtubeId ? discovery.mediaVideo?.includes(camera.youtubeId) : false))} activeId={active?.id?.startsWith('camera-pin-') ? active.id.slice(11) : undefined} onSelect={onSelectCamera} />
     {investigations.map(i => <InvestigationMarker key={i.id} investigation={i} active={active?.id === i.id} onSelect={onSelectInvestigation} />)}
   </group>;
 }

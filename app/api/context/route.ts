@@ -347,7 +347,7 @@ export async function GET(request: Request) {
       { label: 'Position precision', value: best?.approximate ? 'Country-level estimate; confirm in source' : 'Camera-specific location', kind: best?.approximate ? 'question' : 'verified' },
       { label: 'Insight', value: best && best.distance < 250 ? 'This is close enough to provide meaningful local visual context, but the camera still shows only its own field of view and cannot verify the event by itself.' : best ? 'This is the nearest curated public camera, but it is not close enough to treat as direct local evidence; use it as regional atmosphere and compare distance carefully.' : 'No camera inference is made.', kind: 'interpretation' },
       { label: 'Next evidence', value: 'A closer authorized local stream, official incident imagery or verified ground observation', kind: 'question' }
-    ], { videos: cameras.map(camera => ({ title: camera.title, place: camera.place, distance: Math.round(camera.distance), src: cameraEmbed(camera), youtubeId: camera.youtubeId, quality: camera.quality, approximate: camera.approximate, confidence: camera.confidence })) });
+    ], { videos: cameras.map(camera => ({ title: camera.title, place: camera.place, distance: Math.round(camera.distance), src: cameraEmbed(camera), youtubeId: camera.youtubeId, quality: camera.quality, approximate: camera.approximate, confidence: camera.confidence, image: camera.stillImage, sourceUrl: camera.sourceUrl })) });
   }
 
   if (t.includes('historical comparison')) {

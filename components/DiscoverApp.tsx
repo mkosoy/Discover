@@ -55,8 +55,10 @@ function discoveryForCamera(camera: PublicCamera): Discovery {
       { label: 'Position precision', value: camera.approximate ? 'City/country-level estimate' : 'Camera-specific curated position', kind: camera.approximate ? 'question' : 'verified' },
       { label: 'Registry coverage', value: `${coverage.total} public look-ins across ${coverage.countries} countries`, kind: 'observed' }
     ],
-    mediaVideo: cameraEmbed(camera),
-    sources: [{ label: 'Open source stream on YouTube', url: `https://www.youtube.com/watch?v=${camera.youtubeId}`, retrievedAt: new Date().toISOString() }],
+    mediaVideo: camera.youtubeId ? cameraEmbed(camera) : undefined,
+    mediaImage: camera.stillImage,
+    mediaAlt: `${camera.title} live camera image`,
+    sources: [{ label: camera.youtubeId ? 'Open source stream on YouTube' : 'Open source camera page', url: camera.youtubeId ? `https://www.youtube.com/watch?v=${camera.youtubeId}` : camera.sourceUrl ?? '#' , retrievedAt: new Date().toISOString() }],
     related: ['Nearby cameras', 'Historical comparison', 'Nearby signals', 'Night lights']
   };
 }
@@ -419,9 +421,9 @@ function CameraLookins({ videos }: { videos: any[] }) {
   const current = videos[Math.min(index, videos.length - 1)];
   if (!current) return null;
   return <div className="cameraLookins">
-    <div className="lensVideo"><LiveVideo title={`${current.title} live look-in`} src={current.src} autoPlay /></div>
-    <div className="cameraChoices">{videos.map((video, videoIndex) => <button key={video.youtubeId ?? video.title} onClick={() => setIndex(videoIndex)} className={videoIndex === index ? 'active' : ''}><b>{video.place}</b><small>{video.approximate ? '~' : ''}{video.distance} km away{video.confidence === 'low' ? ' · verify' : ''}</small></button>)}</div>
-    {current.youtubeId && <a className="cameraSourceLink" href={`https://www.youtube.com/watch?v=${current.youtubeId}`} target="_blank">Open source stream directly</a>}
+    <div className="lensVideo">{current.src ? <LiveVideo title={`${current.title} live look-in`} src={current.src} autoPlay /> : <LiveImage src={current.image} alt={`${current.title} live camera image`} />}</div>
+    <div className="cameraChoices">{videos.map((video, videoIndex) => <button key={video.youtubeId ?? video.title} onClick={() => setIndex(videoIndex)} className={videoIndex === index ? 'active' : ''}><b>{video.place}</b><small>{video.approximate ? '~' : ''}{video.distance} km away{video.image ? ' · live image' : ''}{video.confidence === 'low' ? ' · verify' : ''}</small></button>)}</div>
+    {(current.youtubeId || current.sourceUrl) && <a className="cameraSourceLink" href={current.youtubeId ? `https://www.youtube.com/watch?v=${current.youtubeId}` : current.sourceUrl} target="_blank">Open source camera directly</a>}
   </div>;
 }
 
