@@ -219,7 +219,7 @@ function SkyTraffic({ positions }: { positions: { lat: number; lon: number }[] }
   }, [positions]);
   return <instancedMesh key={`sky-${positions.length}`} ref={ref} args={[undefined, undefined, Math.max(1, positions.length)]}>
     <sphereGeometry args={[.0095, 6, 6]} />
-    <meshBasicMaterial color="#ffd98a" transparent opacity={.62} />
+    <meshBasicMaterial color="#ffd98a" transparent opacity={.45} />
   </instancedMesh>;
 }
 
