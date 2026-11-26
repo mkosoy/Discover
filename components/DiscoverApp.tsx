@@ -70,6 +70,17 @@ export default function DiscoverApp() {
   const [mode, setMode] = useState<'discover' | 'investigate'>('discover');
   const [selectedInvestigation, setSelectedInvestigation] = useState<Investigation>();
   const [watching, setWatching] = useState(false);
+  const [showInstallHint, setShowInstallHint] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const standalone = (navigator as any).standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+    const dismissed = window.localStorage.getItem('elsewhere-install-hint-dismissed');
+    if (ios && !standalone && !dismissed) {
+      const timer = window.setTimeout(() => setShowInstallHint(true), 14000);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
   const [panelOpen, setPanelOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [lens, setLens] = useState<any>();
@@ -350,6 +361,7 @@ export default function DiscoverApp() {
 
     <div className="actionDock">
       <button className="surprise" onClick={() => surprise()} disabled={loading}><Shuffle size={20} />{loading ? 'Listening…' : 'Surprise Me'}</button>
+      {showInstallHint && <button className="installHint" onClick={() => { setShowInstallHint(false); window.localStorage.setItem('elsewhere-install-hint-dismissed', '1'); }}>Add Elsewhere to your Home Screen — Share <span aria-hidden>⎋</span> then “Add to Home Screen” · tap to dismiss</button>}
       <button className={watching ? 'watch active' : 'watch'} onClick={() => setWatching(!watching)}><Play size={17} />{watching ? 'Watching' : 'Watch'}</button>
       <button className="share" onClick={shareCurrent} aria-label="Copy link to this view">{copied ? <Check size={17} /> : <Share2 size={17} />}{copied ? 'Copied' : 'Share'}</button>
     </div>
