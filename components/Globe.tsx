@@ -113,8 +113,8 @@ function Marker({ discovery, active, onSelect }: { discovery: Discovery; active:
       if (!moved) onSelect(discovery);
     }}
   >
-    <mesh><sphereGeometry args={[.018, 18, 18]} /><meshBasicMaterial color={color} /></mesh>
-    {active && <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.04, .0022, 8, 48]} /><meshBasicMaterial color={color} transparent opacity={.72} /></mesh>}
+    <mesh><sphereGeometry args={[.023, 18, 18]} /><meshBasicMaterial color={color} /></mesh>
+    {active && <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.05, .0025, 8, 48]} /><meshBasicMaterial color={color} transparent opacity={.72} /></mesh>}
   </group>;
 }
 
@@ -137,7 +137,7 @@ function InvestigationMarker({ investigation, active, onSelect }: { investigatio
       if (!moved) onSelect(investigation);
     }}
   >
-    <mesh><octahedronGeometry args={[.026, 0]} /><meshBasicMaterial color={active ? '#d8b4fe' : '#8a7dff'} transparent opacity={active ? 1 : .78} /></mesh>
+    <mesh><octahedronGeometry args={[.031, 0]} /><meshBasicMaterial color={active ? '#d8b4fe' : '#8a7dff'} transparent opacity={active ? 1 : .78} /></mesh>
     {active && <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.052, .0025, 8, 48]} /><meshBasicMaterial color="#d8b4fe" transparent opacity={.75} /></mesh>}
   </group>;
 }
