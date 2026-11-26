@@ -26,6 +26,7 @@ export default function DiscoverApp() {
   const [loading, setLoading] = useState(true);
   const [lens, setLens] = useState<any>();
   const [lensLoading, setLensLoading] = useState(false);
+  const [path, setPath] = useState<Discovery[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,11 +62,12 @@ export default function DiscoverApp() {
     setActive(weighted[Math.floor(Math.random() * weighted.length)] ?? discoveries[0]);
     setLens(undefined);
     setLensLoading(false);
+    setPath([]);
     if (reveal) setPanelOpen(true);
     setMode('discover');
   };
 
-  const selectDiscovery = (discovery: Discovery, point?: { lat: number; lon: number }) => {
+  const selectDiscovery = (discovery: Discovery, point?: { lat: number; lon: number }, preservePath = false) => {
     if (point) {
       void probePlace(point);
       return;
@@ -73,6 +75,7 @@ export default function DiscoverApp() {
     setActive(discovery);
     setLens(undefined);
     setLensLoading(false);
+    if (!preservePath) setPath([discovery]);
     setPanelOpen(true);
     setMode('discover');
   };
@@ -80,6 +83,7 @@ export default function DiscoverApp() {
   const probePlace = async (point: { lat: number; lon: number }) => {
     setLens(undefined);
     setLensLoading(false);
+    setPath([]);
     setPanelOpen(true);
     setMode('discover');
     setActive({
@@ -111,6 +115,16 @@ export default function DiscoverApp() {
     } catch {
       setActive(current => current ? { ...current, title: 'This point is hard to read right now', summary: 'The public place/weather services did not answer. No local claim is made.', facts: [{ label: 'Evidence', value: 'Unavailable', kind: 'question' }] } : current);
     }
+  };
+
+  const followConnection = (connectionId: string) => {
+    const match = discoveries.find(d => d.id === connectionId);
+    if (!match || !active) return;
+    setPath(current => {
+      const base = current.length && current[current.length - 1]?.id === active.id ? current : [active];
+      return [...base.filter(d => d.id !== match.id), match];
+    });
+    selectDiscovery(match, undefined, true);
   };
 
   const exploreRelated = async (label: string) => {
@@ -187,7 +201,8 @@ export default function DiscoverApp() {
           <p className="location">{locationLine}</p>
           <p className="summary">{active.summary}</p>
           <div className="factGrid">{active.facts.map(f => <div key={f.label} className={`fact ${f.kind}`}><span>{f.label}</span><strong>{f.value}</strong><em>{kindLabel[f.kind]}</em></div>)}</div>
-          {Boolean(active.connections?.length) && <div className="connections"><span>Connected signals</span>{active.connections?.map(c => <button key={c.id} onClick={() => { const match = discoveries.find(d => d.id === c.id); if (match) selectDiscovery(match); }}><b>{c.title}</b><small>{c.reason}</small></button>)}</div>}
+          {path.length > 1 && <div className="evidencePath"><span>Evidence path</span><div>{path.map((d, i) => <button key={`${d.id}-${i}`} onClick={() => selectDiscovery(d, undefined, true)} className={d.id === active.id ? 'active' : ''}>{d.title}</button>)}</div></div>}
+          {Boolean(active.connections?.length) && <div className="connections"><span>Connected signals</span>{active.connections?.map(c => <button key={c.id} onClick={() => followConnection(c.id)}><b>{c.title}</b><small>{c.reason}</small></button>)}</div>}
           <div className="rabbit"><span>Explore further</span>{active.related.map(r => <button key={r} onClick={() => exploreRelated(r)}>{r}<ArrowRight size={13} /></button>)}</div>
           {lensLoading && <div className="contextLens"><b>Reading local evidence…</b></div>}
           {lens && <div className="contextLens"><b>{lens.topic}</b>{lens.retrievedAt && <small className="lensTime">retrieved {new Date(lens.retrievedAt).toLocaleTimeString()}</small>}<div className="lensGrid">{lens.facts?.map((f: any) => <div key={f.label} className={`lensFact ${f.kind}`}><span>{f.label}</span><p>{f.value}</p></div>)}</div></div>}
@@ -221,7 +236,7 @@ function VisualMotif({ kind }: { kind: Discovery['visual'] }) {
   return <div className={`motif ${kind}`} aria-hidden="true">
     {kind === 'aurora' && <><i className="ribbon a" /><i className="ribbon b" /><i className="ribbon c" /><div className="horizon" /></>}
     {kind === 'seismic' && <><i className="epicenter" /><i className="shock s1" /><i className="shock s2" /><svg className="wave" viewBox="0 0 420 100"><path d="M0 52 L82 52 L101 18 L123 86 L147 31 L168 52 L420 52" /></svg></>}
-    {kind === 'fire' && <><div className="fireGlow" /><div className="ridge" />{Array.from({ length: 18 }, (_, i) => <i key={i} className="ember" style={{ left: `${7 + i * 5}%`, animationDelay: `${(i % 7) * .42}s` }} />)}</>}
+    {kind === 'fire' && <><div className="fireGlow" /><i className="smoke sm1" /><i className="smoke sm2" /><i className="smoke sm3" /><i className="flameCore" /><div className="ridge" />{Array.from({ length: 18 }, (_, i) => <i key={i} className="ember" style={{ left: `${7 + i * 5}%`, animationDelay: `${(i % 7) * .42}s` }} />)}</>}
     {kind === 'launch' && <><svg className="trajectory" viewBox="0 0 420 180"><path d="M35 172 C120 145 190 92 376 20" /></svg><i className="rocket" /><i className="flame" /><div className="pad" /></>}
     {kind === 'ocean' && <><i className="moon" />{Array.from({ length: 4 }, (_, i) => <i key={i} className={`swell w${i + 1}`} />)}<div className="beam" /></>}
     {kind === 'city' && <><i className="sunrise" /><div className="skyline">{Array.from({ length: 12 }, (_, i) => <i key={i} style={{ height: `${24 + (i * 17) % 58}px` }} />)}</div></>}
