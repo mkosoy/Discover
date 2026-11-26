@@ -60,8 +60,12 @@ function newsTime(value: string | undefined) {
 function storyClusters(articles: any[]) {
   const groups = new Map<string, any[]>();
   for (const article of articles) {
-    const withoutSource = String(article.title ?? '').replace(/\s+-\s+[^-]{2,80}$/, '');
-    const key = withoutSource.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 9).join(' ');
+    const title = String(article.title ?? '');
+    const source = String(article.domain ?? '');
+    const exactSuffix = source && title.endsWith(` - ${source}`) ? title.slice(0, -(` - ${source}`).length) : '';
+    const separator = exactSuffix ? -1 : title.lastIndexOf(' - ');
+    const withoutSource = exactSuffix || (separator > 20 ? title.slice(0, separator) : title);
+    const key = withoutSource.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     if (!key) continue;
     groups.set(key, [...(groups.get(key) ?? []), article]);
   }
