@@ -37,8 +37,14 @@ function Earth({ active, discoveries, investigations, onSelect, onSelectInvestig
   const group = useRef<THREE.Group>(null);
   const pointerDown = useRef<{ x: number; y: number }>();
   const earth = useLoader(THREE.TextureLoader, '/textures/earth-blue-marble.jpg');
+  const night = useLoader(THREE.TextureLoader, '/textures/earth-night.jpg');
   const bump = useLoader(THREE.TextureLoader, '/textures/earth-topology.png');
   earth.colorSpace = THREE.SRGBColorSpace;
+  night.colorSpace = THREE.SRGBColorSpace;
+  const sunDirection = useMemo(() => {
+    const point = subsolarPoint();
+    return latLon(point.lat, point.lon, 1).normalize();
+  }, []);
   const target = useMemo(() => {
     if (!active) return new THREE.Quaternion();
     const marker = latLon(active.location.lat, active.location.lon, 1).normalize();
@@ -72,6 +78,16 @@ function Earth({ active, discoveries, investigations, onSelect, onSelectInvestig
     >
       <sphereGeometry args={[1.34, 96, 96]} />
       <meshStandardMaterial map={earth} bumpMap={bump} bumpScale={.045} roughness={.72} metalness={.02} />
+    </mesh>
+    <mesh scale={1.0015}>
+      <sphereGeometry args={[1.34, 96, 96]} />
+      <shaderMaterial
+        transparent
+        depthWrite={false}
+        uniforms={{ nightMap: { value: night }, sunDirection: { value: sunDirection } }}
+        vertexShader={`varying vec2 vUv; varying vec3 vNormal; void main(){ vUv=uv; vNormal=normalize(normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`}
+        fragmentShader={`uniform sampler2D nightMap; uniform vec3 sunDirection; varying vec2 vUv; varying vec3 vNormal; void main(){ float sunDot=dot(normalize(vNormal),normalize(sunDirection)); float nightAmount=1.-smoothstep(-.14,.16,sunDot); vec3 night=texture2D(nightMap,vUv).rgb; float lights=pow(max(max(night.r,night.g),night.b),2.4); vec3 color=night*vec3(.95,1.08,1.45)+vec3(1.35,.88,.34)*lights*1.35; gl_FragColor=vec4(color,nightAmount*.92); }`}
+      />
     </mesh>
     <mesh scale={1.025}>
       <sphereGeometry args={[1.34, 96, 96]} />
@@ -169,7 +185,7 @@ function Marker({ discovery, slot = 0, active, onSelect }: { discovery: Discover
     const s = active ? 1.25 + Math.sin(clock.elapsedTime * 4) * .12 : .65;
     ref.current.scale.setScalar(s);
   });
-  const color = active ? '#8fe7ff' : '#f6c96f';
+  const color = active ? '#8fe7ff' : discovery.mediaVideo ? '#67e8c3' : discovery.visual === 'fire' ? '#ff9b70' : discovery.visual === 'ocean' ? '#69b7ff' : discovery.visual === 'storm' ? '#9aa8ff' : discovery.visual === 'seismic' ? '#ff7f6e' : discovery.visual === 'aurora' ? '#a5f3c8' : '#f6c96f';
   return <group
     ref={ref}
     position={pos}
@@ -181,6 +197,7 @@ function Marker({ discovery, slot = 0, active, onSelect }: { discovery: Discover
       if (!moved) onSelect(discovery);
     }}
   >
+    {discovery.mediaVideo && !active && <mesh><sphereGeometry args={[.034, 18, 18]} /><meshBasicMaterial color={color} transparent opacity={.18} /></mesh>}
     <mesh><sphereGeometry args={[.023, 18, 18]} /><meshBasicMaterial color={color} /></mesh>
     {active && <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.05, .0025, 8, 48]} /><meshBasicMaterial color={color} transparent opacity={.72} /></mesh>}
   </group>;

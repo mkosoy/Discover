@@ -15,11 +15,11 @@ Current principles:
 ## Current implementation
 
 - Next.js 14, React 18, TypeScript, Vercel serverless API routes.
-- Three.js/react-three-fiber Earth with NASA Blue Marble textures, atmosphere, markers, focus rings and evidence arcs.
+- Three.js/react-three-fiber Earth with NASA Blue Marble daytime textures, NASA-style Black Marble night lights, atmosphere, color-coded markers, focus rings and evidence arcs.
 - Client refreshes discovery and investigation data every 60 seconds without discarding arbitrary tapped-place cards.
 - PWA manifest/icons are present; the iOS path is installable web first, then native value-add later.
 - Keyless public feeds currently include: ISS position, NASA video embeds, USGS earthquakes, NASA EONET, NOAA ACE/GOES/SWPC, NOAA STAR satellite imagery, NWS active alerts/zone geometry, GDACS, Open-Meteo weather/marine/air quality, adsb.lol aggregate aircraft positions, UK Carbon Intensity, Launch Library 2, Google News RSS, OCHA FTS, HDX and UNHCR.
-- Live visual moments currently include NASA/ISS, Tokyo, the Namib Desert and Mount Etna; posters delay iframe playback until the user intentionally starts the camera.
+- Live visual moments currently include NASA/ISS plus a curated registry of 45 validated public YouTube camera feeds across cities, harbors, volcanoes, wildlife, aurora and deserts. Discovery cards use poster-first playback; the dedicated Nearby cameras lens intentionally opens the selected live embed and provides direct source links.
 - Investigations can attach normalized visual comparisons in addition to metric cards. Current examples: non-tactical Ukraine public-airspace contrast and Sudan attention-per-million-IDP when comparable uncapped samples exist.
 - Media behavior: live YouTube embeds are poster-first to avoid bot-wall/error-first rendering and improve mobile performance; satellite imagery is cache-busted by NOAA Last-Modified timestamps.
 

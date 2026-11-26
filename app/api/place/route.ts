@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { worldviewSnapshot } from '@/lib/satellite';
+import { earthImagery } from '@/lib/satellite';
 import { nearestPublicCameras } from '@/lib/cameras';
 
 async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
@@ -114,6 +114,7 @@ export async function GET(request: Request) {
                 : nearestCamera
                   ? `The clearest visual way into this place is the nearest curated public look-in around ${nearestCamera.place}, while local weather, daylight, seismicity and aircraft motion supply the surrounding evidence.`
                   : 'This point is quiet in the public alert feeds, so Elsewhere reads weather, daylight, terrain, seismicity and human motion to reveal what is distinctive without inventing an event.';
+  const imagery = earthImagery(lat, lon);
   const facts = [
     current ? { label: 'Weather', value: `${weatherText(current.weather_code)}, ${Math.round(current.temperature_2m)}°C`, kind: 'observed' } : { label: 'Weather', value: 'Unavailable', kind: 'question' },
     current ? { label: 'Wind', value: `${Math.round(current.wind_speed_10m)} km/h from ${Math.round(current.wind_direction_10m)}°`, kind: 'observed' } : null,
@@ -130,7 +131,7 @@ export async function GET(request: Request) {
     weather?.elevation != null ? { label: 'Elevation', value: `${Math.round(weather.elevation)} m`, kind: 'verified' } : null,
     weather?.timezone ? { label: 'Local timezone', value: weather.timezone.replace('_', ' '), kind: 'verified' } : null,
     nearestCamera ? { label: 'Nearest live look-in', value: `${nearestCamera.place} · ${Math.round(nearestCamera.distance)} km away`, kind: 'verified' } : null,
-    { label: 'Satellite context', value: 'Latest daylight swath; orbital gaps possible', kind: 'observed' },
+    { label: 'Satellite context', value: imagery.nearRealtime ? 'GOES GeoColor sector image, usually minutes old' : 'Latest daylight swath; orbital gaps possible', kind: 'observed' },
     { label: 'Attribution', value: 'Weather is model/grid data; reverse geocoding is approximate; populated places may be coarse', kind: 'question' }
   ].filter(Boolean);
   return NextResponse.json({
@@ -138,11 +139,11 @@ export async function GET(request: Request) {
       lat, lon, label: placeName,
       locality: address.city ?? address.town ?? address.village ?? place?.name, country: address.country,
       timezone: weather?.timezone,
-      mediaImage: worldviewSnapshot(lat, lon),
-      mediaAlt: `NASA MODIS latest available true-color satellite swath around ${lat.toFixed(2)}°, ${lon.toFixed(2)}°`,
+      mediaImage: imagery.url,
+      mediaAlt: `${imagery.altPrefix} around ${lat.toFixed(2)}°, ${lon.toFixed(2)}°`,
       facts,
       sources: [
-        { label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/', retrievedAt: new Date().toISOString() },
+        { label: imagery.sourceLabel, url: imagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/', retrievedAt: new Date().toISOString() },
         { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/', retrievedAt: new Date().toISOString() },
         { label: 'OpenStreetMap Nominatim reverse geocode', url: 'https://nominatim.openstreetmap.org/', retrievedAt: new Date().toISOString() },
         { label: 'USGS 24-hour earthquake feed', url: 'https://earthquake.usgs.gov/earthquakes/feed/', retrievedAt: new Date().toISOString() },

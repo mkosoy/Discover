@@ -1,7 +1,7 @@
 import type { Discovery, Investigation } from './types';
 import { ago, until } from './time';
 import * as satellite from 'satellite.js';
-import { worldviewSnapshot } from './satellite';
+import { earthImagery, worldviewSnapshot } from './satellite';
 import { cameraEmbed, nearestPublicCameras, publicCameras } from './cameras';
 
 const now = () => new Date().toISOString();
@@ -306,9 +306,10 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   const q = quakes?.features?.sort((a: any, b: any) => (b.properties?.mag ?? 0) - (a.properties?.mag ?? 0))[0];
   if (q) {
     const [lon, lat, depth] = q.geometry.coordinates;
-    out.push({ id: `quake-${q.id}`, entityId: q.id, occurredAt: new Date(q.properties.time).toISOString(), template: 'geology', title: 'A significant earthquake just reshaped the seismic map', kicker: 'USGS live event', visual: 'seismic', score: 82 + Math.min(14, q.properties.mag * 2), freshness: ago(q.properties.time), mediaImage: worldviewSnapshot(lat, lon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${q.properties.place}`, location: { lat, lon, label: q.properties.place }, summary: `A magnitude ${q.properties.mag.toFixed(1)} earthquake was recorded near ${q.properties.place}. The shake is real observed data; broader impact is deliberately left as an open question until corroborated.`, facts: [
+    const imagery = earthImagery(lat, lon);
+    out.push({ id: `quake-${q.id}`, entityId: q.id, occurredAt: new Date(q.properties.time).toISOString(), template: 'geology', title: 'A significant earthquake just reshaped the seismic map', kicker: 'USGS live event', visual: 'seismic', score: 82 + Math.min(14, q.properties.mag * 2), freshness: ago(q.properties.time), mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} around ${q.properties.place}`, location: { lat, lon, label: q.properties.place }, summary: `A magnitude ${q.properties.mag.toFixed(1)} earthquake was recorded near ${q.properties.place}. The shake is real observed data; broader impact is deliberately left as an open question until corroborated.`, facts: [
       { label: 'Magnitude', value: q.properties.mag.toFixed(1), kind: 'observed' }, { label: 'Depth', value: `${Math.round(depth)} km`, kind: 'observed' }, { label: 'Reports', value: `${q.properties.felt ?? 0} felt reports`, kind: 'verified' }, { label: 'Impact', value: 'Still unknown', kind: 'question' }
-    ], sources: [src('NASA Worldview MODIS satellite imagery', 'https://worldview.earthdata.nasa.gov/'), src('USGS earthquake feed', q.properties.url)], related: ['Aftershock pattern', 'Tsunami bulletins', 'Regional recovery'] });
+    ], sources: [src(imagery.sourceLabel, imagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/'), src('USGS earthquake feed', q.properties.url)], related: ['Aftershock pattern', 'Tsunami bulletins', 'Regional recovery'] });
   }
   const evt = eonet?.events?.find((e: any) => e.geometry?.length);
   if (evt) {
@@ -324,14 +325,15 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const weatherNow = eventWeather?.current;
     const airNow = eventAir?.current;
     const nearestCamera = nearestPublicCameras(lat, lon, 1)[0];
-    out.push({ id: `eonet-${evt.id}`, entityId: evt.id, template: lowerCat.includes('fire') ? 'wildfire' : 'atmosphere', title: `${cat} unfolding in ${evt.title}`, kicker: 'NASA EONET natural event', visual, score: lowerCat.includes('fire') ? 84 : 78, freshness: ago(geom.date), mediaImage: worldviewSnapshot(lat, lon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${evt.title}`, location: { lat, lon, label: evt.title }, summary: `${evt.title} is being tracked in NASA's open natural-event catalog. Elsewhere compares the event position with wind, modeled smoke/air-quality signals, satellite context and the nearest public visual evidence rather than pretending one feed proves impact.`, facts: [
+    const imagery = earthImagery(lat, lon);
+    out.push({ id: `eonet-${evt.id}`, entityId: evt.id, template: lowerCat.includes('fire') ? 'wildfire' : 'atmosphere', title: `${cat} unfolding in ${evt.title}`, kicker: 'NASA EONET natural event', visual, score: lowerCat.includes('fire') ? 84 : 78, freshness: ago(geom.date), mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} around ${evt.title}`, location: { lat, lon, label: evt.title }, summary: `${evt.title} is being tracked in NASA's open natural-event catalog. Elsewhere compares the event position with wind, modeled smoke/air-quality signals, satellite context and the nearest public visual evidence rather than pretending one feed proves impact.`, facts: [
       { label: 'Category', value: cat, kind: 'verified' },
       { label: 'Last geometry', value: ago(geom.date), kind: 'observed' },
       { label: 'Wind transport', value: weatherNow ? `${Math.round(weatherNow.wind_speed_10m)} km/h from ${Math.round(weatherNow.wind_direction_10m)}°` : 'Unavailable', kind: weatherNow ? 'observed' : 'question' },
       { label: 'Air-quality smoke proxy', value: airNow ? `PM2.5 ${Math.round(airNow.pm2_5)} μg/m³ · AOD ${Number(airNow.aerosol_optical_depth ?? 0).toFixed(2)}` : 'Unavailable', kind: airNow ? 'interpretation' : 'question' },
       { label: 'Nearest live look-in', value: nearestCamera ? `${nearestCamera.place} · ${Math.round(nearestCamera.distance)} km away` : 'Unavailable', kind: nearestCamera ? 'verified' : 'question' },
-      { label: 'Satellite context', value: 'Latest swath; gaps possible', kind: 'observed' }
-    ], sources: [src('NASA Worldview MODIS satellite imagery', 'https://worldview.earthdata.nasa.gov/'), src('NASA EONET', evt.link ?? 'https://eonet.gsfc.nasa.gov/'), src('Open-Meteo weather and air quality', 'https://open-meteo.com/')], related: ['Wind direction', 'Air quality', 'Nearby cameras', 'Historical comparison', 'Event timeline'] });
+      { label: 'Satellite context', value: imagery.nearRealtime ? 'GOES GeoColor sector, usually minutes old' : 'Latest swath; gaps possible', kind: 'observed' }
+    ], sources: [src(imagery.sourceLabel, imagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/'), src('NASA EONET', evt.link ?? 'https://eonet.gsfc.nasa.gov/'), src('Open-Meteo weather and air quality', 'https://open-meteo.com/')], related: ['Wind direction', 'Air quality', 'Nearby cameras', 'Historical comparison', 'Event timeline'] });
   }
   if (goesHead) {
     const modified = goesHead.get('last-modified');
@@ -371,13 +373,14 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   if (activeAlert) {
     const [alertLat, alertLon] = activeAlert.centroid;
     const eventName = activeAlert.props.event as string;
+    const alertImagery = earthImagery(alertLat, alertLon);
     const isWater = /flood|surf|marine|storm surge|coastal/i.test(eventName);
     out.push({
       id: `nws-alert-${shortHash(String(activeAlert.props.id ?? activeAlert.alert.id ?? `${eventName}-${activeAlert.props.sent ?? ''}`))}`, entityId: activeAlert.props.id ?? activeAlert.alert.id, occurredAt: activeAlert.props.sent,
       template: isWater ? 'ocean' : /fire|smoke/i.test(eventName) ? 'wildfire' : 'atmosphere',
       title: `${eventName} is active in the United States`, kicker: 'National Weather Service live alert', visual: isWater ? 'ocean' : /fire|smoke/i.test(eventName) ? 'fire' : 'storm', score: 62 + Math.min(28, activeAlert.rank),
       freshness: activeAlert.props.sent ? ago(activeAlert.props.sent) : 'active now',
-      mediaImage: worldviewSnapshot(alertLat, alertLon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${compactArea(activeAlert.props.areaDesc)}`,
+      mediaImage: alertImagery.url, mediaAlt: `${alertImagery.altPrefix} around ${compactArea(activeAlert.props.areaDesc)}`,
       location: { lat: alertLat, lon: alertLon, label: compactArea(activeAlert.props.areaDesc) },
       summary: 'The National Weather Service is actively warning or advising this area. Elsewhere treats the alert itself as verified evidence, while local damage and casualties remain separate questions.',
       facts: [
@@ -386,7 +389,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         { label: 'Expires', value: activeAlert.props.expires ? until(activeAlert.props.expires) : 'See alert', kind: 'verified' },
         { label: 'Impact evidence', value: 'Not established', kind: 'question' }
       ],
-      sources: [src('NASA Worldview MODIS satellite imagery', 'https://worldview.earthdata.nasa.gov/'), src('NWS active alerts', activeAlert.alert.id ?? 'https://api.weather.gov/alerts/active')], related: ['Alert timing', 'Satellite context', 'Local impact evidence']
+      sources: [src(alertImagery.sourceLabel, alertImagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/'), src('NWS active alerts', activeAlert.alert.id ?? 'https://api.weather.gov/alerts/active')], related: ['Alert timing', 'Satellite context', 'Local impact evidence']
     });
   }
 
@@ -511,7 +514,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
-    json<any>('https://api.gdeltproject.org/api/v2/doc/doc?query=ukraine%20conflict&mode=ArtList&maxrecords=30&format=json&timespan=24h'),
+    json<any>('https://api.gdeltproject.org/api/v2/doc/doc?query=ukraine%20conflict&mode=ArtList&maxrecords=30&format=json&timespan=24h', undefined, 1800),
     text('https://news.google.com/rss/search?q=Ukraine%20conflict%20when%3A1d&hl=en-US&gl=US&ceid=US%3Aen'),
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${ukraineCities}&longitude=${ukraineLons}&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&timezone=Europe%2FKyiv`),
     json<any>(`https://api.hpc.tools/v1/public/fts/flow?countryISO3=UKR&year=${currentYear}`),
@@ -528,11 +531,22 @@ export async function getInvestigations(): Promise<Investigation[]> {
     json<any>('https://api.adsb.lol/v2/lat/51.1/lon/10.4/dist/250')
   ]);
   const q = quake?.features?.[0];
-  const [quakeNewsXml, quakeWeather] = q ? await Promise.all([
-    text(`https://news.google.com/rss/search?q=${encodeURIComponent(`${q.properties.place} earthquake when:2d`)}&hl=en-US&gl=US&ceid=US%3Aen`),
-    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${q.geometry.coordinates[1]}&longitude=${q.geometry.coordinates[0]}&current=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m&timezone=auto`)
-  ]) : [null, null];
+  const evt = eonet?.events?.[0];
+  const evtLat = evt?.geometry?.at(-1)?.coordinates?.[1] ?? 0;
+  const evtLon = evt?.geometry?.at(-1)?.coordinates?.[0] ?? 0;
+  const evtCategory = evt?.categories?.[0]?.title ?? 'natural event';
+  const [quakeNewsXml, quakeWeather, eventNewsXml, eventWeather] = await Promise.all([
+    q ? text(`https://news.google.com/rss/search?q=${encodeURIComponent(`${q.properties.place} earthquake when:2d`)}&hl=en-US&gl=US&ceid=US%3Aen`) : Promise.resolve(null),
+    q ? json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${q.geometry.coordinates[1]}&longitude=${q.geometry.coordinates[0]}&current=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m&timezone=auto`) : Promise.resolve(null),
+    evt ? text(`https://news.google.com/rss/search?q=${encodeURIComponent(`${evt.title} ${evtCategory} when:2d`)}&hl=en-US&gl=US&ceid=US%3Aen`) : Promise.resolve(null),
+    evt ? json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${evtLat}&longitude=${evtLon}&current=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m&timezone=auto`) : Promise.resolve(null)
+  ]);
   const quakeArticles = parseGoogleNews(quakeNewsXml);
+  const eventArticles = parseGoogleNews(eventNewsXml);
+  const eventDomains = new Set(eventArticles.map((article: any) => article.domain).filter(Boolean));
+  const eventArticleTimes = eventArticles.map((article: any) => newsTime(article.seendate)).filter(Number.isFinite);
+  const eventLatestCoverage = eventArticleTimes.length ? ago(Math.max(...eventArticleTimes)) : 'unknown';
+  const currentEventWeather = eventWeather?.current;
   const quakeArticleTimes = quakeArticles.map((article: any) => newsTime(article.seendate)).filter(Number.isFinite);
   const quakeLatestCoverage = quakeArticleTimes.length ? ago(Math.max(...quakeArticleTimes)) : 'unknown';
   const regionalQuakes = q ? (allQuakes?.features ?? [])
@@ -744,12 +758,13 @@ export async function getInvestigations(): Promise<Investigation[]> {
   if (q) {
     const [lon, lat, depth] = q.geometry.coordinates;
     const currentQuakeWeather = quakeWeather?.current;
+    const quakeImagery = earthImagery(lat, lon);
     out.push({
       id: 'seismic-ripple',
       title: 'What follows a significant earthquake?',
       dek: 'An evidence-first reconstruction combining the mainshock, later seismic sequence, current environmental exposure, satellite context and attention gaps.',
-      mediaImage: worldviewSnapshot(lat, lon, 8, 12),
-      mediaAlt: `NASA MODIS latest available true-color satellite swath around ${q.properties.place}`,
+      mediaImage: quakeImagery.url,
+      mediaAlt: `${quakeImagery.altPrefix} around ${q.properties.place}`,
       status: 'uncertain',
       location: { lat, lon, label: q.properties.place },
       updatedAt: new Date(q.properties.time).toISOString(),
@@ -763,7 +778,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
         { label: 'Felt reports', value: String(q.properties.felt ?? 0), delta: 'USGS crowd reports' }
       ],
       evidence: [
-        { kind: 'observed', text: 'NASA MODIS imagery provides latest-available visual context for the broad region; orbital gaps, clouds and timing mean it does not verify damage from this earthquake.', source: 'https://worldview.earthdata.nasa.gov/' },
+        { kind: 'observed', text: `${quakeImagery.nearRealtime ? 'NOAA GOES GeoColor sector imagery provides near-real-time visual context for the broad region' : 'NASA MODIS imagery provides latest-available visual context for the broad region'}; clouds, timing and resolution mean it does not verify damage from this earthquake.`, source: quakeImagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/' },
         { kind: 'observed', text: `USGS recorded magnitude ${q.properties.mag?.toFixed(1)} at ${Math.round(depth)} km depth near ${q.properties.place}.`, source: q.properties.url },
         { kind: 'observed', text: `The USGS all-week catalog currently lists ${aftershocks.length} later earthquakes within 300 km of the mainshock, about ${(aftershocks.length / hoursSinceQuake).toFixed(1)}/hour since the event; ${priorDayCount} cataloged events occurred in the same broad region during the prior 24h. Catalog completeness varies by magnitude and network coverage.`, source: 'https://earthquake.usgs.gov/earthquakes/feed/' },
         largestAftershock ? { kind: 'observed', text: `The largest later nearby catalog event is magnitude ${Number(largestAftershock.feature.properties?.mag ?? 0).toFixed(1)}, ${ago(largestAftershock.time)}, roughly ${Math.round(largestAftershock.distance)} km from the mainshock.` } : { kind: 'verified', text: 'No larger later nearby event appears in the current USGS all-week catalog; absence in a short catalog window is not evidence that seismic risk has ended.' },
@@ -777,7 +792,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
       pulseTitle: '48h attention cadence',
       pulseCaption: 'Google News sample counts per 4h, oldest → latest; sparse samples show shape, not total volume',
       sources: [
-        { label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/' },
+        { label: quakeImagery.sourceLabel, url: quakeImagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/' },
         { label: 'USGS significant earthquakes', url: 'https://earthquake.usgs.gov/' },
         { label: 'USGS all-week earthquake catalog', url: 'https://earthquake.usgs.gov/earthquakes/feed/' },
         { label: 'Google News earthquake attention sample', url: 'https://news.google.com/' },
@@ -786,27 +801,15 @@ export async function getInvestigations(): Promise<Investigation[]> {
       ]
     });
   }
-  const evt = eonet?.events?.[0];
-  const evtLat = evt?.geometry?.at(-1)?.coordinates?.[1] ?? 0;
-  const evtLon = evt?.geometry?.at(-1)?.coordinates?.[0] ?? 0;
-  const evtCategory = evt?.categories?.[0]?.title ?? 'natural event';
-  const [eventNewsXml, eventWeather] = evt ? await Promise.all([
-    text(`https://news.google.com/rss/search?q=${encodeURIComponent(`${evt.title} ${evtCategory} when:2d`)}&hl=en-US&gl=US&ceid=US%3Aen`),
-    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${evtLat}&longitude=${evtLon}&current=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m&timezone=auto`)
-  ]) : [null, null];
-  const eventArticles = parseGoogleNews(eventNewsXml);
-  const eventDomains = new Set(eventArticles.map((article: any) => article.domain).filter(Boolean));
-  const eventArticleTimes = eventArticles.map((article: any) => newsTime(article.seendate)).filter(Number.isFinite);
-  const eventLatestCoverage = eventArticleTimes.length ? ago(Math.max(...eventArticleTimes)) : 'unknown';
-  const currentEventWeather = eventWeather?.current;
+  const investigationEventImagery = earthImagery(evtLat, evtLon);
   if (evt) out.push({
     id: 'event-attention-gap',
     title: 'Which natural events are being missed?',
     dek: 'A NASA event observation is compared with current environmental conditions and event-specific public attention to surface stories that may be under-covered.',
     status: 'uncertain',
     location: { lat: evtLat, lon: evtLon, label: evt.title },
-    mediaImage: worldviewSnapshot(evtLat, evtLon, 8, 12),
-    mediaAlt: `NASA MODIS latest available true-color satellite swath around ${evt.title}`,
+    mediaImage: investigationEventImagery.url,
+    mediaAlt: `${investigationEventImagery.altPrefix} around ${evt.title}`,
     updatedAt: evt.geometry?.at(-1)?.date ?? now(),
     confidence: 54,
     metrics: [
@@ -817,7 +820,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
       { label: 'Last geometry', value: evt.geometry?.at(-1)?.date ? ago(evt.geometry.at(-1).date) : '—', delta: evtCategory }
     ],
     evidence: [
-      { kind: 'observed', text: 'NASA MODIS imagery supplies latest-available visual context around the event; orbital gaps and clouds mean it is corroborating context rather than proof of current conditions.', source: 'https://worldview.earthdata.nasa.gov/' },
+      { kind: 'observed', text: `${investigationEventImagery.nearRealtime ? 'NOAA GOES GeoColor sector imagery supplies near-real-time visual context around the event' : 'NASA MODIS imagery supplies latest-available visual context around the event'}; clouds, orbital gaps and resolution mean it is corroborating context rather than proof of current conditions.`, source: investigationEventImagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/' },
       { kind: 'observed', text: `NASA EONET is tracking ${evt.title} as an open ${evtCategory.toLowerCase()} event; latest geometry is ${evt.geometry?.at(-1)?.date ? ago(evt.geometry.at(-1).date) : 'unknown'}.`, source: evt.link ?? 'https://eonet.gsfc.nasa.gov/' },
       currentEventWeather ? { kind: 'observed', text: `Current modeled conditions near the event are ${Math.round(currentEventWeather.temperature_2m)}°C with ${Number(currentEventWeather.precipitation ?? 0).toFixed(1)} mm precipitation, ${Math.round(currentEventWeather.cloud_cover)}% cloud cover and ${Math.round(currentEventWeather.wind_speed_10m)} km/h winds. This frames exposure and observing conditions but does not verify impacts.`, source: 'https://open-meteo.com/' } : { kind: 'question', text: 'Current weather near the event was unavailable, so environmental exposure cannot be assessed.' },
       { kind: 'observed', text: eventArticles.length ? `An event-specific two-day Google News sample returned ${eventArticles.length} items across ${eventDomains.size} outlets/domains, latest ${eventLatestCoverage}. The sample measures attention rather than severity or human consequence.` : 'The event-specific two-day public attention sample was unavailable or empty, so no conclusion is drawn about media coverage.', source: 'https://news.google.com/' },
@@ -828,7 +831,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
     pulseTitle: '48h attention cadence',
     pulseCaption: 'Google News sample counts per 4h, oldest → latest; sparse samples show shape, not total volume',
     sources: [
-      { label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/' },
+      { label: investigationEventImagery.sourceLabel, url: investigationEventImagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/' },
       { label: 'NASA EONET', url: 'https://eonet.gsfc.nasa.gov/' },
       { label: 'Google News event attention sample', url: 'https://news.google.com/' },
       { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' }

@@ -62,15 +62,12 @@ export default function DiscoverApp() {
   useEffect(() => {
     let cancelled = false;
     const load = async (initial = false) => {
-      const [d, i] = await Promise.all([
-        fetch('/api/discoveries', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ discoveries: [] })),
-        fetch('/api/investigations', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ investigations: [] }))
-      ]);
+      const discoveriesPromise = fetch('/api/discoveries', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ discoveries: [] }));
+      const investigationsPromise = fetch('/api/investigations', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ investigations: [] }));
+      const d = await discoveriesPromise;
       if (cancelled) return;
       const nextDiscoveries = d.discoveries ?? [];
-      const nextInvestigations = i.investigations ?? [];
       setDiscoveries(nextDiscoveries);
-      setInvestigations(nextInvestigations);
       const currentActive = activeRef.current;
       const rediscovered = currentActive ? nextDiscoveries.find((item: Discovery) => item.id === currentActive.id) : undefined;
       const nextActive = !currentActive
@@ -86,31 +83,35 @@ export default function DiscoverApp() {
         setLens(undefined);
         setLensLoading(false);
       }
-      if (initial && initialHash) {
-        if (initialHash.startsWith('place=')) {
-          const [hashLat, hashLon] = initialHash.slice(6).split(',').map(Number);
-          if (Number.isFinite(hashLat) && Number.isFinite(hashLon)) void probePlace({ lat: hashLat, lon: hashLon }, nextDiscoveries);
-        } else {
-          const hashId = initialHash.replace(/^investigate-/, '');
-          const targetInvestigation = nextInvestigations.find((item: Investigation) => item.id === hashId || `investigate-${item.id}` === initialHash);
-          if (targetInvestigation) {
-            setSelectedInvestigation(targetInvestigation);
-            setMode('investigate');
-          }
-          const targetDiscovery = nextDiscoveries.find((item: Discovery) => item.id === initialHash);
-          if (targetDiscovery) {
-            setActive(targetDiscovery);
-          } else if (!targetInvestigation) {
-            setActive(unavailableSharedDiscovery(initialHash));
-          } else {
-            setActive(nextActive);
-          }
-        }
+      const placeHash = initial && initialHash.startsWith('place=');
+      const investigationHash = initial && initialHash.startsWith('investigate-');
+      if (placeHash) {
+        const [hashLat, hashLon] = initialHash.slice(6).split(',').map(Number);
+        if (Number.isFinite(hashLat) && Number.isFinite(hashLon)) void probePlace({ lat: hashLat, lon: hashLon }, nextDiscoveries);
+      } else if (initial && initialHash && !investigationHash) {
+        const targetDiscovery = nextDiscoveries.find((item: Discovery) => item.id === initialHash);
+        setActive(targetDiscovery ?? unavailableSharedDiscovery(initialHash));
       } else {
         setActive(nextActive);
       }
-      setSelectedInvestigation(current => current ? nextInvestigations.find((item: Investigation) => item.id === current.id) ?? nextInvestigations[0] : nextInvestigations[0]);
       if (initial) setLoading(false);
+
+      const i = await investigationsPromise;
+      if (cancelled) return;
+      const nextInvestigations = i.investigations ?? [];
+      setInvestigations(nextInvestigations);
+      if (investigationHash) {
+        const hashId = initialHash.replace(/^investigate-/, '');
+        const targetInvestigation = nextInvestigations.find((item: Investigation) => item.id === hashId || `investigate-${item.id}` === initialHash);
+        if (targetInvestigation) {
+          setSelectedInvestigation(targetInvestigation);
+          setMode('investigate');
+        } else {
+          setActive(unavailableSharedDiscovery(initialHash));
+          setMode('discover');
+        }
+      }
+      setSelectedInvestigation(current => current ? nextInvestigations.find((item: Investigation) => item.id === current.id) ?? nextInvestigations[0] : nextInvestigations[0]);
     };
     void load(true);
     const refresh = window.setInterval(() => void load(), 60000);
@@ -312,7 +313,7 @@ export default function DiscoverApp() {
           <LiveVideo title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0&autoplay=1&mute=1&playsinline=1" /> : active.mediaVideo ?
           <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} /> :
           <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
-          {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? 'Latest public Earth imagery' : 'Animated evidence visualization'}</div>}
+          {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? (active.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : 'Latest public Earth imagery') : 'Animated evidence visualization'}</div>}
         </div>
         <div className="panelBody">
           <div className="eyebrow"><Sparkles size={14} />{active.kicker}</div>
@@ -330,7 +331,7 @@ export default function DiscoverApp() {
       </motion.aside>}
 
       {mode === 'investigate' && inv && <motion.aside key={inv.id} className="discoveryPanel investigation" initial={{ opacity: 0, y: 42 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 26 }}>
-        {inv.mediaImage && <div className="panelMedia"><VisualMotif kind="orbital" /><LiveImage src={inv.mediaImage} alt={inv.mediaAlt ?? inv.title} /><div className="mediaTag"><Satellite size={13} /> Latest satellite swath</div></div>}
+        {inv.mediaImage && <div className="panelMedia"><VisualMotif kind="orbital" /><LiveImage src={inv.mediaImage} alt={inv.mediaAlt ?? inv.title} /><div className="mediaTag"><Satellite size={13} /> {inv.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : 'Latest satellite swath'}</div></div>}
         <div className="panelBody investigationBody">
         <div className="investHeader"><div><div className="eyebrow"><Eye size={14} />Beyond the headlines</div><h2>{inv.title}</h2><p className="location">{inv.location.label} · confidence {inv.confidence}%</p></div><button onClick={() => setMode('discover')}><X size={18} /></button></div>
         <p className="summary">{inv.dek}</p>
@@ -358,14 +359,14 @@ export default function DiscoverApp() {
 }
 
 
-function LiveVideo({ src, title }: { src: string; title: string }) {
-  const [playing, setPlaying] = useState(false);
-  useEffect(() => setPlaying(false), [src]);
+function LiveVideo({ src, title, autoPlay = false }: { src: string; title: string; autoPlay?: boolean }) {
+  const [playing, setPlaying] = useState(autoPlay);
+  useEffect(() => setPlaying(autoPlay), [src, autoPlay]);
   const id = src.match(/embed\/([^?]+)/)?.[1];
   if (playing || !id) return <iframe title={title} src={src} allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen />;
   return <button className="videoPoster" onClick={() => setPlaying(true)} aria-label={`Play ${title}`}>
     <img src={`https://img.youtube.com/vi/${id}/hqdefault.jpg`} alt="" />
-    <span><Play size={18} />Live video</span>
+    <span><Play size={18} />Open live stream</span>
   </button>;
 }
 
@@ -375,8 +376,9 @@ function CameraLookins({ videos }: { videos: any[] }) {
   const current = videos[Math.min(index, videos.length - 1)];
   if (!current) return null;
   return <div className="cameraLookins">
-    <div className="lensVideo"><LiveVideo title={`${current.title} live look-in`} src={current.src} /></div>
+    <div className="lensVideo"><LiveVideo title={`${current.title} live look-in`} src={current.src} autoPlay /></div>
     <div className="cameraChoices">{videos.map((video, videoIndex) => <button key={video.youtubeId ?? video.title} onClick={() => setIndex(videoIndex)} className={videoIndex === index ? 'active' : ''}><b>{video.place}</b><small>{video.distance} km away</small></button>)}</div>
+    {current.youtubeId && <a className="cameraSourceLink" href={`https://www.youtube.com/watch?v=${current.youtubeId}`} target="_blank">Open source stream directly</a>}
   </div>;
 }
 
