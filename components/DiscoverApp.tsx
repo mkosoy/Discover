@@ -46,6 +46,10 @@ export default function DiscoverApp() {
         return nextDiscoveries.find((item: Discovery) => item.id === current.id) ?? nextDiscoveries[0] ?? current;
       });
       setSelectedInvestigation(current => current ? nextInvestigations.find((item: Investigation) => item.id === current.id) ?? nextInvestigations[0] : nextInvestigations[0]);
+      if (!initial) {
+        setLens(undefined);
+        setLensLoading(false);
+      }
       if (initial) setLoading(false);
     };
     void load(true);
