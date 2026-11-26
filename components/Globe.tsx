@@ -34,7 +34,7 @@ function subsolarPoint(date = new Date()) {
 
 type FocusTarget = { id: string; location: { lat: number; lon: number }; connections?: { id: string }[] };
 
-function Earth({ active, discoveries, investigations, cameras, onSelect, onSelectCamera, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; cameras: PublicCamera[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectCamera: (camera: PublicCamera) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
+function Earth({ active, discoveries, investigations, cameras, sky, onSelect, onSelectCamera, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; cameras: PublicCamera[]; sky?: { lat: number; lon: number }[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectCamera: (camera: PublicCamera) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
   const group = useRef<THREE.Group>(null);
   const pointerDown = useRef<{ x: number; y: number }>();
   const earth = useLoader(THREE.TextureLoader, '/textures/earth-blue-marble.jpg');
@@ -102,6 +102,7 @@ function Earth({ active, discoveries, investigations, cameras, onSelect, onSelec
       const slot = discoveries.slice(0, index).filter(samePlace).length;
       return <Marker key={d.id} discovery={d} slot={slot} active={active?.id === d.id} onSelect={onSelect} />;
     })}
+    {Boolean(sky?.length) && <SkyTraffic positions={sky!} />}
     <CameraPins cameras={cameras.filter(camera => !discoveries.some(discovery => camera.youtubeId ? discovery.mediaVideo?.includes(camera.youtubeId) : false))} activeId={active?.id?.startsWith('camera-pin-') ? active.id.slice(11) : undefined} onSelect={onSelectCamera} />
     {investigations.map(i => <InvestigationMarker key={i.id} investigation={i} active={active?.id === i.id} onSelect={onSelectInvestigation} />)}
   </group>;
@@ -205,6 +206,23 @@ function Marker({ discovery, slot = 0, active, onSelect }: { discovery: Discover
   </group>;
 }
 
+function SkyTraffic({ positions }: { positions: { lat: number; lon: number }[] }) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    const matrix = new THREE.Matrix4();
+    positions.forEach((pos, index) => {
+      matrix.setPosition(latLon(pos.lat, pos.lon, 1.372));
+      ref.current?.setMatrixAt(index, matrix);
+    });
+    ref.current.instanceMatrix.needsUpdate = true;
+  }, [positions]);
+  return <instancedMesh key={`sky-${positions.length}`} ref={ref} args={[undefined, undefined, Math.max(1, positions.length)]}>
+    <sphereGeometry args={[.006, 6, 6]} />
+    <meshBasicMaterial color="#ffe9b8" transparent opacity={.5} />
+  </instancedMesh>;
+}
+
 function CameraPins({ cameras, activeId, onSelect }: { cameras: PublicCamera[]; activeId?: string; onSelect: (camera: PublicCamera) => void }) {
   const ref = useRef<THREE.InstancedMesh>(null);
   const hitRef = useRef<THREE.InstancedMesh>(null);
@@ -291,7 +309,7 @@ function InvestigationMarker({ investigation, active, onSelect }: { investigatio
   </group>;
 }
 
-export default function Globe({ active, discoveries, investigations, cameras, onSelect, onSelectCamera, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; cameras: PublicCamera[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectCamera: (camera: PublicCamera) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
+export default function Globe({ active, discoveries, investigations, cameras, sky, onSelect, onSelectCamera, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; cameras: PublicCamera[]; sky?: { lat: number; lon: number }[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectCamera: (camera: PublicCamera) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
   const sun = useMemo(() => {
     const point = subsolarPoint();
     return latLon(point.lat, point.lon, 5.4);
@@ -303,7 +321,7 @@ export default function Globe({ active, discoveries, investigations, cameras, on
       <directionalLight position={[sun.x, sun.y, sun.z]} intensity={2.45} />
       <pointLight position={[-3, -2, -2]} intensity={.38} color="#5b7cff" />
       <Stars radius={80} depth={35} count={3600} factor={3.2} saturation={0} fade speed={.45} />
-      <Earth active={active} discoveries={discoveries} investigations={investigations} cameras={cameras} onSelect={onSelect} onSelectCamera={onSelectCamera} onSelectInvestigation={onSelectInvestigation} />
+      <Earth active={active} discoveries={discoveries} investigations={investigations} cameras={cameras} sky={sky} onSelect={onSelect} onSelectCamera={onSelectCamera} onSelectInvestigation={onSelectInvestigation} />
       <OrbitControls enablePan={false} enableZoom minDistance={3.25} maxDistance={5.2} zoomSpeed={.55} rotateSpeed={.42} enableDamping dampingFactor={.08} />
     </Canvas>
     <div className="orbitalVignette" />
