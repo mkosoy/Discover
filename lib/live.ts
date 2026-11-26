@@ -2,9 +2,29 @@ import type { Discovery, Investigation } from './types';
 import { ago, until } from './time';
 import * as satellite from 'satellite.js';
 import { worldviewSnapshot } from './satellite';
+import { cameraEmbed, nearestPublicCameras, publicCameras } from './cameras';
 
 const now = () => new Date().toISOString();
 const src = (label: string, url: string) => ({ label, url, retrievedAt: now() });
+const featuredCameraIds = ['times-square', 'abbey-road', 'venice-guglie', 'niagara-falls', 'mount-fuji-shizuoka', 'ol-donyo-wildlife', 'etosha-waterhole', 'utsjoki-aurora', 'washington-monument', 'kilauea-crater', 'iceland-volcano-watch', 'sydney-harbour', 'vancouver-harbour', 'table-mountain'];
+const featuredCameras = featuredCameraIds.map(id => publicCameras.find(camera => camera.id === id)).filter((camera): camera is NonNullable<typeof camera> => Boolean(camera));
+const cameraCopy: Record<string, { title: string; summary: string; template: Discovery['template']; visual: Discovery['visual'] }> = {
+  'times-square': { template: 'city', visual: 'city', title: 'Times Square is glowing in real time', summary: 'An authorized public camera looks into one of the world’s most illuminated urban crossings while weather grounds the scene in the same minute.' },
+  'abbey-road': { template: 'city', visual: 'city', title: 'Abbey Road is crossing in real time', summary: 'A public camera watches London’s famous zebra crossing. Small human moments become planetary-scale live texture when paired with weather and city context.' },
+  'venice-guglie': { template: 'ocean', visual: 'ocean', title: 'A Venice canal is moving under the light', summary: 'This live canal view turns weather, water and human movement into a direct look inside a fragile lagoon city.' },
+  'niagara-falls': { template: 'ocean', visual: 'ocean', title: 'Niagara Falls is thundering right now', summary: 'A continuous public camera looks at the falls while current conditions frame mist, visibility and atmosphere.' },
+  'mount-fuji-shizuoka': { template: 'geology', visual: 'city', title: 'Mount Fuji is emerging through the atmosphere', summary: 'A live camera faces Fuji from Shizuoka; clouds, haze and changing light make the mountain appear and disappear in real time.' },
+  'ol-donyo-wildlife': { template: 'atmosphere', visual: 'city', title: 'A Kenyan waterhole is being watched live', summary: 'This authorized wildlife camera gives a direct look into animal rhythms. A quiet frame is meaningful too: wildlife is never scripted.' },
+  'etosha-waterhole': { template: 'atmosphere', visual: 'city', title: 'Etosha’s waterhole is holding the desert’s attention', summary: 'A public wildlife camera watches a Namibia waterhole where animals may arrive at any minute; absence is part of the ecological evidence.' },
+  'utsjoki-aurora': { template: 'atmosphere', visual: 'aurora', title: 'The Arctic sky camera is waiting for aurora', summary: 'A live sky camera in Finnish Lapland offers a direct watch on darkness, clouds and the possibility of northern lights.' },
+  'washington-monument': { template: 'city', visual: 'city', title: 'Washington’s monument axis is live under changing light', summary: 'A public EarthCam looks across the National Mall while local weather gives the scene temperature, wind and cloud context.' },
+  'kilauea-crater': { template: 'geology', visual: 'fire', title: 'Kīlauea’s crater is being watched by USGS', summary: 'An official USGS camera watches the west Halemaʻumaʻu crater. Even apparent calm is meaningful, but visual quiet alone does not establish volcanic status.' },
+  'iceland-volcano-watch': { template: 'geology', visual: 'fire', title: 'Iceland’s volcanic coast is under continuous watch', summary: 'A public multicamera volcano watch looks across Reykjanes. Elsewhere treats it as visual evidence only within its own frame, never as eruption proof by itself.' },
+  'sydney-harbour': { template: 'ocean', visual: 'ocean', title: 'Sydney Harbour is moving around the Opera House', summary: 'A live public camera watches ferries, water, clouds and city light around one of the world’s most recognizable harbors.' },
+  'vancouver-harbour': { template: 'ocean', visual: 'ocean', title: 'Vancouver’s harbor is working in real time', summary: 'Cruise ships, seaplanes, weather and mountain light converge in this live harbor view.' },
+  'table-mountain': { template: 'atmosphere', visual: 'city', title: 'Table Mountain is holding weather over Cape Town', summary: 'A live camera watches the mountain-city interface where cloud, wind and ocean light can change the scene minute by minute.' }
+};
+
 async function json<T>(url: string, init?: RequestInit, timeoutMs = 5000): Promise<T | null> {
   try {
     const controller = new AbortController();
@@ -218,7 +238,7 @@ function connectDiscoveries(out: Discovery[]) {
 
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -238,7 +258,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://api.open-meteo.com/v1/forecast?latitude=-23.65&longitude=15.95&current=temperature_2m,weather_code,wind_speed_10m,is_day&timezone=auto'),
     json<any>('https://api.open-meteo.com/v1/forecast?latitude=37.73&longitude=15.0&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day&timezone=auto'),
     head('https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg'),
-    json<any>('https://api.weather.gov/alerts/active?status=actual', { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } })
+    json<any>('https://api.weather.gov/alerts/active?status=actual', { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }),
+    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${featuredCameras.map(camera => camera.lat).join(',')}&longitude=${featuredCameras.map(camera => camera.lon).join(',')}&current=temperature_2m,wind_speed_10m,is_day,cloud_cover&timezone=auto`)
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -296,9 +317,21 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const cat = evt.categories?.[0]?.title ?? 'Natural event';
     const lowerCat = cat.toLowerCase();
     const visual = lowerCat.includes('fire') ? 'fire' : lowerCat.includes('volcano') || lowerCat.includes('earthquake') ? 'seismic' : lowerCat.includes('ice') || lowerCat.includes('flood') ? 'ocean' : lowerCat.includes('storm') ? 'storm' : 'orbital';
-    out.push({ id: `eonet-${evt.id}`, entityId: evt.id, template: lowerCat.includes('fire') ? 'wildfire' : 'atmosphere', title: `${cat} unfolding in ${evt.title}`, kicker: 'NASA EONET natural event', visual, score: 78, freshness: ago(geom.date), mediaImage: worldviewSnapshot(lat, lon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${evt.title}`, location: { lat, lon, label: evt.title }, summary: `${evt.title} is being tracked in NASA's open natural-event catalog. Elsewhere combines the event position with weather and source context rather than pretending satellite imagery is live.`, facts: [
-      { label: 'Category', value: cat, kind: 'verified' }, { label: 'Last geometry', value: ago(geom.date), kind: 'observed' }, { label: 'Satellite context', value: 'Latest swath; gaps possible', kind: 'observed' }
-    ], sources: [src('NASA Worldview MODIS satellite imagery', 'https://worldview.earthdata.nasa.gov/'), src('NASA EONET', evt.link ?? 'https://eonet.gsfc.nasa.gov/')], related: ['Wind direction', 'Nearby cameras', 'Event timeline'] });
+    const [eventWeather, eventAir] = await Promise.all([
+      json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m,cloud_cover&timezone=auto`, undefined, 3200),
+      json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,aerosol_optical_depth&timezone=auto`, undefined, 3200)
+    ]);
+    const weatherNow = eventWeather?.current;
+    const airNow = eventAir?.current;
+    const nearestCamera = nearestPublicCameras(lat, lon, 1)[0];
+    out.push({ id: `eonet-${evt.id}`, entityId: evt.id, template: lowerCat.includes('fire') ? 'wildfire' : 'atmosphere', title: `${cat} unfolding in ${evt.title}`, kicker: 'NASA EONET natural event', visual, score: lowerCat.includes('fire') ? 84 : 78, freshness: ago(geom.date), mediaImage: worldviewSnapshot(lat, lon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${evt.title}`, location: { lat, lon, label: evt.title }, summary: `${evt.title} is being tracked in NASA's open natural-event catalog. Elsewhere compares the event position with wind, modeled smoke/air-quality signals, satellite context and the nearest public visual evidence rather than pretending one feed proves impact.`, facts: [
+      { label: 'Category', value: cat, kind: 'verified' },
+      { label: 'Last geometry', value: ago(geom.date), kind: 'observed' },
+      { label: 'Wind transport', value: weatherNow ? `${Math.round(weatherNow.wind_speed_10m)} km/h from ${Math.round(weatherNow.wind_direction_10m)}°` : 'Unavailable', kind: weatherNow ? 'observed' : 'question' },
+      { label: 'Air-quality smoke proxy', value: airNow ? `PM2.5 ${Math.round(airNow.pm2_5)} μg/m³ · AOD ${Number(airNow.aerosol_optical_depth ?? 0).toFixed(2)}` : 'Unavailable', kind: airNow ? 'interpretation' : 'question' },
+      { label: 'Nearest live look-in', value: nearestCamera ? `${nearestCamera.place} · ${Math.round(nearestCamera.distance)} km away` : 'Unavailable', kind: nearestCamera ? 'verified' : 'question' },
+      { label: 'Satellite context', value: 'Latest swath; gaps possible', kind: 'observed' }
+    ], sources: [src('NASA Worldview MODIS satellite imagery', 'https://worldview.earthdata.nasa.gov/'), src('NASA EONET', evt.link ?? 'https://eonet.gsfc.nasa.gov/'), src('Open-Meteo weather and air quality', 'https://open-meteo.com/')], related: ['Wind direction', 'Air quality', 'Nearby cameras', 'Historical comparison', 'Event timeline'] });
   }
   if (goesHead) {
     const modified = goesHead.get('last-modified');
@@ -445,6 +478,28 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   if (launch) out.push({ id: `launch-${launch.id}`, entityId: launch.id, occurredAt: launch.net, template: 'launch', title: launch.name, kicker: 'Upcoming space mission', visual: 'launch', score: 70, freshness: launch.net ? until(launch.net) : 'scheduled', location: { lat: launch.pad?.latitude ?? 28.6, lon: launch.pad?.longitude ?? -80.6, label: launch.pad?.location?.name ?? launch.pad?.name ?? 'Launch complex' }, summary: `${launch.name} is scheduled from ${launch.pad?.name ?? 'a launch complex'}. Countdowns can change, so Elsewhere distinguishes the published schedule from confirmation.`, facts: [
     { label: 'Window', value: launch.net ? new Date(launch.net).toLocaleString() : 'TBD', kind: 'verified' }, { label: 'Status', value: launch.status?.name ?? 'Unknown', kind: 'verified' }, { label: 'Provider', value: launch.launch_service_provider?.name ?? 'Unknown', kind: 'verified' }
   ], sources: [src('Launch Library 2', 'https://thespacedevs.com/llapi')], related: ['Mission trajectory', 'Weather constraints', 'Pad cameras'] });
+
+  featuredCameras.forEach((camera, index) => {
+    const copy = cameraCopy[camera.id];
+    if (!copy) return;
+    const current = Array.isArray(cameraWeather) ? cameraWeather[index]?.current : null;
+    out.push({
+      id: `camera-${camera.id}`, template: copy.template, title: copy.title, kicker: 'Live look-in', visual: copy.visual,
+      score: Math.min(92, camera.quality - 2), freshness: 'live camera + current weather', mediaVideo: cameraEmbed(camera),
+      location: { lat: camera.lat, lon: camera.lon, label: camera.place },
+      summary: copy.summary,
+      facts: [
+        { label: 'Camera source', value: 'Authorized public YouTube embed', kind: 'verified' },
+        { label: 'Temperature', value: current ? `${Math.round(current.temperature_2m)}°C` : 'Unavailable', kind: current ? 'observed' : 'question' },
+        { label: 'Wind', value: current ? `${Math.round(current.wind_speed_10m)} km/h` : 'Unavailable', kind: current ? 'observed' : 'question' },
+        { label: 'Light / cloud', value: current ? `${current.is_day ? 'Daylight' : 'Dark'} · ${Math.round(current.cloud_cover)}% cloud` : 'Unavailable', kind: current ? 'observed' : 'question' },
+        { label: 'What the camera proves', value: 'Only its own visible frame', kind: 'interpretation' }
+      ],
+      sources: [src(`${camera.title} live camera`, `https://www.youtube.com/watch?v=${camera.youtubeId}`), src('Open-Meteo current weather', 'https://open-meteo.com/')],
+      related: ['Nearby cameras', 'Historical comparison', 'Night lights']
+    });
+  });
+
   return connectDiscoveries(out.sort((a, b) => b.score - a.score)).map(d => ({ ...d, retrieved } as Discovery));
 }
 

@@ -187,11 +187,11 @@ export default function DiscoverApp() {
       setActive({
         id: `place-${point.lat.toFixed(2)}-${point.lon.toFixed(2)}`, template: 'atmosphere', title: `A live pulse from ${place.label}`, kicker: 'You found this place', visual: place.country ? 'city' : 'ocean', score: 72, freshness: 'current conditions',
         location: { lat: point.lat, lon: point.lon, label: place.label },
-        summary: 'You selected this point directly. Elsewhere is grounding it in current modeled weather, air quality and geography, then connecting it to the nearest concurrent live signals rather than pretending local events are known.',
+        summary: place.hook ?? 'You selected this point directly. Elsewhere is grounding it in current modeled weather, air quality and geography, then connecting it to the nearest concurrent live signals rather than pretending local events are known.',
         facts: place.facts ?? [], connections: nearest,
         mediaImage: place.mediaImage, mediaAlt: place.mediaAlt,
         sources: place.sources ?? [],
-        related: ['Local weather', 'Nearby signals', 'Night lights']
+        related: ['Nearby cameras', 'Historical comparison', 'Nearby signals', 'Night lights']
       });
     } catch {
       setActive(current => current ? { ...current, title: 'This point is hard to read right now', summary: 'The public place/weather services did not answer. No local claim is made.', facts: [{ label: 'Evidence', value: 'Unavailable', kind: 'question' }] } : current);
@@ -311,7 +311,7 @@ export default function DiscoverApp() {
         <div className="panelMedia">{active.visual === 'nasa-live' ?
           <LiveVideo title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0&autoplay=1&mute=1&playsinline=1" /> : active.mediaVideo ?
           <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} /> :
-          <>{!active.mediaImage && <VisualMotif kind={active.visual} />}{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
+          <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
           {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? 'Latest public Earth imagery' : 'Animated evidence visualization'}</div>}
         </div>
         <div className="panelBody">
@@ -324,13 +324,13 @@ export default function DiscoverApp() {
           {Boolean(active.connections?.length) && <div className="connections"><span>Connected signals</span>{active.connections?.map(c => <button key={c.id} onClick={() => followConnection(c.id)}><b>{c.title}</b><small>{c.reason}</small></button>)}</div>}
           {Boolean(active.related.length) && <div className="rabbit"><span>Explore further</span>{active.related.map(r => <button key={r} onClick={() => exploreRelated(r)}>{r}<ArrowRight size={13} /></button>)}</div>}
           {lensLoading && <div className="contextLens"><b>Reading local evidence…</b></div>}
-          {lens && <div className="contextLens"><b>{lens.topic}</b>{lens.retrievedAt && <small className="lensTime">retrieved {new Date(lens.retrievedAt).toLocaleTimeString()}</small>}<div className="lensGrid">{lens.facts?.map((f: any) => <div key={f.label} className={`lensFact ${f.kind}`}><span>{f.label}</span><p>{f.value}</p></div>)}</div></div>}
+          {lens && <div className="contextLens"><b>{lens.topic}</b>{lens.retrievedAt && <small className="lensTime">retrieved {new Date(lens.retrievedAt).toLocaleTimeString()}</small>}{Boolean(lens.videos?.length) && <CameraLookins videos={lens.videos} />}<div className="lensGrid">{lens.facts?.map((f: any) => <div key={f.label} className={`lensFact ${f.kind}`}><span>{f.label}</span><p>{f.value}</p></div>)}</div></div>}
           <details className="sources"><summary>Evidence and sources</summary>{active.sources.map(s => <a key={s.url} href={s.url} target="_blank">{s.label}<small>{new Date(s.retrievedAt).toLocaleTimeString()}</small></a>)}</details>
         </div>
       </motion.aside>}
 
       {mode === 'investigate' && inv && <motion.aside key={inv.id} className="discoveryPanel investigation" initial={{ opacity: 0, y: 42 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 26 }}>
-        {inv.mediaImage && <div className="panelMedia"><img className="liveImage" src={inv.mediaImage} alt={inv.mediaAlt ?? inv.title} /><div className="mediaTag"><Satellite size={13} /> Latest satellite swath</div></div>}
+        {inv.mediaImage && <div className="panelMedia"><VisualMotif kind="orbital" /><LiveImage src={inv.mediaImage} alt={inv.mediaAlt ?? inv.title} /><div className="mediaTag"><Satellite size={13} /> Latest satellite swath</div></div>}
         <div className="panelBody investigationBody">
         <div className="investHeader"><div><div className="eyebrow"><Eye size={14} />Beyond the headlines</div><h2>{inv.title}</h2><p className="location">{inv.location.label} · confidence {inv.confidence}%</p></div><button onClick={() => setMode('discover')}><X size={18} /></button></div>
         <p className="summary">{inv.dek}</p>
@@ -369,11 +369,47 @@ function LiveVideo({ src, title }: { src: string; title: string }) {
   </button>;
 }
 
+function CameraLookins({ videos }: { videos: any[] }) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => setIndex(0), [videos]);
+  const current = videos[Math.min(index, videos.length - 1)];
+  if (!current) return null;
+  return <div className="cameraLookins">
+    <div className="lensVideo"><LiveVideo title={`${current.title} live look-in`} src={current.src} /></div>
+    <div className="cameraChoices">{videos.map((video, videoIndex) => <button key={video.youtubeId ?? video.title} onClick={() => setIndex(videoIndex)} className={videoIndex === index ? 'active' : ''}><b>{video.place}</b><small>{video.distance} km away</small></button>)}</div>
+  </div>;
+}
+
 function LiveImage({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
   if (failed) return null;
-  return <img className="liveImage" src={src} alt={alt} onError={() => setFailed(true)} />;
+  return <img
+    className="liveImage"
+    src={src}
+    alt={alt}
+    crossOrigin="anonymous"
+    onError={() => setFailed(true)}
+    onLoad={event => {
+      try {
+        const image = event.currentTarget;
+        const canvas = document.createElement('canvas');
+        canvas.width = 40; canvas.height = 24;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) return;
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        let total = 0, lit = 0;
+        for (let index = 0; index < data.length; index += 4) {
+          const luminance = data[index] * .2126 + data[index + 1] * .7152 + data[index + 2] * .0722;
+          total += luminance;
+          if (luminance > 24) lit += 1;
+        }
+        const pixels = data.length / 4;
+        if (total / pixels < 5 && lit / pixels < .01) setFailed(true);
+      } catch { /* imagery without readable pixels remains visible */ }
+    }}
+  />;
 }
 
 function VisualMotif({ kind }: { kind: Discovery['visual'] }) {

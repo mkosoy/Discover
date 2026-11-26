@@ -32,11 +32,15 @@
 - Share/deep links exist for discoveries, investigations and arbitrary tapped places, including truthful unavailable states when ephemeral live cards expire.
 - Mobile bottom sheet compacted; hero hides while the evidence panel is open.
 - Evidence lenses now cover satellite imagery, alert timing, exposure models, event timelines, marine conditions, air quality, grid history, launch weather, aftershocks, aurora visibility, volcano ash/seismic context and night-light caveats.
+- “Nearby cameras” now ranks the nearest curated public YouTube look-ins by distance, shows up to three choices with poster-first embeds, and states distance/field-of-view caveats instead of generic camera prose. The registry contains 45 validated keyless public camera feeds across cities, harbors, volcanoes, wildlife, aurora and deserts.
+- “Historical comparison” now uses Open-Meteo archive data for ordinary places/events: current weather is compared with the same date/hour one year earlier, with explicit one-year/climate-normal caveats; the UK carbon-grid comparison remains grid-specific.
+- Fire/natural-event cards now cross-reference wind transport, modeled PM2.5/AOD smoke proxy, satellite context and nearest live look-in. Arbitrary place taps now compute a distinctive local evidence hook and expose nearby-camera/history actions directly.
+- Fourteen featured live-look-in cards join Tokyo/Namib/Etna, including Times Square, Washington, Kīlauea, Iceland, Sydney, Vancouver, wildlife waterholes, aurora and harbor/city scenes; production API validation returned 29 discoveries, 17 with real video embeds.
 
 ## Known gaps / next best improvements
 
 1. Production is behind PR #1 until the Vercel deployment quota resets or the plan changes; current work is intentionally local-only.
-2. Some generic lenses remain weaker than the dedicated lenses; keep replacing them with evidence-specific views.
+2. Some generic lenses remain weaker than the dedicated lenses; keep replacing them with evidence-specific views. Camera coverage is still sparse outside curated locations, so distance caveats must remain prominent.
 3. Surprise/Watch can still improve diversity scoring and avoid visually similar consecutive moments.
 4. Globe labels are minimal; marker affordance and tap feedback can become more magical.
 5. Investigations have their first visual comparisons but still need richer editorial presentation and more comparative evidence types.

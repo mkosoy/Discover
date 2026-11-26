@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cameraEmbed, nearestPublicCameras } from '@/lib/cameras';
 
 type Fact = { label: string; value: string; kind: 'observed' | 'verified' | 'interpretation' | 'prediction' | 'question' };
 
@@ -51,8 +52,8 @@ function degreesApart(aLat: number, aLon: number, bLat: number, bLon: number) {
   return 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)) / rad;
 }
 
-function answer(topic: string, place: string, facts: Fact[]) {
-  return NextResponse.json({ lens: { topic, place, facts, retrievedAt: new Date().toISOString() } });
+function answer(topic: string, place: string, facts: Fact[], extra: Record<string, unknown> = {}) {
+  return NextResponse.json({ lens: { topic, place, facts, retrievedAt: new Date().toISOString(), ...extra } });
 }
 
 function xrayClass(flux?: number) {
@@ -329,7 +330,55 @@ export async function GET(request: Request) {
     ]);
   }
 
+  if (t.includes('camera') || t.includes('live look')) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return answer(topic, label, [
+      { label: 'Camera evidence', value: 'A location is required to rank public cameras.', kind: 'question' }
+    ]);
+    const cameras = nearestPublicCameras(lat, lon, 3);
+    const best = cameras[0];
+    const weather = await json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=cloud_cover,is_day&timezone=auto`);
+    const current = weather?.current;
+    return answer(topic, best ? `${best.place} · nearest curated public look-in` : label, [
+      { label: 'Best public look-in', value: best ? `${best.title} · ${Math.round(best.distance)} km away` : 'No curated public camera available', kind: best ? 'verified' : 'question' },
+      { label: 'Additional look-ins', value: cameras.length > 1 ? cameras.slice(1).map(camera => `${camera.title} (${Math.round(camera.distance)} km)`).join(' · ') : 'None in the curated registry', kind: cameras.length > 1 ? 'verified' : 'question' },
+      { label: 'Local sky cover', value: current ? `${Math.round(current.cloud_cover)}% · ${current.is_day ? 'daylight' : 'dark now'}` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Insight', value: best && best.distance < 250 ? 'This is close enough to provide meaningful local visual context, but the camera still shows only its own field of view and cannot verify the event by itself.' : best ? 'This is the nearest curated public camera, but it is not close enough to treat as direct local evidence; use it as regional atmosphere and compare distance carefully.' : 'No camera inference is made.', kind: 'interpretation' },
+      { label: 'Next evidence', value: 'A closer authorized local stream, official incident imagery or verified ground observation', kind: 'question' }
+    ], { videos: cameras.map(camera => ({ title: camera.title, place: camera.place, distance: Math.round(camera.distance), src: cameraEmbed(camera), youtubeId: camera.youtubeId, quality: camera.quality })) });
+  }
+
   if (t.includes('historical comparison')) {
+    const gridLike = subject.includes('grid') || subject.includes('electricity') || subject.includes('carbon') || label.toLowerCase().includes('britain') || label.toLowerCase().includes('uk');
+    if (!gridLike && Number.isFinite(lat) && Number.isFinite(lon)) {
+      const lastYearDate = new Date();
+      lastYearDate.setUTCFullYear(lastYearDate.getUTCFullYear() - 1);
+      const date = lastYearDate.toISOString().slice(0, 10);
+      const [currentWeather, archive] = await Promise.all([
+        json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,cloud_cover,wind_speed_10m&timezone=auto`),
+        json<any>(`https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${date}&end_date=${date}&hourly=temperature_2m,precipitation,cloud_cover,wind_speed_10m&timezone=auto`)
+      ]);
+      const current = currentWeather?.current;
+      const hourly = archive?.hourly;
+      const targetHour = current?.time ? `${date}T${String(current.time).slice(11, 13)}:00` : '';
+      let index = hourly?.time?.indexOf(targetHour) ?? -1;
+      if (index < 0 && hourly?.time?.length && current?.time) {
+        const hour = Number(String(current.time).slice(11, 13));
+        index = Math.max(0, Math.min(hourly.time.length - 1, hour));
+      }
+      const historic = hourly && index >= 0 ? {
+        temperature: hourly.temperature_2m?.[index], precipitation: hourly.precipitation?.[index], cloud: hourly.cloud_cover?.[index], wind: hourly.wind_speed_10m?.[index]
+      } : null;
+      const tempDelta = current && historic?.temperature != null ? current.temperature_2m - historic.temperature : null;
+      const windDelta = current && historic?.wind != null ? current.wind_speed_10m - historic.wind : null;
+      return answer(topic, label, [
+        { label: 'Now', value: current ? `${Math.round(current.temperature_2m)}°C · ${Math.round(current.cloud_cover)}% cloud · ${Math.round(current.wind_speed_10m)} km/h wind` : 'Unavailable', kind: current ? 'observed' : 'question' },
+        { label: 'Same date/hour last year', value: historic?.temperature != null ? `${Math.round(historic.temperature)}°C · ${Math.round(historic.cloud ?? 0)}% cloud · ${Math.round(historic.wind ?? 0)} km/h wind` : 'Unavailable', kind: historic?.temperature != null ? 'verified' : 'question' },
+        { label: 'Temperature difference', value: tempDelta != null ? `${tempDelta >= 0 ? '+' : ''}${tempDelta.toFixed(1)}°C versus last year` : 'Unavailable', kind: tempDelta != null ? 'interpretation' : 'question' },
+        { label: 'Wind difference', value: windDelta != null ? `${windDelta >= 0 ? '+' : ''}${windDelta.toFixed(1)} km/h versus last year` : 'Unavailable', kind: windDelta != null ? 'interpretation' : 'question' },
+        { label: 'Insight', value: 'This is a concrete same-place, same-date comparison across one year. It is useful context for how unusual the moment feels, but a single prior year is not a climate normal and cannot explain cause by itself.', kind: 'interpretation' },
+        { label: 'Next evidence', value: '30-year climate normals plus longer hourly/seasonal baselines', kind: 'question' }
+      ]);
+    }
     const intensity = await json<any>('https://api.carbonintensity.org.uk/intensity/date');
     const rows = (intensity?.data ?? []).map((row: any) => row?.intensity?.actual).filter((v: any) => Number.isFinite(v));
     const latest = rows.at(-1), average = rows.length ? rows.reduce((a: number, b: number) => a + b, 0) / rows.length : null;

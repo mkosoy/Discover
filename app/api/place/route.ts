@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { worldviewSnapshot } from '@/lib/satellite';
+import { nearestPublicCameras } from '@/lib/cameras';
 
 async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
@@ -95,6 +96,24 @@ export async function GET(request: Request) {
     .map((plane: any) => ({ ...plane, distance: distanceKm(lat, lon, plane.lat, plane.lon) }))
     .sort((a: any, b: any) => a.distance - b.distance)[0];
   const daylight = current?.is_day == null ? null : current.is_day ? 'Daylight now' : 'Dark now';
+  const nearestCamera = nearestPublicCameras(lat, lon, 1)[0];
+  const hook = nearestHazard && nearestHazard.distance < 250
+    ? `This point sits within ${Math.round(nearestHazard.distance)} km of a ${nearestHazard.alert} ${nearestHazard.type || 'hazard'} model, while current weather, aircraft and satellite context explain what can and cannot be corroborated right now.`
+    : nearestQuake && nearestQuake.distance < 150
+      ? `This is a seismically active neighborhood: a magnitude ${Number(nearestQuake.feature.properties?.mag ?? 0).toFixed(1)} earthquake was recorded ${Math.round(nearestQuake.distance)} km away within the last day, alongside the local atmosphere and live overhead motion.`
+      : aircraft.length >= 12
+        ? `This point sits beneath a busy live air corridor, with ${aircraft.length} public aircraft position reports nearby layered over weather, sunlight and terrain.`
+        : air?.current?.pm2_5 != null && air.current.pm2_5 >= 25
+          ? `The most distinctive current signal is atmospheric: modeled PM2.5 is ${Math.round(air.current.pm2_5)} μg/m³, making air quality, wind transport and visibility the questions to compare.`
+          : (current?.precipitation ?? 0) > 0.5
+            ? `Precipitation is active here right now, so cloud, wind, satellite texture and nearby hazard signals become the most interesting comparison.`
+            : weather?.elevation != null && weather.elevation > 1500
+              ? `This is high terrain at roughly ${Math.round(weather.elevation)} m; sunlight, cloud shadows, thin air and satellite texture make the landscape itself the signal.`
+              : current?.is_day === 0
+                ? `It is night here right now; darkness, aircraft motion, cloud cover and the nearest sky or city cameras become the strongest live evidence.`
+                : nearestCamera
+                  ? `The clearest visual way into this place is the nearest curated public look-in around ${nearestCamera.place}, while local weather, daylight, seismicity and aircraft motion supply the surrounding evidence.`
+                  : 'This point is quiet in the public alert feeds, so Elsewhere reads weather, daylight, terrain, seismicity and human motion to reveal what is distinctive without inventing an event.';
   const facts = [
     current ? { label: 'Weather', value: `${weatherText(current.weather_code)}, ${Math.round(current.temperature_2m)}°C`, kind: 'observed' } : { label: 'Weather', value: 'Unavailable', kind: 'question' },
     current ? { label: 'Wind', value: `${Math.round(current.wind_speed_10m)} km/h from ${Math.round(current.wind_direction_10m)}°`, kind: 'observed' } : null,
@@ -110,6 +129,7 @@ export async function GET(request: Request) {
     air?.current?.pm2_5 != null ? { label: 'PM2.5', value: `${Math.round(air.current.pm2_5)} μg/m³ model`, kind: 'interpretation' } : null,
     weather?.elevation != null ? { label: 'Elevation', value: `${Math.round(weather.elevation)} m`, kind: 'verified' } : null,
     weather?.timezone ? { label: 'Local timezone', value: weather.timezone.replace('_', ' '), kind: 'verified' } : null,
+    nearestCamera ? { label: 'Nearest live look-in', value: `${nearestCamera.place} · ${Math.round(nearestCamera.distance)} km away`, kind: 'verified' } : null,
     { label: 'Satellite context', value: 'Latest daylight swath; orbital gaps possible', kind: 'observed' },
     { label: 'Attribution', value: 'Weather is model/grid data; reverse geocoding is approximate; populated places may be coarse', kind: 'question' }
   ].filter(Boolean);
@@ -129,6 +149,7 @@ export async function GET(request: Request) {
         { label: 'GDACS current disaster alerts', url: 'https://www.gdacs.org/', retrievedAt: new Date().toISOString() },
         { label: 'adsb.lol live aircraft transponders', url: 'https://adsb.lol/', retrievedAt: new Date().toISOString() }
       ],
+      hook,
       retrievedAt: new Date().toISOString()
     }
   });

@@ -38,9 +38,11 @@ Explore Further buttons call `/api/context` with topic, coordinates, subject tit
 - city air quality;
 - UK grid carbon-intensity history;
 - night-light availability caveats;
+- nearest public live-camera look-ins with multiple choices and distance caveats;
+- same-date/hour one-year historical weather comparisons using Open-Meteo archive data;
 - generic reverse-geocoded weather context.
 
-Remaining lens-quality rule: do not add a chip unless it produces evidence specific to that topic or explicitly explains what evidence is unavailable and what would be needed next.
+Remaining lens-quality rule: do not add a chip unless it produces evidence specific to that topic or explicitly explains what evidence is unavailable and what would be needed next. “Nearby cameras” must rank actual public look-ins, never use generic weather as a camera substitute; historical comparisons must expose the comparison baseline and must not present one year as a climate normal.
 
 ## Mobile and iOS path
 
