@@ -206,7 +206,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
   const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
   const currentYear = new Date().getFullYear();
-  const [quake, hdx, ukraineNews, ukraineWeather, fts, unhcr, googleNewsXml, eonet] = await Promise.all([
+  const [quake, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
     json<any>('https://api.gdeltproject.org/api/v2/doc/doc?query=ukraine&mode=ArtList&maxrecords=30&format=json&timespan=24h'),
