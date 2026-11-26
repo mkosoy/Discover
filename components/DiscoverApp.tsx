@@ -8,6 +8,13 @@ import type { Discovery, Investigation } from '@/lib/types';
 
 const kindLabel = { observed: 'Observed', verified: 'Verified report', interpretation: 'Interpretation', prediction: 'Prediction', question: 'Open question' } as const;
 
+function angularDistance(latA: number, lonA: number, latB: number, lonB: number) {
+  const rad = Math.PI / 180;
+  const aLat = latA * rad, bLat = latB * rad, dLat = (latB - latA) * rad, dLon = (lonB - lonA) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(aLat) * Math.cos(bLat) * Math.sin(dLon / 2) ** 2;
+  return 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)) / rad;
+}
+
 export default function DiscoverApp() {
   const [discoveries, setDiscoveries] = useState<Discovery[]>([]);
   const [investigations, setInvestigations] = useState<Investigation[]>([]);
@@ -46,12 +53,52 @@ export default function DiscoverApp() {
     setMode('discover');
   };
 
-  const selectDiscovery = (discovery: Discovery) => {
+  const selectDiscovery = (discovery: Discovery, point?: { lat: number; lon: number }) => {
+    if (point) {
+      void probePlace(point);
+      return;
+    }
     setActive(discovery);
     setLens(undefined);
     setLensLoading(false);
     setPanelOpen(true);
     setMode('discover');
+  };
+
+  const probePlace = async (point: { lat: number; lon: number }) => {
+    setLens(undefined);
+    setLensLoading(false);
+    setPanelOpen(true);
+    setMode('discover');
+    setActive({
+      id: 'place-pulse-loading', template: 'atmosphere', title: 'Reading this point on Earth', kicker: 'Direct exploration', visual: 'orbital', score: 70, freshness: 'listening now',
+      location: { lat: point.lat, lon: point.lon, label: `${point.lat.toFixed(1)}°, ${point.lon.toFixed(1)}°` },
+      summary: 'Elsewhere is reverse-geocoding this point and reading current public atmospheric data before connecting it to nearby live signals.',
+      facts: [], sources: [], related: []
+    });
+    try {
+      const response = await fetch(`/api/place?lat=${point.lat}&lon=${point.lon}`);
+      const data = await response.json();
+      const place = data.place;
+      const nearest = discoveries
+        .map(d => ({ d, distance: angularDistance(point.lat, point.lon, d.location.lat, d.location.lon) }))
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, 3)
+        .map(({ d, distance }) => ({ id: d.id, title: d.title, reason: `${Math.round(distance)}° away — nearest concurrent public signal`, strength: Math.round(100 - distance) }));
+      setActive({
+        id: `place-${point.lat.toFixed(2)}-${point.lon.toFixed(2)}`, template: 'atmosphere', title: `A live pulse from ${place.label}`, kicker: 'You found this place', visual: place.country ? 'city' : 'ocean', score: 72, freshness: 'current conditions',
+        location: { lat: point.lat, lon: point.lon, label: place.label },
+        summary: 'You selected this point directly. Elsewhere is grounding it in current modeled weather, air quality and geography, then connecting it to the nearest concurrent live signals rather than pretending local events are known.',
+        facts: place.facts ?? [], connections: nearest,
+        sources: [
+          { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/', retrievedAt: place.retrievedAt ?? new Date().toISOString() },
+          { label: 'BigDataCloud reverse geocode', url: 'https://www.bigdatacloud.com/reverse-geocoding', retrievedAt: place.retrievedAt ?? new Date().toISOString() }
+        ],
+        related: ['Local weather', 'Nearby signals', 'Night lights']
+      });
+    } catch {
+      setActive(current => current ? { ...current, title: 'This point is hard to read right now', summary: 'The public place/weather services did not answer. No local claim is made.', facts: [{ label: 'Evidence', value: 'Unavailable', kind: 'question' }] } : current);
+    }
   };
 
   const exploreRelated = async (label: string) => {
@@ -60,6 +107,11 @@ export default function DiscoverApp() {
     setLens(undefined);
     setPanelOpen(true);
     setMode('discover');
+    if (label.toLowerCase().includes('nearby signals')) {
+      setLens({ topic: label, retrievedAt: new Date().toISOString(), facts: (active.connections ?? []).map(c => ({ label: c.title, value: c.reason, kind: 'interpretation' })) });
+      setLensLoading(false);
+      return;
+    }
     try {
       const params = new URLSearchParams({ topic: label, label: active.location.label, lat: String(active.location.lat), lon: String(active.location.lon) });
       if (active.entityId) params.set('entityId', active.entityId);

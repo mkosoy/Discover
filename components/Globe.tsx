@@ -11,8 +11,16 @@ function latLon(lat: number, lon: number, radius = 1.36) {
   const theta = (lon + 180) * Math.PI / 180;
   return new THREE.Vector3(-radius * Math.sin(phi) * Math.cos(theta), radius * Math.cos(phi), radius * Math.sin(phi) * Math.sin(theta));
 }
+function vectorToLatLon(vector: THREE.Vector3) {
+  const v = vector.clone().normalize();
+  const lat = 90 - Math.acos(Math.max(-1, Math.min(1, v.y))) * 180 / Math.PI;
+  let lon = Math.atan2(v.z, -v.x) * 180 / Math.PI - 180;
+  if (lon < -180) lon += 360;
+  if (lon > 180) lon -= 360;
+  return { lat, lon };
+}
 
-function Earth({ active, discoveries, onSelect }: { active?: Discovery; discoveries: Discovery[]; onSelect: (discovery: Discovery) => void }) {
+function Earth({ active, discoveries, onSelect }: { active?: Discovery; discoveries: Discovery[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void }) {
   const group = useRef<THREE.Group>(null);
   const pointerDown = useRef<{ x: number; y: number }>();
   const earth = useLoader(THREE.TextureLoader, '/textures/earth-blue-marble.jpg');
@@ -39,7 +47,7 @@ function Earth({ active, discoveries, onSelect }: { active?: Discovery; discover
       bestDistance = Math.min(bestDistance, marker.distanceTo(local));
       if (marker.distanceTo(local) === bestDistance) best = discovery;
     }
-    onSelect(best);
+    onSelect(best, vectorToLatLon(local));
   };
   const dragged = (event: any) => {
     const native = event.nativeEvent as PointerEvent;
@@ -61,7 +69,7 @@ function Earth({ active, discoveries, onSelect }: { active?: Discovery; discover
   </group>;
 }
 
-function Marker({ discovery, active, onSelect }: { discovery: Discovery; active: boolean; onSelect: (discovery: Discovery) => void }) {
+function Marker({ discovery, active, onSelect }: { discovery: Discovery; active: boolean; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void }) {
   const ref = useRef<THREE.Group>(null);
   const pointerDown = useRef<{ x: number; y: number }>();
   const pos = useMemo(() => latLon(discovery.location.lat, discovery.location.lon, 1.38), [discovery]);
@@ -87,7 +95,7 @@ function Marker({ discovery, active, onSelect }: { discovery: Discovery; active:
   </group>;
 }
 
-export default function Globe({ active, discoveries, onSelect }: { active?: Discovery; discoveries: Discovery[]; onSelect: (discovery: Discovery) => void }) {
+export default function Globe({ active, discoveries, onSelect }: { active?: Discovery; discoveries: Discovery[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void }) {
   return <div className="globeWrap" aria-label="Interactive earth visualization">
     <Canvas camera={{ position: [0, .25, 4.1], fov: 42 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
       <color attach="background" args={['#02040c']} />
