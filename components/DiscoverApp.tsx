@@ -71,7 +71,12 @@ export default function DiscoverApp() {
     // Spectacle first: operational context data remains available as supporting evidence,
     // but primary surprises are weighted toward rare, visual, high-signal moments.
     const pool = discoveries.filter(d => d.id !== active?.id && d.score >= 70);
-    const weighted = pool.flatMap(d => Array(Math.max(1, Math.round(d.score / 12))).fill(d));
+    const weighted = pool.flatMap(d => {
+      const templatePenalty = active && d.template === active.template ? 18 : 0;
+      const distancePenalty = active && angularDistance(active.location.lat, active.location.lon, d.location.lat, d.location.lon) < 10 ? 10 : 0;
+      const weight = Math.max(1, Math.round((d.score - templatePenalty - distancePenalty) / 12));
+      return Array(weight).fill(d);
+    });
     setActive(weighted[Math.floor(Math.random() * weighted.length)] ?? discoveries[0]);
     setLens(undefined);
     setLensLoading(false);
