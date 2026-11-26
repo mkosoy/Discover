@@ -100,3 +100,6 @@ Next hill-climb candidates:
 - `1eaba6e` REAL BUG FIX: shared links / investigation jumps to non-featured registry cameras dead-ended with "This live signal has moved on" — hash resolution and liveLink clicks now fall back to constructing the camera card from the full 459-entry registry. Validated: #camera-mount-etna deep-link renders Mount Etna card with video. CAUTION when validating: CDP Page.navigate to a URL differing only in hash does NOT reload the SPA — use Page.reload or navigate cross-page first.
 - gdacs green titles reframed (no more bureaucratic "Green wildfire signal"), scoring reprioritized by alert level (orange/red outrank green noise)
 - browser_preview exposed to user: "Elsewhere — live local build" on port 3000 (next dev default port — dev script has no -p flag)
+- ReliefWeb API reachable and keyless (api.reliefweb.int/v1/disasters?appname=elsewhere&preset=current) — candidate for next humanitarian investigation; response shape differs from docs (check pagination wrapper before use)
+- deploy retry ~14:15 PT: still quota-blocked. Next retry worthwhile ~09:00 PT next day (24h after the morning burst)
+- remaining ideas queue: ReliefWeb current-disasters investigation, globe pin declutter in dense regions, Watch-mode cinematic polish, eonet/gdacs event card connections enrichment, iOS strategy doc (task 23 pending)
