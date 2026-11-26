@@ -7,10 +7,11 @@ CACHE=Path('/tmp/skyline-camera-cache.json'); cache=json.loads(CACHE.read_text()
 S=requests.Session();S.headers.update({'User-Agent':'Mozilla/5.0 elsewhere-discovery-research'})
 def norm(x):return re.sub(r'[^a-z0-9]+',' ',unicodedata.normalize('NFKD',x or '').encode('ascii','ignore').decode().lower()).strip()
 def get(url):
-    if url in cache:return cache[url]
+    if url in cache and cache[url]:return cache[url]
     try:r=S.get(url,timeout=16); text=r.text if r.ok else ''
     except:text=''
-    cache[url]=text;return text
+    if text:cache[url]=text
+    return text
 def load_cities():
     z=zipfile.ZipFile(io.BytesIO(requests.get('https://download.geonames.org/export/dump/cities15000.zip',timeout=25).content))
     rows=[]
@@ -61,11 +62,11 @@ def main():
         for link in re.findall(r'href="(/en/webcam/'+re.escape(slug)+r'/[^"]+\.html)"',page):
             parts=link[:-5].split('/')
             # camera pages are below region/city level, not region index pages
-            if len(parts)>=5 and link not in links:links.append(link)
-        for link in links[:4]:jobs.append((c,name,'https://www.skylinewebcams.com'+link,link))
+            if len(parts)>=7 and link not in links:links.append(link)
+        for link in links[:8]:jobs.append((c,name,'https://www.skylinewebcams.com'+link,link))
     print('skyline detail candidates',len(jobs),flush=True)
     out=[]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
         futs={ex.submit(detail,url):(c,country,url,link) for c,country,url,link in jobs}
         for fut in concurrent.futures.as_completed(futs):
             c,country,url,link=futs[fut];d=fut.result()

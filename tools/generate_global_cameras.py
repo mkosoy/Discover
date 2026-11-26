@@ -54,7 +54,7 @@ def embeds(vid):
     embed_cache[vid]=ok
     return ok
 
-negative=['breaking news','news live','attack','politics','protest','walking tour','travel vlog','review','compilation','timelapse','documentary','interview','music video','radio','podcast','reaction','explained','storm batters','world live original','around the world','world with relaxing music','webcams around the world','match',' vs ','cricket','football','soccer','basketball','flight arrivals','departures board']
+negative=['breaking news','news live','attack','politics','protest','walking tour','travel vlog','review','compilation','timelapse','documentary','interview','music video','radio','podcast','reaction','explained','storm batters','world live original','around the world','world with relaxing music','webcams around the world','match',' vs ','cricket','football','soccer','basketball','flight arrivals','departures board','departures & arrivals','runway radar','headlines','bulletin','fast food','street food',' irl walk','walk food eats','news updates']
 visual=['webcam','web cam','live cam','camera','live view','skyline','street','city','beach','harbour','harbor','port','volcano','mountain','alps','safari','wildlife','waterhole','watering hole','airport','resort','fjord','aurora','northern lights','desert','weather cam','traffic cam','earthcam','skylinewebcams','africam','explore org','panorama']
 strong=['webcam','live cam','camera','earthcam','skylinewebcams','africam','safari','waterhole','volcano','harbour','harbor','port','beach','mountain','aurora','northern lights','panorama']
 

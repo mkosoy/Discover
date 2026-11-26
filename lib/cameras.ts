@@ -75,7 +75,7 @@ const curatedPublicCameras: PublicCamera[] = [
 
 const generatedUnique = [...skylineCameras, ...generatedCountryCameras].filter((camera, index, all) =>
   !curatedPublicCameras.some(curated => curated.youtubeId === camera.youtubeId) &&
-  all.findIndex(other => other.youtubeId === camera.youtubeId) === index
+  all.findIndex(other => (other.youtubeId ?? other.id) === (camera.youtubeId ?? camera.id)) === index
 );
 
 export const publicCameras: PublicCamera[] = [...curatedPublicCameras, ...generatedUnique];

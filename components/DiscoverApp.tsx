@@ -48,9 +48,9 @@ function discoveryForCamera(camera: PublicCamera): Discovery {
     id: `camera-pin-${camera.id}`, template: 'atmosphere', title: camera.title, kicker: 'Live look-in', visual: camera.kind === 'water' ? 'ocean' : camera.kind === 'aurora' ? 'aurora' : camera.kind === 'volcano' ? 'fire' : 'city',
     score: camera.quality, freshness: 'validated public live-camera registry',
     location: { lat: camera.lat, lon: camera.lon, label: camera.place },
-    summary: `${camera.place} is available as an authorized public live video look-in. ${camera.approximate ? 'Its map position is a city/country-level estimate, so use distance and source context carefully.' : 'Its map position is curated to the camera location.'}`,
+    summary: `${camera.place} is available as an authorized public ${camera.youtubeId ? 'live video look-in' : 'near-real-time camera image'}. ${camera.approximate ? 'Its map position is a city/country-level estimate, so use distance and source context carefully.' : 'Its map position is curated to the camera location.'}`,
     facts: [
-      { label: 'Camera source', value: camera.sourceName ? `${camera.sourceName} public camera, YouTube embed` : 'Authorized public YouTube embed', kind: 'verified' },
+      { label: 'Camera source', value: camera.youtubeId ? `${camera.sourceName ?? 'Authorized public'} YouTube video embed` : `${camera.sourceName ?? 'Authorized public'} near-real-time image`, kind: 'verified' },
       { label: 'Registry confidence', value: `${camera.quality}/100${camera.confidence ? ` · ${camera.confidence}` : ''}`, kind: 'interpretation' },
       { label: 'Position precision', value: camera.approximate ? 'City/country-level estimate' : 'Camera-specific curated position', kind: camera.approximate ? 'question' : 'verified' },
       { label: 'Registry coverage', value: `${coverage.total} public look-ins across ${coverage.countries} countries`, kind: 'observed' }
@@ -429,11 +429,18 @@ function CameraLookins({ videos }: { videos: any[] }) {
 
 function LiveImage({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [src]);
+  const [refreshTick, setRefreshTick] = useState(0);
+  useEffect(() => setFailed(false), [src, refreshTick]);
+  useEffect(() => {
+    if (!src.includes('embed.skylinewebcams.com')) return;
+    const timer = window.setInterval(() => setRefreshTick(tick => tick + 1), 60000);
+    return () => window.clearInterval(timer);
+  }, [src]);
+  const liveSrc = src.includes('embed.skylinewebcams.com') ? `${src}${src.includes('?') ? '&' : '?'}t=${refreshTick}` : src;
   if (failed) return null;
   return <img
     className="liveImage"
-    src={src}
+    src={liveSrc}
     alt={alt}
     crossOrigin="anonymous"
     onError={() => setFailed(true)}
