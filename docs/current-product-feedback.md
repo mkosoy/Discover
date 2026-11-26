@@ -23,15 +23,19 @@
 - NWS active-alert card added with zone geometry, exact alert identifiers, timing lenses and impact caveats.
 - GDACS humanitarian hazard cards added with current-event filtering, impact imagery and exposure-model lenses.
 - Ukraine and Sudan investigations use conflict-filtered news attention, weather, OCHA FTS, HDX and UNHCR displacement data.
+- Ukraine now includes a non-tactical live public-aircraft contrast: coarse ADS-B counts over a Ukraine-centered sample versus neighboring-country-centered samples, with receiver/coverage caveats and a visual comparison bar.
+- Sudan includes attention-per-million-IDP normalization when samples are comparable; one-sided or capped samples are not visualized as false precision.
+- Mount Etna live-camera discovery added, with current wind/weather and volcano-specific ash/air-quality/seismic lenses.
+- Approximate sunlight/day-night lighting, duplicate-marker spreading, shortened NWS deep-link ids, compact evidence sections and no-immediate-repeat Surprise/Watch weighting improve polish.
+- Share/deep links exist for discoveries, investigations and arbitrary tapped places, including truthful unavailable states when ephemeral live cards expire.
 - Mobile bottom sheet compacted; hero hides while the evidence panel is open.
-- Evidence lenses now cover satellite imagery, alert timing, exposure models, event timelines, marine conditions, air quality, grid history, launch weather, aftershocks, aurora visibility and night-light caveats.
+- Evidence lenses now cover satellite imagery, alert timing, exposure models, event timelines, marine conditions, air quality, grid history, launch weather, aftershocks, aurora visibility, volcano ash/seismic context and night-light caveats.
 
 ## Known gaps / next best improvements
 
-1. Production is behind PR #1 until the Vercel deployment quota resets or the plan changes.
+1. Production is behind PR #1 until the Vercel deployment quota resets or the plan changes; current work is intentionally local-only.
 2. Some generic lenses remain weaker than the dedicated lenses; keep replacing them with evidence-specific views.
-3. No share/deep-link state yet.
-4. Surprise/Watch can still improve diversity scoring and avoid visually similar consecutive moments.
-5. Globe labels are minimal; marker affordance and tap feedback can become more magical.
-6. Investigations need more visual/editorial presentation, not only metric cards and prose.
-7. Real mobile-device validation is still needed for embed behavior, panel scrolling and WebGL performance.
+3. Surprise/Watch can still improve diversity scoring and avoid visually similar consecutive moments.
+4. Globe labels are minimal; marker affordance and tap feedback can become more magical.
+5. Investigations have their first visual comparisons but still need richer editorial presentation and more comparative evidence types.
+6. Real mobile-device validation is still needed for embed behavior, panel scrolling, investigation rail usability and WebGL performance.

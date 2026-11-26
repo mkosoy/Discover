@@ -133,6 +133,12 @@ function compactArea(value: string | undefined) {
   return joined.length > 150 ? `${joined.slice(0, 147).trim()}…` : joined;
 }
 
+function shortHash(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  return hash.toString(36);
+}
+
 function connectionReason(a: Discovery, b: Discovery): string | null {
   const pair = [a.id, b.id].join('|');
   if (pair.includes('solar-wind') && pair.includes('aurora-watch')) return 'Solar wind and magnetic orientation upstream can shape aurora conditions downstream.';
@@ -145,6 +151,8 @@ function connectionReason(a: Discovery, b: Discovery): string | null {
   if (pair.includes('quake-') && pair.includes('gdacs-EQ') && distance < 2) return 'USGS observations and GDACS impact modeling are looking at the same seismic event; agreement strengthens location evidence, while damage remains unconfirmed.';
   if (pair.includes('eonet-') && pair.includes('gdacs-WF') && distance < 5) return 'NASA event tracking and GDACS humanitarian modeling both point to nearby wildfire activity; neither alone confirms local damage.';
   if (pair.includes('eonet-') && pair.includes('gdacs-FL') && distance < 5) return 'NASA event tracking and GDACS humanitarian modeling both point to nearby flood or storm conditions; compare them as corroborating signals, not proof of impact.';
+  if (pair.includes('etna-live-volcano') && pair.includes('quake-') && distance < 18) return 'The volcano camera and regional seismic observations are complementary geological context; neither implies that the other is caused by the same process.';
+  if (pair.includes('etna-live-volcano') && pair.includes('gdacs') && distance < 18) return 'A live volcano view can be compared with modeled hazard evidence in the same broad region, but visual calm does not contradict hazard models.';
   if (pair.includes('gdacs-FL') && pair.includes('nazare-swell') && distance < 22) return 'Both are water and weather signals around the eastern Atlantic; they can be compared as concurrent model evidence, but no shared cause is established.';
   if (pair.includes('gdacs') && pair.includes('uk-grid-wind-pulse') && distance < 22) return 'Severe weather can matter for energy demand and infrastructure resilience, but this connection is contextual rather than causal.';
   if ((a.template === 'geology' && b.template === 'ocean' || b.template === 'geology' && a.template === 'ocean') && distance < 25) return 'The earthquake is close enough to this coastline to make sea-level evidence worth checking, but no tsunami is established.';
@@ -167,7 +175,7 @@ function connectDiscoveries(out: Discovery[]) {
 
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
-  const [iss, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, goesHead, nwsAlerts] = await Promise.all([
+  const [iss, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
     json<any>('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=10'),
@@ -184,6 +192,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://api.carbonintensity.org.uk/generation'),
     text('https://www.gdacs.org/xml/rss.xml'),
     json<any>('https://api.open-meteo.com/v1/forecast?latitude=-23.65&longitude=15.95&current=temperature_2m,weather_code,wind_speed_10m,is_day&timezone=auto'),
+    json<any>('https://api.open-meteo.com/v1/forecast?latitude=37.73&longitude=15.0&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day&timezone=auto'),
     head('https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg'),
     json<any>('https://api.weather.gov/alerts/active?status=actual', { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } })
   ]);
@@ -280,7 +289,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const eventName = activeAlert.props.event as string;
     const isWater = /flood|surf|marine|storm surge|coastal/i.test(eventName);
     out.push({
-      id: `nws-alert-${activeAlert.alert.id ?? activeAlert.props.identifier ?? eventName}`, entityId: activeAlert.props.id ?? activeAlert.alert.id, occurredAt: activeAlert.props.sent,
+      id: `nws-alert-${shortHash(String(activeAlert.props.id ?? activeAlert.alert.id ?? `${eventName}-${activeAlert.props.sent ?? ''}`))}`, entityId: activeAlert.props.id ?? activeAlert.alert.id, occurredAt: activeAlert.props.sent,
       template: isWater ? 'ocean' : /fire|smoke/i.test(eventName) ? 'wildfire' : 'atmosphere',
       title: `${eventName} is active in the United States`, kicker: 'National Weather Service live alert', visual: isWater ? 'ocean' : /fire|smoke/i.test(eventName) ? 'fire' : 'storm', score: 62 + Math.min(28, activeAlert.rank),
       freshness: activeAlert.props.sent ? ago(activeAlert.props.sent) : 'active now',
@@ -365,6 +374,21 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     related: ['Desert weather', 'Night cameras', 'Climate contrast']
   });
 
+  if (etna?.current) out.push({
+    id: 'etna-live-volcano', template: 'geology', title: 'Mount Etna is being watched as the atmosphere moves around it', kicker: 'Live volcano camera', visual: 'fire', score: 91,
+    freshness: 'live camera + current weather', mediaVideo: 'https://www.youtube.com/embed/JmKT_-IAUPc?rel=0&autoplay=1&mute=1&playsinline=1',
+    location: { lat: 37.73, lon: 15.0, label: 'Mount Etna, Sicily' },
+    summary: 'A real-time camera faces one of Europe’s most active volcanoes while current weather supplies wind, temperature and daylight context. A quiet frame is still meaningful: the camera does not prove eruption or calm by itself.',
+    facts: [
+      { label: 'Temperature', value: `${Math.round(etna.current.temperature_2m)}°C`, kind: 'observed' },
+      { label: 'Wind', value: `${Math.round(etna.current.wind_speed_10m)} km/h from ${Math.round(etna.current.wind_direction_10m)}°`, kind: 'observed' },
+      { label: 'Light', value: etna.current.is_day ? 'Daylight now' : 'Dark now', kind: 'observed' },
+      { label: 'Eruption status', value: 'Not inferred from camera alone', kind: 'question' }
+    ],
+    sources: [src('Mount Etna live camera', 'https://www.youtube.com/watch?v=JmKT_-IAUPc'), src('Open-Meteo current weather', 'https://open-meteo.com/')],
+    related: ['Volcano weather', 'Ash and air quality', 'Seismic context']
+  });
+
   const launch = launches?.results?.[0];
   if (launch) out.push({ id: `launch-${launch.id}`, entityId: launch.id, occurredAt: launch.net, template: 'launch', title: launch.name, kicker: 'Upcoming space mission', visual: 'launch', score: 70, freshness: launch.net ? until(launch.net) : 'scheduled', location: { lat: launch.pad?.latitude ?? 28.6, lon: launch.pad?.longitude ?? -80.6, label: launch.pad?.location?.name ?? launch.pad?.name ?? 'Launch complex' }, summary: `${launch.name} is scheduled from ${launch.pad?.name ?? 'a launch complex'}. Countdowns can change, so Elsewhere distinguishes the published schedule from confirmation.`, facts: [
     { label: 'Window', value: launch.net ? new Date(launch.net).toLocaleString() : 'TBD', kind: 'verified' }, { label: 'Status', value: launch.status?.name ?? 'Unknown', kind: 'verified' }, { label: 'Provider', value: launch.launch_service_provider?.name ?? 'Unknown', kind: 'verified' }
@@ -376,7 +400,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
   const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
   const currentYear = new Date().getFullYear();
-  const [quake, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx] = await Promise.all([
+  const [quake, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
     json<any>('https://api.gdeltproject.org/api/v2/doc/doc?query=ukraine%20conflict&mode=ArtList&maxrecords=30&format=json&timespan=24h'),
@@ -389,7 +413,11 @@ export async function getInvestigations(): Promise<Investigation[]> {
     json<any>('https://api.open-meteo.com/v1/forecast?latitude=15.50,13.63,12.05,19.62,15.45&longitude=32.56,25.35,24.88,37.22,36.40&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&timezone=Africa%2FKhartoum'),
     json<any>(`https://api.hpc.tools/v1/public/fts/flow?countryISO3=SDN&year=${currentYear}`),
     json<any>('https://api.unhcr.org/population/v1/population/?coo=SUD&limit=100'),
-    json<any>('https://data.humdata.org/api/3/action/package_search?q=sudan%20AND%20NOT%20%22South%20Sudan%22&rows=12')
+    json<any>('https://data.humdata.org/api/3/action/package_search?q=sudan%20AND%20NOT%20%22South%20Sudan%22&rows=12'),
+    json<any>('https://api.adsb.lol/v2/lat/49.2/lon/31.4/dist/250'),
+    json<any>('https://api.adsb.lol/v2/lat/52.1/lon/19.4/dist/250'),
+    json<any>('https://api.adsb.lol/v2/lat/45.9/lon/24.9/dist/250'),
+    json<any>('https://api.adsb.lol/v2/lat/51.1/lon/10.4/dist/250')
   ]);
   const q = quake?.features?.[0];
   const out: Investigation[] = [];
@@ -426,6 +454,16 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const datasets = hdx?.result?.results ?? [];
   const datasetCount = hdx?.result?.count ?? datasets.length ?? 0;
   const freshDatasets = datasets.filter((d: any) => Date.now() - new Date(d.metadata_modified ?? 0).getTime() < 1000 * 60 * 60 * 24 * 30).length;
+  const airspaceSamples = [
+    { label: 'Ukraine-centered', data: ukraineAirspace },
+    { label: 'Poland-centered', data: polandAirspace },
+    { label: 'Romania-centered', data: romaniaAirspace },
+    { label: 'Germany-centered', data: germanyAirspace }
+  ].map(sample => ({ ...sample, count: sample.data ? Number(sample.data.total ?? sample.data.ac?.length ?? 0) : null }));
+  const ukraineAircraft = airspaceSamples[0]?.count;
+  const neighboringAircraft = airspaceSamples.slice(1).map(sample => sample.count).filter((count): count is number => count != null);
+  const maxNeighboringAircraft = neighboringAircraft.length ? Math.max(...neighboringAircraft) : null;
+  const airspaceContrast = ukraineAircraft != null && maxNeighboringAircraft != null && maxNeighboringAircraft > 0 ? maxNeighboringAircraft - ukraineAircraft : null;
 
   if (cityWeather.length || articles.length || funding) {
     const coldStress = coldest && coldest.current.apparent_temperature <= 0;
@@ -444,6 +482,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
         { label: 'Attention breadth', value: articles.length ? (gdeltArticles.length ? `${attentionBreadth} countries` : `${domains.size} outlets`) : 'unavailable', delta: articles.length ? `${articles.length} ${attentionSource} items / 24h · latest ${latestCoverage}` : 'attention sources unavailable' },
         { label: 'Narrative independence', value: articles.length ? `${ukraineStories.independent} story clusters` : 'unavailable', delta: articles.length ? `${ukraineStories.repeated} duplicate/repeated items` : 'headline clustering unavailable' },
         { label: 'Attention mix', value: articles.length ? `${military} conflict / ${diplomacy} diplomacy` : 'unavailable', delta: 'rough title analysis' },
+        { label: 'Public aircraft contrast', value: ukraineAircraft != null ? `${ukraineAircraft} Ukraine-centered` : 'unavailable', delta: maxNeighboringAircraft != null ? `vs up to ${maxNeighboringAircraft} in neighboring 250 km samples` : 'comparison feed unavailable' },
         { label: 'Humanitarian funding', value: funding ? `$${(funding / 1e9).toFixed(2)}B` : '—', delta: `${flowCount} FTS flows in ${currentYear}` },
         { label: 'Displaced people', value: idpNow ? `${(idpNow / 1e6).toFixed(1)}M IDPs` : '—', delta: latestDisplacement ? `${(refugeesNow / 1e6).toFixed(1)}M refugees abroad · ${latestDisplacement.year}` : 'UNHCR' },
         { label: 'Public datasets', value: String(datasetCount), delta: `${freshDatasets} updated in sample / 30d` }
@@ -451,6 +490,8 @@ export async function getInvestigations(): Promise<Investigation[]> {
       evidence: [
         { kind: 'observed', text: `Across a five-city Open-Meteo grid, ${coldest?.city ?? 'the coldest sampled city'} currently feels like ${coldest ? Math.round(coldest.current.apparent_temperature) : '—'}°C; ${windiest?.city ?? 'the windiest sampled city'} has ${windiest ? Math.round(windiest.current.wind_speed_10m) : '—'} km/h winds. This is current weather, not a damage report.` },
         { kind: 'observed', text: articles.length ? `${articles.length} recent Ukraine-related items came from ${domains.size} outlets/domains${gdeltArticles.length ? ` in ${countries.size} source countries and ${languages.size} languages` : ''} via ${attentionSource}. Rough title analysis: ${military} conflict-related and ${diplomacy} diplomacy/aid-related mentions; ${lastHourCoverage} items appear within roughly the latest hour.` : 'Both attention samples were unavailable at retrieval time, so no claim is made about current article volume.', source: gdeltArticles.length ? 'https://www.gdeltproject.org/' : 'https://news.google.com/' },
+        { kind: 'observed', text: ukraineAircraft != null ? `Public ADS-B aggregation returned ${ukraineAircraft} aircraft transponders within a 250 km sample centered on Ukraine, compared with ${airspaceSamples.slice(1).filter(sample => sample.count != null).map(sample => `${sample.count} in the ${sample.label.toLowerCase()} sample`).join(', ') || 'no available neighboring comparisons'}. These are coarse aggregate counts only; they do not identify aircraft, military activity, routing or precise positions.` : 'Public ADS-B aggregation was unavailable for the Ukraine-centered sample, so no airspace contrast is claimed.', source: 'https://api.adsb.lol/' },
+        { kind: 'interpretation', text: airspaceContrast != null ? `A ${airspaceContrast}-aircraft gap between the Ukraine-centered sample and the busiest neighboring comparison is consistent with restricted or avoided civil airspace, but crowdsourced receiver coverage, overlapping circles, non-transponding aircraft and time-of-day effects mean it is corroborating context rather than proof of risk or operations.` : 'The aircraft comparison cannot support an inference because one or more ADS-B samples were unavailable.', source: 'https://api.adsb.lol/' },
         { kind: 'interpretation', text: articles.length ? `Headline clustering separates the attention sample into about ${ukraineStories.independent} distinct story clusters; ${ukraineStories.repeated} items look like repetition or wire-copy amplification. The largest cluster has ${ukraineStories.largest.length} items, so breadth should not be mistaken for independent corroboration.` : 'Narrative independence cannot be estimated because the attention sample is unavailable.' },
         { kind: 'verified', text: `OCHA FTS reports $${(funding / 1e9).toFixed(2)}B in ${currentYear} incoming humanitarian funding for Ukraine across ${flowCount} flows, plus $${(pledges / 1e6).toFixed(0)}M in pledges.`, source: 'https://fts.unocha.org/' },
         { kind: 'verified', text: latestDisplacement ? `UNHCR population statistics for origin-country Ukraine list ${idpNow.toLocaleString()} internally displaced people and ${refugeesNow.toLocaleString()} refugees abroad in ${latestDisplacement.year}; IDPs are ${idpDelta >= 0 ? 'up' : 'down'} ${Math.abs(idpDelta).toLocaleString()} versus ${Number(latestDisplacement.year) - 1}. These are stock estimates and can reflect methodological revisions, not just movement.` : 'UNHCR displacement data was unavailable at retrieval time.', source: 'https://www.unhcr.org/refugee-statistics/' },
@@ -461,9 +502,15 @@ export async function getInvestigations(): Promise<Investigation[]> {
         { kind: 'question', text: 'What independent, appropriately aggregated evidence about power availability, heating access, displacement and civilian harm would corroborate or contradict the apparent level of stress?' },
         { kind: 'question', text: 'Which stories are being repeated across outlets, and which are independently observed? Elsewhere does not treat republished narratives as separate evidence.' }
       ],
+      visuals: airspaceSamples.filter((sample): sample is typeof sample & { count: number } => sample.count != null).map(sample => ({
+        label: sample.label.replace('-centered', ''), value: sample.count, display: `${sample.count} aircraft`, highlight: sample.label.startsWith('Ukraine')
+      })),
+      visualTitle: 'Live public aircraft comparison',
+      visualCaption: 'coarse 250 km aggregate samples',
       sources: [
         { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' },
         { label: `${attentionSource} 24h Ukraine attention sample`, url: gdeltArticles.length ? 'https://www.gdeltproject.org/' : 'https://news.google.com/' },
+        { label: 'adsb.lol open ADS-B aggregation', url: 'https://api.adsb.lol/' },
         { label: 'OCHA Financial Tracking Service', url: 'https://fts.unocha.org/' },
         { label: 'Humanitarian Data Exchange', url: 'https://data.humdata.org/' },
         { label: 'UNHCR Refugee Data Finder', url: 'https://www.unhcr.org/refugee-statistics/' }
@@ -503,6 +550,10 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineAttentionPerMillion = comparableAttentionSamples && idpNow ? articles.length / (idpNow / 1e6) : NaN;
   const sudanAttentionPerMillion = sudanArticles.length && sudanIdps ? sudanArticles.length / (sudanIdps / 1e6) : NaN;
   const attentionContrast = Number.isFinite(ukraineAttentionPerMillion) && Number.isFinite(sudanAttentionPerMillion) && sudanAttentionPerMillion > 0 ? ukraineAttentionPerMillion / sudanAttentionPerMillion : NaN;
+  const attentionVisuals = [
+    { label: 'Ukraine', value: ukraineAttentionPerMillion },
+    { label: 'Sudan', value: sudanAttentionPerMillion, highlight: true }
+  ].filter(row => Number.isFinite(row.value)).map(row => ({ ...row, value: Number(row.value), display: `${Number(row.value).toFixed(1)} items` }));
 
   if (sudanCityWeather.length || sudanArticles.length || sudanFunding) {
     const evidenceStrength = [sudanCityWeather.length >= 4, sudanArticles.length >= 8, sudanFunding > 0, sudanIdps > 0, sudanDatasetCount > 100].filter(Boolean).length;
@@ -537,6 +588,9 @@ export async function getInvestigations(): Promise<Investigation[]> {
         { kind: 'question', text: 'Which local, appropriately aggregated sources could corroborate access to water, food, health care and safe movement without exposing vulnerable people or tactical positions?' },
         { kind: 'question', text: 'How much coverage is independent reporting versus repetition of the same wire copy or institutional statements?' }
       ],
+      visuals: attentionVisuals.length > 1 ? attentionVisuals : undefined,
+      visualTitle: 'Attention per million displaced people',
+      visualCaption: '24h attention sample divided by UNHCR IDP stock estimates',
       sources: [
         { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' },
         { label: 'Google News RSS 24h Sudan attention sample', url: 'https://news.google.com/' },

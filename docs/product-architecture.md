@@ -19,6 +19,8 @@ Current principles:
 - Client refreshes discovery and investigation data every 60 seconds without discarding arbitrary tapped-place cards.
 - PWA manifest/icons are present; the iOS path is installable web first, then native value-add later.
 - Keyless public feeds currently include: ISS position, NASA video embeds, USGS earthquakes, NASA EONET, NOAA ACE/GOES/SWPC, NOAA STAR satellite imagery, NWS active alerts/zone geometry, GDACS, Open-Meteo weather/marine/air quality, adsb.lol aggregate aircraft positions, UK Carbon Intensity, Launch Library 2, Google News RSS, OCHA FTS, HDX and UNHCR.
+- Live visual moments currently include NASA/ISS, Tokyo, the Namib Desert and Mount Etna; posters delay iframe playback until the user intentionally starts the camera.
+- Investigations can attach normalized visual comparisons in addition to metric cards. Current examples: non-tactical Ukraine public-airspace contrast and Sudan attention-per-million-IDP when comparable uncapped samples exist.
 - Media behavior: live YouTube embeds are poster-first to avoid bot-wall/error-first rendering and improve mobile performance; satellite imagery is cache-busted by NOAA Last-Modified timestamps.
 
 ## Evidence-lens architecture
@@ -63,8 +65,7 @@ Production exists at https://elsewhere-discover-nine.vercel.app, but Vercel free
 ## Immediate priorities
 
 1. Keep improving evidence density and visual specificity rather than adding generic cards.
-2. Add shareable deep links for moments/evidence paths.
-3. Add diversity/no-repeat scoring to Surprise and Watch.
-4. Improve globe marker affordance, labels and tapped-place detail.
-5. Test real device mobile behavior, especially embeds and WebGL performance.
-6. Expand investigations only where they produce comparison, corroboration or attention-gap insight.
+2. Add diversity/no-repeat scoring to Surprise and Watch.
+3. Improve globe marker affordance, labels and tapped-place detail.
+4. Test real device mobile behavior, especially embeds, investigation-rail usability and WebGL performance.
+5. Expand investigations only where they produce comparison, corroboration or attention-gap insight.

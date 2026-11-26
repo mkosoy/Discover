@@ -15,6 +15,17 @@ function angularDistance(latA: number, lonA: number, latB: number, lonB: number)
   return 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)) / rad;
 }
 
+function placeConnectionReason(discovery: Discovery, distance: number) {
+  const proximity = distance < 8 ? 'same broad region' : distance < 22 ? 'regional comparison' : 'same planetary moment';
+  if (discovery.visual === 'storm') return `${proximity} — satellite cloud structure can be compared with local weather, but imagery does not verify ground impacts`;
+  if (discovery.visual === 'fire') return `${proximity} — hazard tracking can be checked against local wind, air quality and heat without assuming damage`;
+  if (discovery.visual === 'seismic') return `${proximity} — seismic observations can be compared with nearby earthquakes and tsunami-relevant geography`;
+  if (discovery.visual === 'aurora' || discovery.visual === 'orbital') return `${proximity} — a shared near-Earth space-environment layer rather than a local cause`;
+  if (discovery.visual === 'ocean') return `${proximity} — ocean and atmospheric forcing can be compared as concurrent model evidence`;
+  if (discovery.visual === 'city') return `${proximity} — urban infrastructure, mobility and environmental systems operating at the same moment`;
+  return `${proximity} — nearest concurrent public signal`;
+}
+
 function unavailableSharedDiscovery(id: string): Discovery {
   return {
     id, unavailable: true, template: 'atmosphere', title: 'This live signal has moved on', kicker: 'Shared link', visual: 'orbital', score: 40, freshness: 'no longer in the live feed',
@@ -44,6 +55,7 @@ export default function DiscoverApp() {
   const [copied, setCopied] = useState(false);
   const [initialHash] = useState(() => typeof window === 'undefined' ? '' : decodeURIComponent(window.location.hash.replace(/^#/, '')));
   const activeRef = useRef<Discovery>();
+  const recentSurprisesRef = useRef<string[]>([]);
 
   useEffect(() => { activeRef.current = active; }, [active]);
 
@@ -120,13 +132,17 @@ export default function DiscoverApp() {
     // Spectacle first: operational context data remains available as supporting evidence,
     // but primary surprises are weighted toward rare, visual, high-signal moments.
     const pool = discoveries.filter(d => d.id !== active?.id && d.score >= 70);
-    const weighted = pool.flatMap(d => {
+    const freshPool = pool.filter(d => !recentSurprisesRef.current.includes(d.id));
+    const candidates = freshPool.length ? freshPool : pool;
+    const weighted = candidates.flatMap(d => {
       const templatePenalty = active && d.template === active.template ? 18 : 0;
       const distancePenalty = active && angularDistance(active.location.lat, active.location.lon, d.location.lat, d.location.lon) < 10 ? 10 : 0;
       const weight = Math.max(1, Math.round((d.score - templatePenalty - distancePenalty) / 12));
       return Array(weight).fill(d);
     });
-    setActive(weighted[Math.floor(Math.random() * weighted.length)] ?? discoveries[0]);
+    const next = weighted[Math.floor(Math.random() * weighted.length)] ?? discoveries[0];
+    recentSurprisesRef.current = [next.id, ...recentSurprisesRef.current.filter(id => id !== next.id)].slice(0, 6);
+    setActive(next);
     setLens(undefined);
     setLensLoading(false);
     setPath([]);
@@ -167,7 +183,7 @@ export default function DiscoverApp() {
         .map(d => ({ d, distance: angularDistance(point.lat, point.lon, d.location.lat, d.location.lon) }))
         .sort((a, b) => a.distance - b.distance)
         .slice(0, 3)
-        .map(({ d, distance }) => ({ id: d.id, title: d.title, reason: `${Math.round(distance)}° away — nearest concurrent public signal`, strength: Math.max(1, Math.round(100 - distance)) }));
+        .map(({ d, distance }) => ({ id: d.id, title: d.title, reason: `${Math.round(distance)}° away · ${placeConnectionReason(d, distance)}`, strength: Math.max(1, Math.round(100 - distance)) }));
       setActive({
         id: `place-${point.lat.toFixed(2)}-${point.lon.toFixed(2)}`, template: 'atmosphere', title: `A live pulse from ${place.label}`, kicker: 'You found this place', visual: place.country ? 'city' : 'ocean', score: 72, freshness: 'current conditions',
         location: { lat: point.lat, lon: point.lon, label: place.label },
@@ -315,8 +331,13 @@ export default function DiscoverApp() {
       {mode === 'investigate' && inv && <motion.aside key={inv.id} className="discoveryPanel investigation" initial={{ opacity: 0, y: 42 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 26 }}>
         <div className="investHeader"><div><div className="eyebrow"><Eye size={14} />Beyond the headlines</div><h2>{inv.title}</h2><p className="location">{inv.location.label} · confidence {inv.confidence}%</p></div><button onClick={() => setMode('discover')}><X size={18} /></button></div>
         <p className="summary">{inv.dek}</p>
+        {Boolean(inv.visuals?.length) && <div className="signalBars"><div className="signalBarsHeader"><span>{inv.visualTitle ?? 'Live evidence comparison'}</span><small>{inv.visualCaption ?? 'current public data'}</small></div>{inv.visuals?.map(v => {
+          const max = Math.max(...(inv.visuals ?? []).map(item => item.value), 1);
+          return <div key={v.label} className={v.highlight ? 'signalBar highlight' : 'signalBar'}><span>{v.label}</span><div><i style={{ width: `${Math.max(2, Math.round(v.value / max * 100))}%` }} /></div><b>{v.display}</b></div>;
+        })}</div>}
         <div className="factGrid metrics">{inv.metrics.map(m => <div key={m.label} className="fact"><span>{m.label}</span><strong>{m.value}</strong><em>{m.delta}</em></div>)}</div>
-        <div className="evidence">{inv.evidence.map((e, i) => <div key={i} className={`line ${e.kind}`}><b>{kindLabel[e.kind]}</b><p>{e.text}</p></div>)}</div>
+        <div className="evidence">{inv.evidence.slice(0, 5).map((e, i) => <div key={i} className={`line ${e.kind}`}><b>{kindLabel[e.kind]}</b><p>{e.text}</p></div>)}</div>
+        {inv.evidence.length > 5 && <details className="moreEvidence"><summary>Deeper evidence and caveats · {inv.evidence.length - 5} more</summary><div className="evidence">{inv.evidence.slice(5).map((e, i) => <div key={i + 5} className={`line ${e.kind}`}><b>{kindLabel[e.kind]}</b><p>{e.text}</p></div>)}</div></details>}
         <details className="sources" open><summary>Sources</summary>{inv.sources.map(s => <a key={s.url} href={s.url} target="_blank">{s.label}</a>)}</details>
       </motion.aside>}
     </AnimatePresence>

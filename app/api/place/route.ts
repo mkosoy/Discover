@@ -99,6 +99,8 @@ export async function GET(request: Request) {
     current ? { label: 'Wind', value: `${Math.round(current.wind_speed_10m)} km/h from ${Math.round(current.wind_direction_10m)}°`, kind: 'observed' } : null,
     current ? { label: 'Cloud cover', value: `${Math.round(current.cloud_cover)}%`, kind: 'observed' } : null,
     daylight ? { label: 'Light', value: daylight, kind: 'observed' } : null,
+    weather?.daily?.sunrise?.[0] && weather?.daily?.sunset?.[0] ? { label: 'Sun rhythm', value: `${weather.daily.sunrise[0].slice(11, 16)} sunrise · ${weather.daily.sunset[0].slice(11, 16)} sunset`, kind: 'verified' } : null,
+    current?.precipitation != null ? { label: 'Precipitation', value: `${Number(current.precipitation).toFixed(1)} mm now`, kind: 'observed' } : null,
     { label: 'Recent seismicity', value: nearbyQuakes.length ? `${nearbyQuakes.length} recorded within 500 km in 24h` : 'None recorded within 500 km in 24h', kind: nearbyQuakes.length ? 'observed' : 'verified' },
     nearestQuake ? { label: 'Nearest quake', value: `M${Number(nearestQuake.feature.properties?.mag ?? 0).toFixed(1)}, ${Math.round(nearestQuake.distance)} km away`, kind: 'observed' } : null,
     nearestHazard ? { label: 'Hazard model nearby', value: `${nearestHazard.alert} ${nearestHazard.type || 'event'}, ${Math.round(nearestHazard.distance)} km away`, kind: 'interpretation' } : { label: 'Hazard model nearby', value: 'No GDACS alert within 1,000 km', kind: 'verified' },

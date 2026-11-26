@@ -95,6 +95,34 @@ export async function GET(request: Request) {
     ]);
   }
 
+  if (t.includes('volcano weather') || t.includes('ash and air quality') || t.includes('seismic context')) {
+    const volcanoLat = Number.isFinite(lat) ? lat : 37.73;
+    const volcanoLon = Number.isFinite(lon) ? lon : 15.0;
+    const [weather, air, quakes] = await Promise.all([
+      json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${volcanoLat}&longitude=${volcanoLon}&current=temperature_2m,cloud_cover,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day&timezone=auto`),
+      json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${volcanoLat}&longitude=${volcanoLon}&current=pm10,pm2_5,dust,aerosol_optical_depth&timezone=auto`),
+      json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson')
+    ]);
+    const current = weather?.current;
+    const airNow = air?.current;
+    const nearbyQuakes = (quakes?.features ?? [])
+      .map((event: any) => ({ event, distance: degreesApart(volcanoLat, volcanoLon, event.geometry?.coordinates?.[1] ?? 999, event.geometry?.coordinates?.[0] ?? 999) * 111.195 }))
+      .filter((row: any) => row.distance <= 300)
+      .sort((a: any, b: any) => a.distance - b.distance);
+    const nearest = nearbyQuakes[0];
+    const transportDirection = current?.wind_direction_10m != null ? (Number(current.wind_direction_10m) + 180) % 360 : null;
+    return answer(topic, label, [
+      { label: 'Wind at volcano', value: current ? `${Math.round(current.wind_speed_10m)} km/h, gusts ${Math.round(current.wind_gusts_10m ?? 0)} km/h` : 'Unavailable', kind: current ? 'observed' : 'question' },
+      { label: 'Potential ash transport', value: transportDirection != null ? `toward about ${Math.round(transportDirection)}° if ash were present` : 'Unavailable', kind: transportDirection != null ? 'interpretation' : 'question' },
+      { label: 'PM10 / dust model', value: airNow ? `${Math.round(airNow.pm10 ?? 0)} μg/m³ PM10 · ${Math.round(airNow.dust ?? 0)} μg/m³ dust` : 'Unavailable', kind: airNow ? 'interpretation' : 'question' },
+      { label: 'Aerosol optical depth', value: airNow?.aerosol_optical_depth != null ? airNow.aerosol_optical_depth.toFixed(2) : 'Unavailable', kind: airNow ? 'interpretation' : 'question' },
+      { label: 'Earthquakes within 300 km / 24h', value: String(nearbyQuakes.length), kind: 'observed' },
+      nearest ? { label: 'Nearest seismic event', value: `M${Number(nearest.event.properties?.mag ?? 0).toFixed(1)} · ${Math.round(nearest.distance)} km away`, kind: 'observed' } : null,
+      { label: 'Insight', value: t.includes('seismic') ? 'Regional earthquake counts provide geological context, but they do not establish volcanic unrest or eruption likelihood without specialist volcano-observatory evidence.' : 'Wind and aerosol models show where material could move if ash were present; they do not prove ash emissions. The live camera and official observatory bulletins remain separate evidence.', kind: 'interpretation' },
+      { label: 'Next evidence', value: 'INGV/Civil Protection volcano bulletin plus visible ash or seismic-instrument corroboration', kind: 'question' }
+    ].filter(Boolean) as Fact[]);
+  }
+
   const launchTopic = t.includes('launch') || t.includes('mission trajectory') || t.includes('pad camera') || (t.includes('weather constraint') && Boolean(entityId));
   if (launchTopic) {
     const launch = entityId

@@ -20,6 +20,17 @@ function vectorToLatLon(vector: THREE.Vector3) {
   return { lat, lon };
 }
 
+function subsolarPoint(date = new Date()) {
+  const yearStart = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const day = Math.floor((date.getTime() - yearStart) / 86400000);
+  const declination = -23.44 * Math.cos((360 / 365) * (day + 10) * Math.PI / 180);
+  const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  let lon = -15 * (utcHours - 12);
+  if (lon < -180) lon += 360;
+  if (lon > 180) lon -= 360;
+  return { lat: declination, lon };
+}
+
 type FocusTarget = { id: string; location: { lat: number; lon: number }; connections?: { id: string }[] };
 
 function Earth({ active, discoveries, investigations, onSelect, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
@@ -69,7 +80,11 @@ function Earth({ active, discoveries, investigations, onSelect, onSelectInvestig
     </mesh>
     <ConnectionArcs active={active} discoveries={discoveries} />
     {active && !discoveries.some(d => d.id === active.id) && !investigations.some(i => i.id === active.id) && <FocusMarker active={active} />}
-    {discoveries.map(d => <Marker key={d.id} discovery={d} active={active?.id === d.id} onSelect={onSelect} />)}
+    {discoveries.map((d, index) => {
+      const samePlace = (other: Discovery) => Math.abs(other.location.lat - d.location.lat) < .08 && Math.abs(other.location.lon - d.location.lon) < .08;
+      const slot = discoveries.slice(0, index).filter(samePlace).length;
+      return <Marker key={d.id} discovery={d} slot={slot} active={active?.id === d.id} onSelect={onSelect} />;
+    })}
     {investigations.map(i => <InvestigationMarker key={i.id} investigation={i} active={active?.id === i.id} onSelect={onSelectInvestigation} />)}
   </group>;
 }
@@ -106,10 +121,23 @@ function ConnectionArcs({ active, discoveries }: { active?: FocusTarget; discove
   </>;
 }
 
-function Marker({ discovery, active, onSelect }: { discovery: Discovery; active: boolean; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void }) {
+function Marker({ discovery, slot = 0, active, onSelect }: { discovery: Discovery; slot?: number; active: boolean; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void }) {
   const ref = useRef<THREE.Group>(null);
   const pointerDown = useRef<{ x: number; y: number }>();
-  const pos = useMemo(() => latLon(discovery.location.lat, discovery.location.lon, 1.38), [discovery]);
+  const pos = useMemo(() => {
+    const base = latLon(discovery.location.lat, discovery.location.lon, 1.38);
+    if (!slot) return base;
+    const tangent = new THREE.Vector3(-base.z, 0, base.x);
+    if (tangent.lengthSq() < .001) tangent.set(1, 0, 0);
+    tangent.normalize();
+    const bitangent = base.clone().normalize().cross(tangent).normalize();
+    const angle = slot * 2.39996;
+    return base.clone()
+      .add(tangent.multiplyScalar(Math.cos(angle) * .058))
+      .add(bitangent.multiplyScalar(Math.sin(angle) * .058))
+      .normalize()
+      .multiplyScalar(1.38);
+  }, [discovery, slot]);
   useFrame(({ clock }) => {
     if (!ref.current) return;
     const s = active ? 1.25 + Math.sin(clock.elapsedTime * 4) * .12 : .65;
@@ -157,12 +185,16 @@ function InvestigationMarker({ investigation, active, onSelect }: { investigatio
 }
 
 export default function Globe({ active, discoveries, investigations, onSelect, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
+  const sun = useMemo(() => {
+    const point = subsolarPoint();
+    return latLon(point.lat, point.lon, 5.4);
+  }, []);
   return <div className="globeWrap" aria-label="Interactive earth visualization">
     <Canvas camera={{ position: [0, .25, 4.1], fov: 42 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
       <color attach="background" args={['#02040c']} />
-      <ambientLight intensity={.62} />
-      <directionalLight position={[4, 2, 5]} intensity={2.2} />
-      <pointLight position={[-3, -2, -2]} intensity={.5} color="#5b7cff" />
+      <ambientLight intensity={.38} />
+      <directionalLight position={[sun.x, sun.y, sun.z]} intensity={2.45} />
+      <pointLight position={[-3, -2, -2]} intensity={.38} color="#5b7cff" />
       <Stars radius={80} depth={35} count={3600} factor={3.2} saturation={0} fade speed={.45} />
       <Earth active={active} discoveries={discoveries} investigations={investigations} onSelect={onSelect} onSelectInvestigation={onSelectInvestigation} />
       <OrbitControls enablePan={false} enableZoom minDistance={3.25} maxDistance={5.2} zoomSpeed={.55} rotateSpeed={.42} enableDamping dampingFactor={.08} />

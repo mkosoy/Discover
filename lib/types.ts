@@ -33,5 +33,8 @@ export type Investigation = {
   confidence: number;
   evidence: { kind: EvidenceKind; text: string; source?: string }[];
   metrics: { label: string; value: string; delta?: string }[];
+  visuals?: { label: string; value: number; display: string; highlight?: boolean }[];
+  visualTitle?: string;
+  visualCaption?: string;
   sources: { label: string; url: string }[];
 };
