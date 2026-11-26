@@ -966,6 +966,11 @@ export async function getInvestigations(): Promise<Investigation[]> {
       visuals: volcanoVisuals.length ? volcanoVisuals : undefined,
       visualTitle: 'Global volcanic activity right now',
       visualCaption: 'Smithsonian/USGS weekly consensus feed',
+      liveLinks: [
+        { label: 'Watch Etna live', discoveryId: 'camera-mount-etna' },
+        { label: 'Watch Kīlauea live', discoveryId: 'camera-kilauea-crater' },
+        { label: 'Watch Iceland live', discoveryId: 'camera-iceland-volcano-watch' }
+      ],
       sources: [
         { label: 'Smithsonian/USGS Weekly Volcanic Activity Report', url: 'https://volcano.si.edu/news/weeklyvolcano.cfm' },
         { label: 'Elsewhere live volcano cameras', url: 'https://volcano.si.edu/' }
@@ -1177,6 +1182,9 @@ export async function getInvestigations(): Promise<Investigation[]> {
       pulses: [{ label: 'K index (max per window)', values: kpBins, display: `now ${latestKpRow.kp.toFixed(1)}` }],
       pulseTitle: 'Geomagnetic activity cadence',
       pulseCaption: 'NOAA planetary K index, oldest → latest',
+      liveLinks: [
+        { label: 'Watch the aurora sky live in Lapland', discoveryId: 'camera-utsjoki-aurora' }
+      ],
       sources: [
         { label: 'NOAA Space Weather Prediction Center', url: 'https://www.swpc.noaa.gov/' },
         { label: 'NOAA aurora forecast', url: 'https://www.swpc.noaa.gov/products/aurora-30-minute-forecast' }

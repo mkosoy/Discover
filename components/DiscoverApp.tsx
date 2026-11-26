@@ -391,6 +391,10 @@ export default function DiscoverApp() {
         <div className="factGrid metrics">{inv.metrics.map(m => <div key={m.label} className="fact"><span>{m.label}</span><strong>{m.value}</strong><em>{m.delta}</em></div>)}</div>
         <div className="evidence">{inv.evidence.slice(0, 5).map((e, i) => <div key={i} className={`line ${e.kind}`}><b>{kindLabel[e.kind]}</b><p>{e.text}</p></div>)}</div>
         {inv.evidence.length > 5 && <details className="moreEvidence"><summary>Deeper evidence and caveats · {inv.evidence.length - 5} more</summary><div className="evidence">{inv.evidence.slice(5).map((e, i) => <div key={i + 5} className={`line ${e.kind}`}><b>{kindLabel[e.kind]}</b><p>{e.text}</p></div>)}</div></details>}
+        {Boolean(inv.liveLinks?.length) && <div className="rabbit"><span>Live look-ins</span>{inv.liveLinks?.map(link => <button key={link.discoveryId} onClick={() => {
+          const target = discoveries.find(d => d.id === link.discoveryId);
+          if (target) selectDiscovery(target);
+        }}>{link.label}<ArrowRight size={13} /></button>)}</div>}
         <details className="sources" open><summary>Sources</summary>{inv.sources.map(s => <a key={s.url} href={s.url} target="_blank">{s.label}</a>)}</details>
         </div>
       </motion.aside>}
