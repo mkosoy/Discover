@@ -108,6 +108,17 @@ export async function GET(request: Request) {
     ]);
   }
 
+  if (t.includes('night light')) {
+    const weather = Number.isFinite(lat) && Number.isFinite(lon) ? await json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=cloud_cover,is_day&timezone=auto`) : null;
+    return answer(topic, label, [
+      { label: 'Live night-light measurement', value: 'Unavailable in keyless public feeds', kind: 'question' },
+      { label: 'Local darkness', value: weather?.current?.is_day === 0 ? 'Night' : weather?.current?.is_day === 1 ? 'Day' : 'Unknown', kind: weather?.current ? 'observed' : 'question' },
+      { label: 'Cloud cover', value: weather?.current ? `${Math.round(weather.current.cloud_cover)}%` : 'Unavailable', kind: weather?.current ? 'observed' : 'question' },
+      { label: 'Insight', value: 'NASA/VIIRS night-light imagery is a useful baseline for cities and infrastructure, but it is not a live activity feed. Elsewhere does not turn static radiance composites into claims about what is happening right now.', kind: 'interpretation' },
+      { label: 'Next evidence', value: 'Current local imagery or verified power/grid observations', kind: 'question' }
+    ]);
+  }
+
   const [weather, place] = await Promise.all([
     Number.isFinite(lat) && Number.isFinite(lon) ? json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,weather_code,wind_speed_10m&timezone=auto`) : null,
     Number.isFinite(lat) && Number.isFinite(lon) ? json<any>(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`) : null
