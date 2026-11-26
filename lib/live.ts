@@ -155,8 +155,8 @@ function attentionCadence(articles: any[], hours = 24) {
   return counted ? [{ label: `Attention items / ${binHours}h`, values, display: `${counted} sampled` }] : [];
 }
 
-function parseGdacs(xml: string | null) {
-  if (!xml) return null;
+function parseGdacsItems(xml: string | null) {
+  if (!xml) return [];
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(match => {
     const block = match[1];
     const decode = (value: string) => value.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
@@ -171,6 +171,12 @@ function parseGdacs(xml: string | null) {
       image: block.match(/<enclosure[^>]+url="([^"]+)"/)?.[1]
     };
   }).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lon) && item.current !== 'false');
+  return items;
+}
+
+function parseGdacs(xml: string | null) {
+  const items = parseGdacsItems(xml);
+  if (!items.length) return null;
   const recentHazards = items.filter(item => item.eventType !== 'DR' && Date.now() - new Date(item.published).getTime() < 1000 * 60 * 60 * 72);
   return (recentHazards.length ? recentHazards : items).sort((a, b) => b.alertScore - a.alertScore || new Date(b.published).getTime() - new Date(a.published).getTime())[0] ?? null;
 }
@@ -589,6 +595,53 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     });
   });
 
+  // --- The terminator: where dawn and dusk are happening right now (pure astronomy, always live) ---
+  {
+    const nowDate = new Date();
+    const start = Date.UTC(nowDate.getUTCFullYear(), 0, 0);
+    const dayOfYear = Math.floor((nowDate.getTime() - start) / 86400000);
+    const utcHours = nowDate.getUTCHours() + nowDate.getUTCMinutes() / 60;
+    const gamma = (2 * Math.PI / 365) * (dayOfYear - 1 + (utcHours - 12) / 24);
+    const eqtime = 229.18 * (0.000075 + 0.001868 * Math.cos(gamma) - 0.032077 * Math.sin(gamma) - 0.014615 * Math.cos(2 * gamma) - 0.040849 * Math.sin(2 * gamma));
+    const decl = 0.006918 - 0.399912 * Math.cos(gamma) + 0.070257 * Math.sin(gamma) - 0.006758 * Math.cos(2 * gamma) + 0.000907 * Math.sin(2 * gamma) - 0.002697 * Math.cos(3 * gamma) + 0.00148 * Math.sin(3 * gamma);
+    const subsolarLon = -((utcHours * 60 + eqtime) / 4 - 180);
+    const norm = (lon: number) => ((lon + 540) % 360) - 180;
+    const cities: Array<[string, number, number, number]> = [
+      ['Tokyo', 35.68, 139.69, 37], ['Sydney', -33.87, 151.2, 5], ['Delhi', 28.6, 77.2, 33], ['Shanghai', 31.2, 121.5, 29],
+      ['Lagos', 6.52, 3.37, 21], ['Cairo', 30.04, 31.23, 22], ['São Paulo', -23.55, -46.63, 22], ['Mexico City', 19.43, -99.13, 22],
+      ['New York', 40.71, -74, 20], ['London', 51.5, -0.12, 15], ['Moscow', 55.75, 37.6, 13], ['Los Angeles', 34.05, -118.24, 13],
+      ['Mumbai', 19.07, 72.87, 21], ['Istanbul', 41, 28.9, 16], ['Bangkok', 13.75, 100.5, 17], ['Nairobi', -1.29, 36.8, 11],
+      ['Buenos Aires', -34.6, -58.4, 15], ['Paris', 48.85, 2.35, 13], ['Jakarta', -6.2, 106.8, 32], ['Manila', 14.6, 120.98, 25]
+    ];
+    const scored = cities.map(([name, lat, lon, pop]) => {
+      const hourAngle = norm(lon - subsolarLon) * Math.PI / 180;
+      const latR = lat * Math.PI / 180;
+      const elev = Math.asin(Math.sin(latR) * Math.sin(decl) + Math.cos(latR) * Math.cos(decl) * Math.cos(hourAngle)) * 180 / Math.PI;
+      return { name, lat, lon, pop, elev, hourAngleDeg: norm(lon - subsolarLon) };
+    });
+    const dawn = scored.filter(c => c.hourAngleDeg < 0 && Math.abs(c.elev) < 6).sort((a, b) => Math.abs(a.elev) - Math.abs(b.elev))[0];
+    const dusk = scored.filter(c => c.hourAngleDeg > 0 && Math.abs(c.elev) < 6).sort((a, b) => Math.abs(a.elev) - Math.abs(b.elev))[0];
+    const pick = dawn ?? dusk;
+    if (pick) {
+      const isDawn = pick.hourAngleDeg < 0;
+      const termSpeed = Math.round(1670 * Math.cos(Math.abs(pick.lat) * Math.PI / 180));
+      out.push({
+        id: `terminator-${isDawn ? 'dawn' : 'dusk'}`, template: 'atmosphere', title: `${isDawn ? 'Dawn' : 'Dusk'} is breaking over ${pick.name} right now`, kicker: 'The terminator, computed live',
+        visual: 'orbital', score: 73, freshness: 'computed this minute',
+        location: { lat: pick.lat, lon: pick.lon, label: `${pick.name} — on the day-night line` },
+        summary: `The line between day and night is sweeping across the planet at about ${termSpeed.toLocaleString()} km/h at this latitude, and right now it is crossing ${pick.name}. This is pure astronomy — no feed, no lag, just the clockwork the whole planet runs on.`,
+        facts: [
+          { label: 'Sun elevation', value: `${pick.elev >= 0 ? '+' : ''}${pick.elev.toFixed(1)}°`, kind: 'interpretation' },
+          { label: 'Terminator speed', value: `~${termSpeed.toLocaleString()} km/h`, kind: 'interpretation' },
+          { label: 'People in the metro', value: `~${pick.pop} million`, kind: 'interpretation' },
+          { label: 'Basis', value: 'Solar position math — no upstream feed', kind: 'verified' }
+        ],
+        sources: [src('NOAA solar position algorithm', 'https://gml.noaa.gov/grad/solcalc/solareqns.PDF')],
+        related: ['Night lights', 'City cameras', 'Air quality pulse']
+      });
+    }
+  }
+
   return connectDiscoveries(out.sort((a, b) => b.score - a.score)).map(d => ({ ...d, retrieved } as Discovery));
 }
 
@@ -596,7 +649,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
   const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
   const currentYear = new Date().getFullYear();
-  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace, volcanoXml, myanmarNewsXml, haitiNewsXml, drcNewsXml, yemenNewsXml, myanmarUnhcr, haitiUnhcr, drcUnhcr, yemenUnhcr, upcomingLaunches, kpIndexRaw, plasmaRaw, xrayRaw, cityAir] = await Promise.all([
+  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace, volcanoXml, myanmarNewsXml, haitiNewsXml, drcNewsXml, yemenNewsXml, myanmarUnhcr, haitiUnhcr, drcUnhcr, yemenUnhcr, upcomingLaunches, kpIndexRaw, plasmaRaw, xrayRaw, cityAir, gdacsBoardXml] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
@@ -628,7 +681,8 @@ export async function getInvestigations(): Promise<Investigation[]> {
     json<any>('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
     json<any[]>('https://services.swpc.noaa.gov/json/ace/swepam/ace_swepam_1h.json'),
     json<any[]>('https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json'),
-    json<any>('https://air-quality-api.open-meteo.com/v1/air-quality?latitude=28.6,31.5,39.9,19.07,30.04,6.52,19.43,34.05,51.5,35.68,-33.87,-33.92,-23.55,55.75,40.71,1.35&longitude=77.2,74.3,116.4,72.87,31.23,3.37,-99.13,-118.24,-0.12,139.69,151.2,18.42,-46.63,37.6,-74,103.8&current=pm2_5,us_aqi&timezone=auto')
+    json<any>('https://air-quality-api.open-meteo.com/v1/air-quality?latitude=28.6,31.5,39.9,19.07,30.04,6.52,19.43,34.05,51.5,35.68,-33.87,-33.92,-23.55,55.75,40.71,1.35&longitude=77.2,74.3,116.4,72.87,31.23,3.37,-99.13,-118.24,-0.12,139.69,151.2,18.42,-46.63,37.6,-74,103.8&current=pm2_5,us_aqi&timezone=auto'),
+    text('https://www.gdacs.org/xml/rss.xml')
   ]);
   const q = quake?.features?.[0];
   const evt = eonet?.events?.[0];
@@ -1271,7 +1325,59 @@ export async function getInvestigations(): Promise<Investigation[]> {
     });
   }
 
-  const investigationPriority = ['crisis-attention-index', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
+  // --- The planet's emergency board: every active GDACS-modeled disaster right now ---
+  const boardItems = parseGdacsItems(gdacsBoardXml).filter((item: any) => Date.now() - new Date(item.published).getTime() < 1000 * 60 * 60 * 96);
+  if (boardItems.length >= 3) {
+    const typeNames: Record<string, string> = { EQ: 'earthquake', TC: 'tropical cyclone', FL: 'flood', VO: 'volcanic activity', TS: 'tsunami', DR: 'drought', WF: 'wildfire' };
+    const ranked = [...boardItems].sort((a: any, b: any) => b.alertScore - a.alertScore || new Date(b.published).getTime() - new Date(a.published).getTime());
+    const top = ranked[0];
+    const redCount = boardItems.filter((i: any) => i.alert === 'Red').length;
+    const orangeCount = boardItems.filter((i: any) => i.alert === 'Orange').length;
+    const countries = new Set(boardItems.flatMap((i: any) => (i.country || '').split(',').map((c: string) => c.trim()).filter(Boolean)));
+    const typeCounts: Record<string, number> = {};
+    boardItems.forEach((i: any) => { const name = typeNames[i.eventType] ?? i.eventType; typeCounts[name] = (typeCounts[name] ?? 0) + 1; });
+    const dominant = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0];
+    const newest = Math.max(...boardItems.map((i: any) => new Date(i.published).getTime()).filter(Number.isFinite));
+    const regionOf = (item: any) => (item.country || '').split(',').map((c: string) => c.trim()).filter(Boolean).slice(0, 2).join(', ') || 'exposed region';
+    const topType = typeNames[top.eventType] ?? 'hazard';
+    out.push({
+      id: 'planet-emergency-board',
+      title: `The planet's emergency board: ${boardItems.length} active disasters being modeled right now — most will never make your feed`,
+      dek: 'GDACS — the UN and EU\'s joint disaster alert system — continuously scores every major hazard on Earth by exposure and vulnerability. This is the whole board, unfiltered: what the humanitarian system is actually watching this hour, ranked by modeled impact rather than by what trends.',
+      status: redCount ? 'developing' : 'uncertain',
+      location: { lat: top.lat, lon: top.lon, label: `${regionOf(top)} — highest-scored current alert` },
+      updatedAt: now(),
+      confidence: 76,
+      metrics: [
+        { label: 'Active alerts', value: String(boardItems.length), delta: `across ${countries.size || '—'} countries` },
+        { label: 'Red alerts', value: String(redCount), delta: redCount ? 'potential severe humanitarian impact' : 'none currently' },
+        { label: 'Orange alerts', value: String(orangeCount), delta: 'moderate impact potential' },
+        { label: 'Most common type', value: dominant ? `${dominant[0]}s` : '—', delta: dominant ? `${dominant[1]} of ${boardItems.length} active` : '' },
+        { label: 'Newest alert', value: Number.isFinite(newest) ? ago(newest) : '—', delta: 'board freshness' }
+      ],
+      evidence: [
+        { kind: 'observed', text: `Highest-scored right now: ${top.alert} alert — ${topType} near ${regionOf(top)}, severity ${top.severity || 'modeled'}. GDACS combines event magnitude with population exposure and vulnerability; the score is a model output, not confirmed damage.`, source: top.link || 'https://www.gdacs.org/' },
+        ...ranked.slice(1, 4).map((item: any) => ({ kind: 'observed' as const, text: `${item.alert} alert: ${typeNames[item.eventType] ?? 'hazard'} near ${regionOf(item)}${item.severity ? ` — severity ${item.severity}` : ''}.`, source: item.link || 'https://www.gdacs.org/' })),
+        { kind: 'interpretation', text: 'The board never empties. On any given day the humanitarian system is tracking overlapping crises — storms forming, floods cresting, volcanoes degassing — and only a fraction ever intersect with a news cycle. The gap between this board and the headlines is itself a measurement.' },
+        { kind: 'interpretation', text: 'Green alerts dominate most of the time: they are tracked because exposure is real but modeled impact stays low. That background hum is what planetary monitoring actually looks like — mostly quiet, never zero.' },
+        { kind: 'question', text: 'Which of these alerts will escalate into actual humanitarian operations? GDACS scores potential, not outcomes — ground truth only arrives later, through field reports that are rarely public in real time.' }
+      ],
+      visuals: Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ label: name, value: count, display: `${count} active`, highlight: name === dominant?.[0] })),
+      visualTitle: 'Active hazards by type — the whole board right now',
+      visualCaption: 'GDACS current alerts, all severity levels',
+      liveLinks: ranked.slice(0, 3).map((item: any) => ({
+        label: `${item.alert}: ${typeNames[item.eventType] ?? 'hazard'} near ${regionOf(item)}`,
+        discoveryId: `gdacs-${item.eventType}-${Number(item.lat).toFixed(1)}-${Number(item.lon).toFixed(1)}`,
+        lat: item.lat, lon: item.lon, placeLabel: regionOf(item)
+      })),
+      sources: [
+        { label: 'GDACS — Global Disaster Alert and Coordination System', url: 'https://www.gdacs.org/' },
+        { label: 'GDACS live alert feed', url: 'https://www.gdacs.org/xml/rss.xml' }
+      ]
+    });
+  }
+
+  const investigationPriority = ['crisis-attention-index', 'planet-emergency-board', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
   const sorted = out.sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
   // Editorial robustness: transient upstream failures (RSS rate limits, UNHCR timeouts) should never
   // silently empty the investigation rail. If this run produced unusually few investigations, merge in
