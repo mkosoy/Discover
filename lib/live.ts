@@ -734,13 +734,50 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const evt = eonet?.events?.[0];
   const evtLat = evt?.geometry?.at(-1)?.coordinates?.[1] ?? 0;
   const evtLon = evt?.geometry?.at(-1)?.coordinates?.[0] ?? 0;
-  if (evt) out.push({ id: 'event-attention-gap', title: 'Which natural events are being missed?', dek: 'NASA event observations are compared with broad public attention to surface stories that may be under-covered.', status: 'uncertain', location: { lat: evtLat, lon: evtLon, label: evt.title }, mediaImage: worldviewSnapshot(evtLat, evtLon, 8, 12), mediaAlt: `NASA MODIS latest available true-color satellite swath around ${evt.title}`, updatedAt: evt.geometry?.at(-1)?.date ?? now(), confidence: 48, metrics: [
-    { label: 'Open events', value: String(eonet?.events?.length ?? 0) }, { label: 'Attention proxy', value: String(articles.length), delta: 'Ukraine sample reuse' }, { label: 'Evidence quality', value: 'Mixed', delta: 'source-dependent' }
-  ], evidence: [
-    { kind: 'observed', text: 'NASA MODIS imagery supplies latest-available visual context around the event; orbital gaps and clouds mean it is corroborating context rather than proof of current conditions.', source: 'https://worldview.earthdata.nasa.gov/' },
-    { kind: 'observed', text: `NASA EONET is tracking ${evt.title} as an open natural event.` },
-    { kind: 'interpretation', text: 'Low media attention does not imply low consequence; it creates a research question worth investigating.' },
-    { kind: 'question', text: 'Can satellite imagery, weather observations or humanitarian reports corroborate change on the ground?' }
-  ], sources: [{ label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/' }, { label: 'NASA EONET', url: 'https://eonet.gsfc.nasa.gov/' }, { label: 'GDELT', url: 'https://www.gdeltproject.org/' }] });
+  const evtCategory = evt?.categories?.[0]?.title ?? 'natural event';
+  const [eventNewsXml, eventWeather] = evt ? await Promise.all([
+    text(`https://news.google.com/rss/search?q=${encodeURIComponent(`${evt.title} ${evtCategory} when:2d`)}&hl=en-US&gl=US&ceid=US%3Aen`),
+    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${evtLat}&longitude=${evtLon}&current=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m&timezone=auto`)
+  ]) : [null, null];
+  const eventArticles = parseGoogleNews(eventNewsXml);
+  const eventDomains = new Set(eventArticles.map((article: any) => article.domain).filter(Boolean));
+  const eventArticleTimes = eventArticles.map((article: any) => newsTime(article.seendate)).filter(Number.isFinite);
+  const eventLatestCoverage = eventArticleTimes.length ? ago(Math.max(...eventArticleTimes)) : 'unknown';
+  const currentEventWeather = eventWeather?.current;
+  if (evt) out.push({
+    id: 'event-attention-gap',
+    title: 'Which natural events are being missed?',
+    dek: 'A NASA event observation is compared with current environmental conditions and event-specific public attention to surface stories that may be under-covered.',
+    status: 'uncertain',
+    location: { lat: evtLat, lon: evtLon, label: evt.title },
+    mediaImage: worldviewSnapshot(evtLat, evtLon, 8, 12),
+    mediaAlt: `NASA MODIS latest available true-color satellite swath around ${evt.title}`,
+    updatedAt: evt.geometry?.at(-1)?.date ?? now(),
+    confidence: 54,
+    metrics: [
+      { label: 'Open events', value: String(eonet?.events?.length ?? 0), delta: 'NASA EONET sample' },
+      { label: 'Event attention', value: String(eventArticles.length), delta: eventArticles.length ? `latest ${eventLatestCoverage}` : 'Google News unavailable' },
+      { label: 'Attention breadth', value: eventArticles.length ? `${eventDomains.size} outlets` : '—', delta: 'event-specific 48h sample' },
+      { label: 'Precipitation', value: currentEventWeather ? `${Number(currentEventWeather.precipitation ?? 0).toFixed(1)} mm` : '—', delta: currentEventWeather ? `${Math.round(currentEventWeather.cloud_cover)}% cloud cover` : 'weather unavailable' },
+      { label: 'Last geometry', value: evt.geometry?.at(-1)?.date ? ago(evt.geometry.at(-1).date) : '—', delta: evtCategory }
+    ],
+    evidence: [
+      { kind: 'observed', text: 'NASA MODIS imagery supplies latest-available visual context around the event; orbital gaps and clouds mean it is corroborating context rather than proof of current conditions.', source: 'https://worldview.earthdata.nasa.gov/' },
+      { kind: 'observed', text: `NASA EONET is tracking ${evt.title} as an open ${evtCategory.toLowerCase()} event; latest geometry is ${evt.geometry?.at(-1)?.date ? ago(evt.geometry.at(-1).date) : 'unknown'}.`, source: evt.link ?? 'https://eonet.gsfc.nasa.gov/' },
+      currentEventWeather ? { kind: 'observed', text: `Current modeled conditions near the event are ${Math.round(currentEventWeather.temperature_2m)}°C with ${Number(currentEventWeather.precipitation ?? 0).toFixed(1)} mm precipitation, ${Math.round(currentEventWeather.cloud_cover)}% cloud cover and ${Math.round(currentEventWeather.wind_speed_10m)} km/h winds. This frames exposure and observing conditions but does not verify impacts.`, source: 'https://open-meteo.com/' } : { kind: 'question', text: 'Current weather near the event was unavailable, so environmental exposure cannot be assessed.' },
+      { kind: 'observed', text: eventArticles.length ? `An event-specific two-day Google News sample returned ${eventArticles.length} items across ${eventDomains.size} outlets/domains, latest ${eventLatestCoverage}. The sample measures attention rather than severity or human consequence.` : 'The event-specific two-day public attention sample was unavailable or empty, so no conclusion is drawn about media coverage.', source: 'https://news.google.com/' },
+      { kind: 'interpretation', text: 'Low media attention does not imply low consequence; it creates a research question worth investigating. Likewise, high attention does not itself verify conditions on the ground.' },
+      { kind: 'question', text: 'Can satellite imagery, weather observations, local agencies or humanitarian reports corroborate change on the ground without overstating what the public record proves?' }
+    ],
+    pulses: attentionCadence(eventArticles, 48),
+    pulseTitle: '48h attention cadence',
+    pulseCaption: 'Google News sample counts per 4h, oldest → latest; sparse samples show shape, not total volume',
+    sources: [
+      { label: 'NASA Worldview MODIS satellite imagery', url: 'https://worldview.earthdata.nasa.gov/' },
+      { label: 'NASA EONET', url: 'https://eonet.gsfc.nasa.gov/' },
+      { label: 'Google News event attention sample', url: 'https://news.google.com/' },
+      { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/' }
+    ]
+  });
   return out;
 }
