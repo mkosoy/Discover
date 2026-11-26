@@ -14,6 +14,7 @@ function latLon(lat: number, lon: number, radius = 1.36) {
 
 function Earth({ active, discoveries, onSelect }: { active?: Discovery; discoveries: Discovery[]; onSelect: (discovery: Discovery) => void }) {
   const group = useRef<THREE.Group>(null);
+  const pointerDown = useRef<{ x: number; y: number }>();
   const earth = useLoader(THREE.TextureLoader, '/textures/earth-blue-marble.jpg');
   const bump = useLoader(THREE.TextureLoader, '/textures/earth-topology.png');
   earth.colorSpace = THREE.SRGBColorSpace;
@@ -40,8 +41,15 @@ function Earth({ active, discoveries, onSelect }: { active?: Discovery; discover
     }
     onSelect(best);
   };
+  const dragged = (event: any) => {
+    const native = event.nativeEvent as PointerEvent;
+    return pointerDown.current ? Math.hypot(native.clientX - pointerDown.current.x, native.clientY - pointerDown.current.y) > 8 : false;
+  };
   return <group ref={group}>
-    <mesh onClick={event => { event.stopPropagation(); inspectPoint(event.point); }}>
+    <mesh
+      onPointerDown={event => { const native = event.nativeEvent as PointerEvent; pointerDown.current = { x: native.clientX, y: native.clientY }; }}
+      onClick={event => { event.stopPropagation(); if (!dragged(event)) inspectPoint(event.point); }}
+    >
       <sphereGeometry args={[1.34, 96, 96]} />
       <meshStandardMaterial map={earth} bumpMap={bump} bumpScale={.045} roughness={.72} metalness={.02} />
     </mesh>
@@ -55,6 +63,7 @@ function Earth({ active, discoveries, onSelect }: { active?: Discovery; discover
 
 function Marker({ discovery, active, onSelect }: { discovery: Discovery; active: boolean; onSelect: (discovery: Discovery) => void }) {
   const ref = useRef<THREE.Group>(null);
+  const pointerDown = useRef<{ x: number; y: number }>();
   const pos = useMemo(() => latLon(discovery.location.lat, discovery.location.lon, 1.38), [discovery]);
   useFrame(({ clock }) => {
     if (!ref.current) return;
@@ -62,7 +71,17 @@ function Marker({ discovery, active, onSelect }: { discovery: Discovery; active:
     ref.current.scale.setScalar(s);
   });
   const color = active ? '#8fe7ff' : '#f6c96f';
-  return <group ref={ref} position={pos} onClick={event => { event.stopPropagation(); onSelect(discovery); }}>
+  return <group
+    ref={ref}
+    position={pos}
+    onPointerDown={event => { const native = event.nativeEvent as PointerEvent; pointerDown.current = { x: native.clientX, y: native.clientY }; }}
+    onClick={event => {
+      event.stopPropagation();
+      const native = event.nativeEvent as PointerEvent;
+      const moved = pointerDown.current ? Math.hypot(native.clientX - pointerDown.current.x, native.clientY - pointerDown.current.y) > 8 : false;
+      if (!moved) onSelect(discovery);
+    }}
+  >
     <mesh><sphereGeometry args={[.018, 18, 18]} /><meshBasicMaterial color={color} /></mesh>
     {active && <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.04, .0022, 8, 48]} /><meshBasicMaterial color={color} transparent opacity={.72} /></mesh>}
   </group>;
