@@ -1232,5 +1232,15 @@ export async function getInvestigations(): Promise<Investigation[]> {
   }
 
   const investigationPriority = ['crisis-attention-index', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
-  return out.sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
+  const sorted = out.sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
+  // Editorial robustness: transient upstream failures (RSS rate limits, UNHCR timeouts) should never
+  // silently empty the investigation rail. If this run produced unusually few investigations, merge in
+  // last-good entries from the past hour, preferring fresh copies of anything regenerated this run.
+  const freshIds = new Set(sorted.map(i => i.id));
+  const carry = investigationMemory.filter(i => !freshIds.has(i.id) && Date.now() - new Date(i.updatedAt).getTime() < 3600000);
+  const merged = [...sorted, ...carry].sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
+  if (sorted.length >= 5) investigationMemory.splice(0, investigationMemory.length, ...sorted);
+  return merged.length >= sorted.length ? merged : sorted;
 }
+
+const investigationMemory: any[] = [];
