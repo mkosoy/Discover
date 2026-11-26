@@ -31,17 +31,17 @@ export default function DiscoverApp() {
     });
   }, []);
 
-  const surprise = () => {
+  const surprise = (reveal = true) => {
     if (!discoveries.length) return;
     const pool = discoveries.filter(d => d.id !== active?.id);
     setActive(pool[Math.floor(Math.random() * pool.length)] ?? discoveries[0]);
-    setPanelOpen(true);
+    if (reveal) setPanelOpen(true);
     setMode('discover');
   };
 
   useEffect(() => {
     if (!watching || discoveries.length < 2) return;
-    const timer = window.setInterval(surprise, 11000);
+    const timer = window.setInterval(() => surprise(false), 11000);
     return () => window.clearInterval(timer);
   });
 
@@ -64,7 +64,7 @@ export default function DiscoverApp() {
     </section>
 
     <div className="actionDock">
-      <button className="surprise" onClick={surprise} disabled={loading}><Shuffle size={20} />{loading ? 'Listening…' : 'Surprise Me'}</button>
+      <button className="surprise" onClick={() => surprise()} disabled={loading}><Shuffle size={20} />{loading ? 'Listening…' : 'Surprise Me'}</button>
       <button className={watching ? 'watch active' : 'watch'} onClick={() => setWatching(!watching)}><Play size={17} />{watching ? 'Watching' : 'Watch'}</button>
     </div>
 
