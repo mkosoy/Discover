@@ -5,7 +5,9 @@ export const metadata: Metadata = {
   title: 'Elsewhere — Discover what\'s happening',
   description: 'Discover what\'s happening. Understand what it means. A cinematic live discovery platform for Earth.',
   applicationName: 'Elsewhere',
-  appleWebApp: { capable: true, title: 'Elsewhere', statusBarStyle: 'black-translucent' }
+  appleWebApp: { capable: true, title: 'Elsewhere', statusBarStyle: 'black-translucent' },
+  manifest: '/manifest.webmanifest',
+  icons: { icon: '/icons/icon-192.png', apple: '/icons/apple-touch-icon.png' }
 };
 export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#02040c' };
 export default function RootLayout({ children }: { children: React.ReactNode }) { return <html lang="en"><body>{children}</body></html>; }
