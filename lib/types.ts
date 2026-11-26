@@ -18,6 +18,7 @@ export type Discovery = {
   mediaAlt?: string;
   unavailable?: boolean;
   connections?: { id: string; title: string; reason: string; strength: number }[];
+  orbitTrack?: { lat: number; lon: number; minutes: number }[];
   facts: { label: string; value: string; kind: EvidenceKind }[];
   sources: { label: string; url: string; retrievedAt: string }[];
   related: string[];

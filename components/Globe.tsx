@@ -47,7 +47,6 @@ function Earth({ active, discoveries, investigations, onSelect, onSelectInvestig
   useFrame((state, dt) => {
     if (!group.current) return;
     group.current.quaternion.slerp(target, 1 - Math.pow(.002, dt));
-    group.current.rotation.y += dt * .012;
   });
   const inspectPoint = (point: THREE.Vector3) => {
     if (!group.current || discoveries.length === 0) return;
@@ -79,6 +78,7 @@ function Earth({ active, discoveries, investigations, onSelect, onSelectInvestig
       <shaderMaterial transparent blending={THREE.AdditiveBlending} side={THREE.BackSide} vertexShader={`varying vec3 vNormal; void main(){ vNormal=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`} fragmentShader={`varying vec3 vNormal; void main(){ float intensity=pow(.72-dot(vNormal,vec3(0.,0.,1.)),2.1); gl_FragColor=vec4(.18,.55,1.,1.)*intensity;}`} />
     </mesh>
     <ConnectionArcs active={active} discoveries={discoveries} />
+    <OrbitTracks discoveries={discoveries} active={active} />
     {active && !discoveries.some(d => d.id === active.id) && !investigations.some(i => i.id === active.id) && <FocusMarker active={active} />}
     {discoveries.map((d, index) => {
       const samePlace = (other: Discovery) => Math.abs(other.location.lat - d.location.lat) < .08 && Math.abs(other.location.lon - d.location.lon) < .08;
@@ -100,6 +100,32 @@ function FocusMarker({ active }: { active: FocusTarget }) {
     <mesh><sphereGeometry args={[.026, 20, 20]} /><meshBasicMaterial color="#8fe7ff" /></mesh>
     <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.058, .0028, 8, 48]} /><meshBasicMaterial color="#8fe7ff" transparent opacity={.72} /></mesh>
   </group>;
+}
+
+function OrbitTracks({ discoveries, active }: { discoveries: Discovery[]; active?: FocusTarget }) {
+  return <>
+    {discoveries.filter(discovery => discovery.orbitTrack?.length).map(discovery => {
+      const points = discovery.orbitTrack ?? [];
+      const segments: typeof points[] = [[]];
+      for (const point of points) {
+        const segment = segments[segments.length - 1];
+        const previous = segment[segment.length - 1];
+        if (previous && Math.abs(previous.lon - point.lon) > 100) segments.push([point]);
+        else segment.push(point);
+      }
+      const isActive = active?.id === discovery.id;
+      return <group key={discovery.id}>
+        {segments.filter(segment => segment.length > 1).map((segment, index) => <Line
+          key={`${discovery.id}-${index}`}
+          points={segment.map(point => latLon(point.lat, point.lon, 1.46))}
+          color={isActive ? '#b8f4ff' : '#5ea8ff'}
+          transparent
+          opacity={isActive ? .82 : .34}
+          lineWidth={isActive ? 1.9 : 1.05}
+        />)}
+      </group>;
+    })}
+  </>;
 }
 
 function ConnectionArcs({ active, discoveries }: { active?: FocusTarget; discoveries: Discovery[] }) {
@@ -125,7 +151,7 @@ function Marker({ discovery, slot = 0, active, onSelect }: { discovery: Discover
   const ref = useRef<THREE.Group>(null);
   const pointerDown = useRef<{ x: number; y: number }>();
   const pos = useMemo(() => {
-    const base = latLon(discovery.location.lat, discovery.location.lon, 1.38);
+    const base = latLon(discovery.location.lat, discovery.location.lon, discovery.id === 'iss-over-earth' ? 1.46 : 1.38);
     if (!slot) return base;
     const tangent = new THREE.Vector3(-base.z, 0, base.x);
     if (tangent.lengthSq() < .001) tangent.set(1, 0, 0);

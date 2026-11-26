@@ -1,5 +1,6 @@
 import type { Discovery, Investigation } from './types';
 import { ago, until } from './time';
+import * as satellite from 'satellite.js';
 
 const now = () => new Date().toISOString();
 const src = (label: string, url: string) => ({ label, url, retrievedAt: now() });
@@ -113,6 +114,23 @@ function angularDistance(a: Discovery, b: Discovery) {
   return Math.acos(Math.max(-1, Math.min(1, x * x2 + y * y2 + z * z2))) / rad;
 }
 
+function orbitalTrack(line1?: string, line2?: string) {
+  if (!line1 || !line2) return [];
+  try {
+    const record = satellite.twoline2satrec(line1, line2);
+    const points = [];
+    for (let minutes = -35; minutes <= 85; minutes += 2.5) {
+      const date = new Date(Date.now() + minutes * 60000);
+      const positionVelocity = satellite.propagate(record, date);
+      const position = positionVelocity?.position;
+      if (!position) continue;
+      const geodetic = satellite.eciToGeodetic(position as any, satellite.gstime(date));
+      points.push({ lat: satellite.degreesLat(geodetic.latitude), lon: satellite.degreesLong(geodetic.longitude), minutes });
+    }
+    return points;
+  } catch { return []; }
+}
+
 function geometryCentroid(geometry: any): [number, number] | null {
   const points: number[][] = [];
   const walk = (coords: any) => {
@@ -175,8 +193,9 @@ function connectDiscoveries(out: Discovery[]) {
 
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
-  const [iss, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
+    json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
     json<any>('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=10'),
     json<any[]>('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
@@ -197,15 +216,20 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://api.weather.gov/alerts/active?status=actual', { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } })
   ]);
   const out: Discovery[] = [];
+  const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
+  const tleAge = issTle?.tle_timestamp ? ago(Number(issTle.tle_timestamp) * 1000) : 'unavailable';
   if (iss?.latitude != null) out.push({
     id: 'iss-over-earth', template: 'orbit', title: 'The ISS is crossing the planet in silence',
     kicker: 'Live orbital pass', visual: 'nasa-live', score: 96, freshness: 'live now', altitude: iss.altitude,
     location: { lat: iss.latitude, lon: iss.longitude, label: `${Number(iss.latitude).toFixed(1)}°, ${Number(iss.longitude).toFixed(1)}°` },
-    summary: 'A football-field-sized laboratory is moving about 7.66 km every second. The position is live; the video is an official NASA stream when available.',
+    summary: 'A football-field-sized laboratory is moving about 7.66 km every second. The position is live, the glowing path is propagated from the current public orbital element set, and the video is an official NASA stream when available.',
+    orbitTrack: issTrack,
     facts: [
       { label: 'Velocity', value: `${Math.round(iss.velocity).toLocaleString()} km/h`, kind: 'observed' },
       { label: 'Altitude', value: `${Math.round(iss.altitude)} km`, kind: 'observed' },
-      { label: 'Position', value: 'Updated seconds ago', kind: 'observed' }
+      { label: 'Position', value: 'Updated seconds ago', kind: 'observed' },
+      { label: 'Orbit model', value: issTrack.length ? `${issTrack.length} propagated positions` : 'Unavailable', kind: issTrack.length ? 'interpretation' : 'question' },
+      { label: 'Orbital elements', value: tleAge, kind: issTrack.length ? 'verified' : 'question' }
     ],
     sources: [src('Open Notify / Where the ISS at?', 'https://wheretheiss.at/'), src('NASA Live', 'https://www.nasa.gov/live/')],
     related: ['Next visible pass', 'Aurora watch', 'Upcoming launches']
