@@ -207,6 +207,7 @@ function Marker({ discovery, slot = 0, active, onSelect }: { discovery: Discover
 
 function CameraPins({ cameras, activeId, onSelect }: { cameras: PublicCamera[]; activeId?: string; onSelect: (camera: PublicCamera) => void }) {
   const ref = useRef<THREE.InstancedMesh>(null);
+  const hitRef = useRef<THREE.InstancedMesh>(null);
   const pointerDown = useRef<{ x: number; y: number }>();
   const inactive = useMemo(() => cameras.filter(camera => camera.id !== activeId), [cameras, activeId]);
   const activeCamera = useMemo(() => cameras.find(camera => camera.id === activeId), [cameras, activeId]);
@@ -216,13 +217,19 @@ function CameraPins({ cameras, activeId, onSelect }: { cameras: PublicCamera[]; 
     inactive.forEach((camera, index) => {
       matrix.setPosition(latLon(camera.lat, camera.lon, 1.365));
       ref.current?.setMatrixAt(index, matrix);
+      hitRef.current?.setMatrixAt(index, matrix);
     });
-    ref.current.instanceMatrix.needsUpdate = true;
+    if (ref.current) ref.current.instanceMatrix.needsUpdate = true;
+    if (hitRef.current) hitRef.current.instanceMatrix.needsUpdate = true;
   }, [inactive]);
   return <>
+    <instancedMesh key={`visual-${inactive.length}`} ref={ref} args={[undefined, undefined, Math.max(1, inactive.length)]}>
+      <sphereGeometry args={[.0125, 8, 8]} />
+      <meshBasicMaterial color="#74dfc8" transparent opacity={.72} />
+    </instancedMesh>
     <instancedMesh
-      key={inactive.length}
-      ref={ref}
+      key={`hit-${inactive.length}`}
+      ref={hitRef}
       args={[undefined, undefined, Math.max(1, inactive.length)]}
       onPointerDown={event => { const native = event.nativeEvent as PointerEvent; pointerDown.current = { x: native.clientX, y: native.clientY }; }}
       onClick={event => {
@@ -232,8 +239,8 @@ function CameraPins({ cameras, activeId, onSelect }: { cameras: PublicCamera[]; 
         if (!moved && event.instanceId != null && inactive[event.instanceId]) onSelect(inactive[event.instanceId]);
       }}
     >
-      <sphereGeometry args={[.0105, 8, 8]} />
-      <meshBasicMaterial color="#74dfc8" transparent opacity={.68} />
+      <sphereGeometry args={[.034, 8, 8]} />
+      <meshBasicMaterial color="#74dfc8" transparent opacity={.001} depthWrite={false} />
     </instancedMesh>
     {activeCamera && <ActiveCameraPin camera={activeCamera} />}
   </>;

@@ -358,7 +358,7 @@ export default function DiscoverApp() {
           <LiveVideo title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0&autoplay=1&mute=1&playsinline=1" /> : active.mediaVideo ?
           <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} autoPlay={active.id.startsWith('camera-pin-')} /> :
           <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
-          {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? (active.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : 'Latest public Earth imagery') : 'Animated evidence visualization'}</div>}
+          {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? (active.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : active.mediaImage.includes('embed.skylinewebcams.com') ? 'Live camera image · refreshing' : 'Latest public Earth imagery') : 'Animated evidence visualization'}</div>}
         </div>
         <div className="panelBody">
           <div className="eyebrow"><Sparkles size={14} />{active.kicker}</div>
@@ -442,7 +442,7 @@ function LiveImage({ src, alt }: { src: string; alt: string }) {
     className="liveImage"
     src={liveSrc}
     alt={alt}
-    crossOrigin="anonymous"
+    crossOrigin={src.includes('nesdis.noaa.gov') ? 'anonymous' : undefined}
     onError={() => setFailed(true)}
     onLoad={event => {
       try {

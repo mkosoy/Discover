@@ -32,6 +32,8 @@ def infer(title):
     return 'city'
 def detail(url):
     text=get(url)
+    # Detail requests intermittently fail under concurrent load; one immediate retry recovers many real cameras.
+    if not text:text=get(url)
     if not text:return None
     m=re.search(r'videoId:\s*["\']([\w-]{11})',text)
     embed_id=(re.search(r'data-e="(\d+)"',text) or [None,None])[1] if re.search(r'data-e="(\d+)"',text) else None
@@ -41,21 +43,47 @@ def detail(url):
     title=re.sub(r'^【LIVE】\s*','',title);title=re.sub(r'\s*\|\s*SkylineWebcams\s*$','',title)
     desc=re.search(r'<meta name="description" content="([^"]+)',text)
     return {'id':m.group(1) if m else None,'embedId':embed_id,'title':html.unescape(title),'description':html.unescape(desc.group(1)) if desc else ''}
+def slugify(x):
+    return re.sub(r'[^a-z0-9]+','-',unicodedata.normalize('NFKD',x).encode('ascii','ignore').decode().lower()).strip('-')
+
 def main():
     countries=[c for c in requests.get('https://raw.githubusercontent.com/mledoze/countries/master/countries.json',timeout=25).json() if c.get('independent')]
     byname={norm(c['name']['common']):c for c in countries}
-    aliases={'turkey':'turkiye','republic of san marino':'san marino','brasil':'brazil','ellada':'greece','cabo verde':'cape verde'}
+    aliases={'turkey':'turkiye','republic of san marino':'san marino','brasil':'brazil','ellada':'greece','cabo verde':'cape verde','czech republic':'czechia'}
+    slug_aliases={
+        'Brazil':['brasil'],'Spain':['espana'],'Germany':['deutschland'],'Greece':['ellada'],'Czechia':['czech-republic'],
+        'Netherlands':['nederland','netherlands'],'Italy':['italia','italy'],'Austria':['osterreich','austria'],
+        'Switzerland':['schweiz','switzerland'],'Türkiye':['turkey','turkiye'],'South Korea':['south-korea','korea'],
+        'United Arab Emirates':['united-arab-emirates'],'Saudi Arabia':['saudi-arabia'],'South Africa':['south-africa'],
+        'Ivory Coast':['ivory-coast','cote-d-ivoire'],'Cabo Verde':['cape-verde','cabo-verde'],
+        'San Marino':['republic-of-san-marino','san-marino'],'United Kingdom':['united-kingdom'],
+        'United States':['united-states'],'DR Congo':['dr-congo','democratic-republic-of-congo'],
+        'Eswatini':['eswatini','swaziland'],'Timor-Leste':['timor-leste','east-timor']
+    }
     cities=load_cities()
     index=get('https://www.skylinewebcams.com/en/webcam.html')
-    pairs=[];seen=set()
+    targets={};seen=set()
     for href,name in re.findall(r'<a href="(/en/webcam/[^"/]+\.html)">([^<]+)</a>',index):
         key=norm(html.unescape(name))
         if key in seen:continue
-        seen.add(key);pairs.append((href,html.unescape(name),key))
+        seen.add(key)
+        c=byname.get(aliases.get(key,key))
+        if c:targets[c['name']['common']]=(c,name,href)
+    # The public index is editorial rather than exhaustive: many valid country pages are not linked there.
+    # Probe conservative common/localized slug candidates and keep only pages that contain camera-detail links.
+    for c in countries:
+        name=c['name']['common']
+        if name in targets:continue
+        candidates=[]
+        for slug in [slugify(name)]+slug_aliases.get(name,[]):
+            if slug and slug not in candidates:candidates.append(slug)
+        for slug in candidates:
+            href=f'/en/webcam/{slug}.html'
+            page=get('https://www.skylinewebcams.com'+href)
+            if page and re.search(r'href="(/en/webcam/'+re.escape(slug)+r'/[^"]+\.html)"',page):
+                targets[name]=(c,name,href);break
     jobs=[]
-    for href,name,key in pairs:
-        lookup=aliases.get(key,key);c=byname.get(lookup)
-        if not c:continue
+    for c,name,href in targets.values():
         slug=href.split('/')[-1].replace('.html','')
         page=get('https://www.skylinewebcams.com'+href)
         links=[]
@@ -66,7 +94,7 @@ def main():
         for link in links[:8]:jobs.append((c,name,'https://www.skylinewebcams.com'+link,link))
     print('skyline detail candidates',len(jobs),flush=True)
     out=[]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
         futs={ex.submit(detail,url):(c,country,url,link) for c,country,url,link in jobs}
         for fut in concurrent.futures.as_completed(futs):
             c,country,url,link=futs[fut];d=fut.result()
