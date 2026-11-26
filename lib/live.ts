@@ -422,11 +422,18 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     out.push({
       id: `nws-alert-${shortHash(String(activeAlert.props.id ?? activeAlert.alert.id ?? `${eventName}-${activeAlert.props.sent ?? ''}`))}`, entityId: activeAlert.props.id ?? activeAlert.alert.id, occurredAt: activeAlert.props.sent,
       template: isWater ? 'ocean' : /fire|smoke/i.test(eventName) ? 'wildfire' : 'atmosphere',
-      title: `${eventName} is active in the United States`, kicker: 'National Weather Service live alert', visual: isWater ? 'ocean' : /fire|smoke/i.test(eventName) ? 'fire' : 'storm', score: 62 + Math.min(28, activeAlert.rank),
+      title: (() => {
+        return `${eventName} — ${compactArea(activeAlert.props.areaDesc)}`;
+      })(), kicker: `${eventName} · National Weather Service live alert`, visual: isWater ? 'ocean' : /fire|smoke/i.test(eventName) ? 'fire' : 'storm', score: 62 + Math.min(28, activeAlert.rank),
       freshness: activeAlert.props.sent ? ago(activeAlert.props.sent) : 'active now',
       mediaImage: alertImagery.url, mediaAlt: `${alertImagery.altPrefix} around ${compactArea(activeAlert.props.areaDesc)}`,
       location: { lat: alertLat, lon: alertLon, label: compactArea(activeAlert.props.areaDesc) },
-      summary: 'The National Weather Service is actively warning or advising this area. Elsewhere treats the alert itself as verified evidence, while local damage and casualties remain separate questions.',
+      summary: (() => {
+        const description = String(activeAlert.props.description ?? '').replace(/\s+/g, ' ').trim();
+        const first = description.split(/(?<=[.!?])\s/).map(part => part.replace(/^[.\s]+/, '')).find(part => part.length > 60);
+        const detail = first && first.length > 60 && first.length < 320 ? `${first} ` : '';
+        return `${detail}The National Weather Service is actively warning or advising this area. Elsewhere treats the alert itself as verified evidence, while local damage and casualties remain separate questions.`;
+      })(),
       facts: [
         { label: 'Severity', value: activeAlert.props.severity ?? '—', kind: 'verified' },
         { label: 'Urgency', value: activeAlert.props.urgency ?? '—', kind: 'verified' },
