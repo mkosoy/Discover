@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowRight, Compass, Eye, Globe2, Loader2, Newspaper, Play, Radio, Shuffle, Sparkles, X } from 'lucide-react';
 import Globe from './Globe';
@@ -27,6 +27,9 @@ export default function DiscoverApp() {
   const [lens, setLens] = useState<any>();
   const [lensLoading, setLensLoading] = useState(false);
   const [path, setPath] = useState<Discovery[]>([]);
+  const activeRef = useRef<Discovery>();
+
+  useEffect(() => { activeRef.current = active; }, [active]);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,16 +43,18 @@ export default function DiscoverApp() {
       const nextInvestigations = i.investigations ?? [];
       setDiscoveries(nextDiscoveries);
       setInvestigations(nextInvestigations);
-      setActive(current => {
-        if (!current) return nextDiscoveries[0];
-        if (current.id.startsWith('place-')) return current;
-        return nextDiscoveries.find((item: Discovery) => item.id === current.id) ?? nextDiscoveries[0] ?? current;
-      });
-      setSelectedInvestigation(current => current ? nextInvestigations.find((item: Investigation) => item.id === current.id) ?? nextInvestigations[0] : nextInvestigations[0]);
-      if (!initial) {
+      const currentActive = activeRef.current;
+      const nextActive = !currentActive
+        ? nextDiscoveries[0]
+        : currentActive.id.startsWith('place-')
+          ? currentActive
+          : nextDiscoveries.find((item: Discovery) => item.id === currentActive.id) ?? nextDiscoveries[0] ?? currentActive;
+      if (!initial && currentActive && nextActive?.id !== currentActive.id) {
         setLens(undefined);
         setLensLoading(false);
       }
+      setActive(nextActive);
+      setSelectedInvestigation(current => current ? nextInvestigations.find((item: Investigation) => item.id === current.id) ?? nextInvestigations[0] : nextInvestigations[0]);
       if (initial) setLoading(false);
     };
     void load(true);
@@ -112,7 +117,7 @@ export default function DiscoverApp() {
         facts: place.facts ?? [], connections: nearest,
         sources: [
           { label: 'Open-Meteo current weather', url: 'https://open-meteo.com/', retrievedAt: place.retrievedAt ?? new Date().toISOString() },
-          { label: 'BigDataCloud reverse geocode', url: 'https://www.bigdatacloud.com/reverse-geocoding', retrievedAt: place.retrievedAt ?? new Date().toISOString() }
+          { label: 'OpenStreetMap Nominatim reverse geocode', url: 'https://nominatim.openstreetmap.org/', retrievedAt: place.retrievedAt ?? new Date().toISOString() }
         ],
         related: ['Local weather', 'Nearby signals', 'Night lights']
       });
