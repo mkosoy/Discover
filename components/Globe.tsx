@@ -322,7 +322,7 @@ export default function Globe({ active, discoveries, investigations, cameras, sk
       <pointLight position={[-3, -2, -2]} intensity={.38} color="#5b7cff" />
       <Stars radius={80} depth={35} count={3600} factor={3.2} saturation={0} fade speed={.45} />
       <Earth active={active} discoveries={discoveries} investigations={investigations} cameras={cameras} sky={sky} onSelect={onSelect} onSelectCamera={onSelectCamera} onSelectInvestigation={onSelectInvestigation} />
-      <OrbitControls enablePan={false} enableZoom minDistance={3.25} maxDistance={5.2} zoomSpeed={.55} rotateSpeed={.42} enableDamping dampingFactor={.08} />
+      <OrbitControls enablePan={false} enableZoom minDistance={3.25} maxDistance={5.2} zoomSpeed={.55} rotateSpeed={.42} enableDamping dampingFactor={.08} autoRotate={!active} autoRotateSpeed={.32} makeDefault />
     </Canvas>
     <div className="orbitalVignette" />
   </div>;
