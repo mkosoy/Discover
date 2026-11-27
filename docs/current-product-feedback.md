@@ -153,3 +153,8 @@ Next hill-climb candidates:
 - Fixed all 9 Devin Review findings across two rounds: airborne census magnitude (100x inflated people-aloft, meters-vs-feet altitude), invented seismic evidence on investigation links (now honest place-probe), camera/place cards yanked by feed refresh, 8 misattributed camera pins removed (honest absence beats fake coverage), polar worldview bbox inversion + honest swath labeling, megacity comparison removed, metadata crawler amplification dedupe + negative caching.
 - New cards: wildlife-pulse (iNaturalist live sightings with real photos, network total), earth-extremes-now (16-site batched Open-Meteo: hottest/coldest/windiest at the same minute), humanity-darkness-now (40-metro population-weighted day/night/twilight split, pure geometry), point-nemo-iss (conditional wow-moment: ISS crew are the nearest humans to the oceanic pole of inaccessibility when within range).
 - Feed now ~34 discovery cards.
+
+## Round IX checkpoint
+- Devin Review round 3: all 8 findings real and fixed — wildlife honesty (quality-grade labeling, observation-vs-upload timing, per-sighting share ids), exact Point Nemo spherical chord geometry + 'almost certainly' framing, terminator marker moved onto the equator (exactly 0° elevation always), civil-darkness wording honest, related-topic taps now resolve to real cards/investigations (wildest water, terminator, aurora, volcanoes...) instead of generic weather.
+- Camera rotation: 6 curated anchors + 8 rotating quality picks from the full registry every 30 min, generated fallback copy — the Surprise loop no longer shows the same 14 cameras forever.
+- Prod chunk-recovery: stale-chunk crash after redeploys now auto-reloads once.
