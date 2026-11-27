@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { earthImagery } from '@/lib/satellite';
+import { earthImagery, nightLightsSnapshot } from '@/lib/satellite';
 import { nearestPublicCameras } from '@/lib/cameras';
 
 async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
@@ -52,6 +52,21 @@ function weatherText(code?: number) {
   return 'Changing weather';
 }
 
+// NOAA solar-position approximation — independent of any upstream API, so night
+// detection still works when the weather provider is rate-limited or down.
+function solarElevationDeg(lat: number, lon: number, date = new Date()) {
+  const rad = Math.PI / 180;
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const doy = Math.floor((date.getTime() - start) / 86400000);
+  const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60;
+  const gamma = 2 * Math.PI / 365 * (doy - 1 + (utcHours - 12) / 24);
+  const decl = 0.006918 - 0.399912 * Math.cos(gamma) + 0.070257 * Math.sin(gamma) - 0.006758 * Math.cos(2 * gamma) + 0.000907 * Math.sin(2 * gamma) - 0.002697 * Math.cos(3 * gamma) + 0.00148 * Math.sin(3 * gamma);
+  const eqtime = 229.18 * (0.000075 + 0.001868 * Math.cos(gamma) - 0.032077 * Math.sin(gamma) - 0.014615 * Math.cos(2 * gamma) - 0.040849 * Math.sin(2 * gamma));
+  const tst = (utcHours * 60 + eqtime + 4 * lon) % 1440;
+  const ha = (tst / 4 - 180) * rad;
+  return Math.asin(Math.sin(lat * rad) * Math.sin(decl) + Math.cos(lat * rad) * Math.cos(decl) * Math.cos(ha)) / rad;
+}
+
 function distanceKm(latA: number, lonA: number, latB: number, lonB: number) {
   const rad = Math.PI / 180;
   const dLat = (latB - latA) * rad;
@@ -96,8 +111,9 @@ export async function GET(request: Request) {
   const nearestAircraft = aircraft
     .map((plane: any) => ({ ...plane, distance: distanceKm(lat, lon, plane.lat, plane.lon) }))
     .sort((a: any, b: any) => a.distance - b.distance)[0];
-  const daylight = current?.is_day == null ? null : current.is_day ? 'Daylight now' : 'Dark now';
-  const nearestCamera = nearestPublicCameras(lat, lon, 1)[0];
+  const daylight = current?.is_day != null ? (current.is_day ? 'Daylight now' : 'Dark now') : (solarElevationDeg(lat, lon) < -1 ? 'Dark now (computed from solar position)' : 'Daylight now (computed from solar position)');
+  const nearestCameras = nearestPublicCameras(lat, lon, 3);
+  const nearestCamera = nearestCameras[0];
   const hook = nearestHazard && nearestHazard.distance < 250
     ? `This point sits within ${Math.round(nearestHazard.distance)} km of a ${nearestHazard.alert} ${nearestHazard.type || 'hazard'} model, while current weather, aircraft and satellite context explain what can and cannot be corroborated right now.`
     : nearestQuake && nearestQuake.distance < 150
@@ -115,7 +131,18 @@ export async function GET(request: Request) {
                 : nearestCamera
                   ? `The clearest visual way into this place is the nearest curated public look-in around ${nearestCamera.place}, while local weather, daylight, seismicity and aircraft motion supply the surrounding evidence.`
                   : 'This point is quiet in the public alert feeds, so Elsewhere reads weather, daylight, terrain, seismicity and human motion to reveal what is distinctive without inventing an event.';
-  const imagery = earthImagery(lat, lon);
+  let imagery = earthImagery(lat, lon);
+  const nightHere = current?.is_day != null ? current.is_day === 0 : solarElevationDeg(lat, lon) < -1;
+  if (nightHere && !imagery.nearRealtime) {
+    // A daytime true-color swath of a night-side location is a black rectangle —
+    // swap to the NASA Black Marble city-lights reference and label it honestly.
+    imagery = {
+      url: nightLightsSnapshot(lat, lon),
+      sourceLabel: 'NASA Black Marble night-lights reference composite (static, not live)',
+      altPrefix: 'NASA night-lights reference view — it is night here now',
+      nearRealtime: false
+    };
+  }
   const notable = (wiki?.query?.geosearch ?? []).filter((n: any) => n?.title && !(/^(canton|arrondissement|province|prefecture|county|district|municipality|department|oblast|region|state) of /i.test(n.title) || /^(county|province|district|prefecture|oblast|region) \w+$/i.test(n.title) || /\b(county|prefecture|oblast|municipality|arrondissement)$/i.test(n.title)) && !/\((department|province|county|district|municipality|state|region|oblast|prefecture)\)/i.test(n.title));
   const facts = [
     current ? { label: 'Weather', value: `${weatherText(current.weather_code)}, ${Math.round(current.temperature_2m)}°C`, kind: 'observed' } : { label: 'Weather', value: 'Unavailable', kind: 'question' },
@@ -133,6 +160,7 @@ export async function GET(request: Request) {
     weather?.elevation != null ? { label: 'Elevation', value: `${Math.round(weather.elevation)} m`, kind: 'verified' } : null,
     weather?.timezone ? { label: 'Local timezone', value: weather.timezone.replace('_', ' '), kind: 'verified' } : null,
     nearestCamera ? { label: 'Nearest live look-in', value: `${nearestCamera.place} · ${Math.round(nearestCamera.distance)} km away`, kind: 'verified' } : null,
+    nearestCameras.length > 1 ? { label: 'More look-ins', value: nearestCameras.slice(1).map(c => `${c.place} (${Math.round(c.distance)} km)`).join(' · '), kind: 'verified' } : null,
     notable.length ? { label: 'Notable nearby', value: notable.slice(0, 2).map((n: any) => `${n.title}${n.dist ? ` · ${n.dist < 1000 ? Math.round(n.dist) + ' m' : (n.dist / 1000).toFixed(1) + ' km'}` : ''}`).join(' — '), kind: 'verified' } : null,
     { label: 'Satellite context', value: imagery.nearRealtime ? 'GOES GeoColor sector image, usually minutes old' : 'Latest daylight swath; orbital gaps possible', kind: 'observed' },
     { label: 'Attribution', value: 'Weather is model/grid data; reverse geocoding is approximate; populated places may be coarse', kind: 'question' }
@@ -154,6 +182,7 @@ export async function GET(request: Request) {
         { label: 'adsb.lol live aircraft transponders', url: 'https://adsb.lol/', retrievedAt: new Date().toISOString() }
       ],
       hook,
+      cameras: nearestCameras.map(c => ({ id: c.id, title: c.title, place: c.place, distance: Math.round(c.distance), youtubeId: c.youtubeId, stillImage: c.stillImage, kind: c.kind })),
       retrievedAt: new Date().toISOString()
     }
   });

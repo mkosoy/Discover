@@ -119,6 +119,8 @@ export default function DiscoverApp() {
   const [mode, setMode] = useState<'discover' | 'investigate'>('discover');
   const [selectedInvestigation, setSelectedInvestigation] = useState<Investigation>();
   const [watching, setWatching] = useState(false);
+  const tourRef = useRef<{ order: string[]; idx: number }>({ order: [], idx: -1 });
+  const [tourProgress, setTourProgress] = useState<{ idx: number; total: number }>();
   const [sky, setSky] = useState<{ lat: number; lon: number }[]>([]);
   const [layers, setLayers] = useState<any>();
   useEffect(() => {
@@ -474,10 +476,26 @@ export default function DiscoverApp() {
     } finally { setLensLoading(false); }
   };
 
+  const advanceTour = () => {
+    const tour = tourRef.current;
+    const valid = tour.order.filter(id => discoveries.some(d => d.id === id));
+    if (!valid.length) { surprise(false); return; }
+    tour.idx = (tour.idx + 1) % valid.length;
+    tour.order = valid;
+    const next = discoveries.find(d => d.id === valid[tour.idx]);
+    if (!next) { surprise(false); return; }
+    setTourProgress({ idx: tour.idx + 1, total: valid.length });
+    setActive(next);
+    setLens(undefined);
+    setLensLoading(false);
+    setPath([]);
+    setMode('discover');
+  };
+
   useEffect(() => {
     if (!watching || discoveries.length < 2) return;
     const dwell = active?.mediaVideo || active?.visual === 'nasa-live' ? 26000 : 12000;
-    const timer = window.setTimeout(() => surprise(false), dwell);
+    const timer = window.setTimeout(() => advanceTour(), dwell);
     return () => window.clearTimeout(timer);
   });
 
@@ -554,7 +572,23 @@ export default function DiscoverApp() {
           { timeout: 8000, maximumAge: 300000 }
         );
       }}><LocateFixed size={17} />My sky</button>
-      <button className={watching ? 'watch active' : 'watch'} onClick={() => setWatching(!watching)}><Play size={17} />{watching ? 'Watching' : 'Watch'}</button>
+      <button className={watching ? 'watch active' : 'watch'} onClick={() => {
+        if (!watching) {
+          // Tour mode: rank everything happening right now — live video and imagery first —
+          // then walk the planet best-first instead of randomly.
+          const ranked = [...discoveries].sort((a, b) => {
+            const rank = (d: Discovery) => d.score + (d.mediaVideo || d.visual === 'nasa-live' ? 30 : d.mediaImage ? 12 : 0);
+            return rank(b) - rank(a);
+          });
+          tourRef.current = { order: ranked.map(d => d.id), idx: -1 };
+          setTourProgress(undefined);
+          setWatching(true);
+          window.setTimeout(() => advanceTour(), 60);
+        } else {
+          setWatching(false);
+          setTourProgress(undefined);
+        }
+      }}><Play size={17} />{watching ? (tourProgress ? `Tour ${tourProgress.idx}/${tourProgress.total}` : 'Tour live') : 'Tour'}</button>
       <button className={ambient ? 'ambient active' : 'ambient'} onClick={() => setAmbient(!ambient)} aria-label="Toggle ambient sound">{ambient ? <Volume2 size={17} /> : <VolumeX size={17} />}{ambient ? 'Sound on' : 'Sound'}</button>
       <button className="share" onClick={shareCurrent} aria-label="Copy link to this view">{copied ? <Check size={17} /> : <Share2 size={17} />}{copied ? 'Copied' : 'Share'}</button>
     </div>

@@ -10,6 +10,16 @@ export function worldviewSnapshot(lat: number, lon: number, latSpan = 8, lonSpan
   return `https://wvs.earthdata.nasa.gov/api/v1/snapshot?REQUEST=GetSnapshot&BBOX=${latMin.toFixed(2)}%2C${lonMin.toFixed(2)}%2C${latMax.toFixed(2)}%2C${lonMax.toFixed(2)}&CRS=EPSG%3A4326&LAYERS=MODIS_Terra_CorrectedReflectance_TrueColor&FORMAT=image%2Fjpeg&WIDTH=900&HEIGHT=520`;
 }
 
+export function nightLightsSnapshot(lat: number, lon: number, latSpan = 8, lonSpan = 12) {
+  const centerLon = Math.max(-180 + lonSpan / 2, Math.min(180 - lonSpan / 2, lon));
+  const clampedLat = Math.max(-75 + latSpan / 2, Math.min(75 - latSpan / 2, lat));
+  const latMin = clampedLat - latSpan / 2;
+  const latMax = clampedLat + latSpan / 2;
+  const lonMin = centerLon - lonSpan / 2;
+  const lonMax = centerLon + lonSpan / 2;
+  return `https://wvs.earthdata.nasa.gov/api/v1/snapshot?REQUEST=GetSnapshot&BBOX=${latMin.toFixed(2)}%2C${lonMin.toFixed(2)}%2C${latMax.toFixed(2)}%2C${lonMax.toFixed(2)}&CRS=EPSG%3A4326&LAYERS=VIIRS_CityLights_2012&FORMAT=image%2Fjpeg&WIDTH=900&HEIGHT=520`;
+}
+
 type EarthImagery = {
   url: string;
   sourceLabel: string;
