@@ -130,7 +130,7 @@ const BUOY_STATIONS: Array<[string, string, number, number]> = [
   ['42001', 'mid-Gulf of Mexico buoy', 25.9, -89.67],
   ['46001', 'deep Gulf of Alaska buoy', 56.3, -148.1],
   ['41047', 'northeast Bahamas offshore buoy', 27.47, -71.5],
-  ['46087', 'San Clemente Basin buoy, off Los Angeles', 32.52, -118.6]
+  ['46087', 'Neah Bay buoy, off Washington', 48.49, -124.73]
 ];
 
 type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waterTemp?: number; windSpeed?: number; time: number };
@@ -150,6 +150,9 @@ async function buoyObservations(): Promise<BuoyObs[]> {
       const wtmp = parseFloat(c[14]);
       const wspd = parseFloat(c[6]);
       const ts = Date.UTC(+c[0], +c[1] - 1, +c[2], +c[3], +c[4]);
+      // A buoy that stopped reporting must not win the live ranking with a
+      // weeks-old reading — stale observations are dropped, not trusted.
+      if (Date.now() - ts > 3 * 3600000) return null;
       return { id, name, lat, lon, waveHeight: wvht, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, time: ts };
     }
     return null;
@@ -480,11 +483,11 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       out.push({
         id: 'earth-extremes-now', template: 'atmosphere', title: `${Math.round(hottest.temp)}°C in ${hottest.name.split(',')[0]} — ${Math.round(coldest.temp)}°C in ${coldest.name.split(',')[0]}, at the same minute`, kicker: 'The planet’s live extremes', visual: 'storm', score: 71, freshness: 'current model hour',
         location: { lat: coldest.lat, lon: coldest.lon, label: `${coldest.name} — coldest sampled` },
-        summary: `At this minute, across ${readings.length} of Earth's most extreme inhabited and uninhabited places, the modeled temperature spread is ${Math.round(spread)}°C — ${hottest.name} at ${Math.round(hottest.temp)}°C while ${coldest.name} reads ${Math.round(coldest.temp)}°C. The strongest wind in the sample is at ${windiest.name}: ${Math.round(windiest.gusts ?? windiest.wind ?? 0)} km/h gusts. One atmosphere, all of it at once.`,
+        summary: `At this minute, across ${readings.length} of Earth's most extreme inhabited and uninhabited places, the modeled temperature spread is ${Math.round(spread)}°C — ${hottest.name} at ${Math.round(hottest.temp)}°C while ${coldest.name} reads ${Math.round(coldest.temp)}°C. The strongest wind in the sample is at ${windiest.name}: ${Math.round(windiest.gusts ?? windiest.wind ?? 0)} km/h${windiest.gusts != null ? ' gusts' : ' sustained'}. One atmosphere, all of it at once.`,
         facts: [
           { label: 'Hottest sampled', value: `${hottest.name} · ${hottest.temp.toFixed(1)}°C`, kind: 'interpretation' },
           { label: 'Coldest sampled', value: `${coldest.name} · ${coldest.temp.toFixed(1)}°C`, kind: 'interpretation' },
-          { label: 'Windiest sampled', value: `${windiest.name} · gusts ${Math.round(windiest.gusts ?? 0)} km/h`, kind: 'interpretation' },
+          { label: 'Windiest sampled', value: `${windiest.name} · ${Math.round(windiest.gusts ?? windiest.wind ?? 0)} km/h${windiest.gusts != null ? ' gusts' : ' sustained'}`, kind: 'interpretation' },
           { label: 'Planet-wide spread', value: `${Math.round(spread)}°C across the sample`, kind: 'interpretation' },
           { label: 'Basis', value: `${readings.length}-location batched Open-Meteo model pass`, kind: 'verified' }
         ],
@@ -643,16 +646,21 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     // Flare detection: peak X-ray flux in the last 3 hours — an M/X-class spike
     // is a genuinely rare, genuinely happening-right-now event, so the card
     // retitles itself and rockets up the ranking when one is in progress.
-    const recentXrays = (xrays ?? []).filter((row: any) => row?.time_tag && Date.now() - new Date(row.time_tag.replace(' ', 'T') + (String(row.time_tag).includes('Z') ? '' : 'Z')).getTime() < 3 * 3600000);
-    const peakFlux = recentXrays.reduce((best: number, row: any) => Math.max(best, row?.flux ?? 0), xray?.flux ?? 0);
-    const flareActive = peakFlux >= 1e-5;
-    const flareX = peakFlux >= 1e-4;
+    const xrayAge = (row: any) => row?.time_tag ? Date.now() - new Date(String(row.time_tag).replace(' ', 'T') + (String(row.time_tag).includes('Z') ? '' : 'Z')).getTime() : Infinity;
+    const peakIn = (ms: number) => (xrays ?? []).filter((row: any) => xrayAge(row) < ms).reduce((best: number, row: any) => Math.max(best, row?.flux ?? 0), 0);
+    const peakNow = Math.max(peakIn(45 * 60000), xray?.flux ?? 0);
+    const peak3h = Math.max(peakIn(3 * 3600000), peakNow);
+    const flareActive = peakNow >= 1e-5;
+    const flareRecent = !flareActive && peak3h >= 1e-5;
+    const flareX = (flareActive ? peakNow : peak3h) >= 1e-4;
     const flareTitle = flareActive
       ? `A${flareX ? 'n X-class — the strongest kind —' : 'n M-class'} solar flare is erupting on the Sun right now`
-      : 'The solar wind is pressing against near-Earth space';
-    const flareScore = flareActive ? (flareX ? 97 : 93) : 86 + Math.max(0, Math.min(8, (speed - 400) / 50));
+      : flareRecent
+        ? `A${flareX ? 'n X-class' : 'n M-class'} solar flare erupted within the last few hours`
+        : 'The solar wind is pressing against near-Earth space';
+    const flareScore = flareActive ? (flareX ? 97 : 93) : flareRecent ? 88 : 86 + Math.max(0, Math.min(8, (speed - 400) / 50));
     out.push({
-      id: 'solar-wind-stream', template: 'atmosphere', title: flareTitle, kicker: flareActive ? 'Solar flare in progress — GOES X-ray monitor' : 'NOAA real-time space weather', visual: 'orbital', score: flareScore, freshness: plasma?.time_tag ? ago(plasma.time_tag) : 'minutes ago',
+      id: 'solar-wind-stream', template: 'atmosphere', title: flareTitle, kicker: flareActive ? 'Solar flare in progress — GOES X-ray monitor' : flareRecent ? 'Recent solar flare — GOES X-ray monitor' : 'NOAA real-time space weather', visual: 'orbital', score: flareScore, freshness: plasma?.time_tag ? ago(plasma.time_tag) : 'minutes ago',
       mediaImage: `https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png?v=${Date.now()}`, mediaAlt: 'Latest NOAA GOES solar ultraviolet image',
       location: { lat: 72, lon: -40, label: 'Sun–Earth L1 → polar magnetosphere' },
       summary: 'ACE measures solar-wind particles and magnetic fields upstream of Earth while GOES watches the Sun in X-rays. The map marker represents the downstream polar impact region, not the spacecraft position.',
@@ -683,7 +691,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const feet = wildest.waveHeight * 3.281;
     const ratio = calmest.waveHeight > 0.3 ? wildest.waveHeight / calmest.waveHeight : null;
     out.push({
-      id: 'ocean-measured-now', template: 'ocean', title: `The ${wildest.name.split(',')[0]} is measuring ${wildest.waveHeight.toFixed(1)} m waves right now`, kicker: 'The ocean, physically measured', visual: 'ocean', score: 76 + Math.min(14, Math.round(wildest.waveHeight * 2)), freshness: ageMin != null && ageMin < 90 ? `${ageMin} min ago` : 'within the hour',
+      id: 'ocean-measured-now', template: 'ocean', title: `The ${wildest.name.split(',')[0]} is measuring ${wildest.waveHeight.toFixed(1)} m waves right now`, kicker: 'The ocean, physically measured', visual: 'ocean', score: 76 + Math.min(14, Math.round(wildest.waveHeight * 2)), freshness: ageMin != null ? (ageMin < 90 ? `${ageMin} min ago` : `${Math.round(ageMin / 60)}h ago`) : 'measurement time unknown',
       location: { lat: wildest.lat, lon: wildest.lon, label: wildest.name },
       summary: `Moored instruments don't model the ocean — they ride it. Across ${ranked.length} NOAA buoys reporting right now, the roughest measured sea is at ${wildest.name}: ${wildest.waveHeight.toFixed(1)} m significant wave height (${Math.round(feet)} feet)${wildest.windSpeed ? ` with ${Math.round(wildest.windSpeed * 3.6)} km/h winds` : ''}${wildest.waterTemp != null ? ` and ${wildest.waterTemp.toFixed(1)}°C water` : ''}.${ratio && ratio > 1.6 ? ` Meanwhile the calmest reporting buoy, off ${calmest.name.split(',')[0]}, reads ${calmest.waveHeight.toFixed(1)} m — the same planet's ocean is ${ratio.toFixed(1)}× rougher in one place than another, at the same moment.` : ''}`,
       facts: [
@@ -714,13 +722,14 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const nightish = st.localHour < 5 || st.localHour >= 21;
       const drivetime = (st.localHour >= 6 && st.localHour <= 9) || (st.localHour >= 17 && st.localHour <= 20);
       out.push({
-        id: `radio-${st.city.toLowerCase().replace(/\s+/g, '-')}`, template: 'city', title: `It's ${timeStr} in ${st.city} — ${st.name} is broadcasting live right now`, kicker: 'Radio Earth · live audio', visual: 'city', score: 78 + (drivetime ? 5 : nightish ? 6 : 2) + Math.min(5, Math.round(st.votes / 800)), freshness: 'streaming live now',
+        id: `radio-${st.city.toLowerCase().replace(/\s+/g, '-')}`, template: 'city', title: `It's ${timeStr} in ${st.country} — ${st.name} is on air right now`, kicker: 'Radio Earth · live audio', visual: 'city', score: 78 + (drivetime ? 5 : nightish ? 6 : 2) + Math.min(5, Math.round(st.votes / 800)), freshness: 'streaming live now',
         location: { lat: st.lat, lon: st.lon, label: `${st.city}, ${st.country}` },
-        summary: `Somewhere in ${st.city} a studio is on air this second — not a recording, not a podcast: the same broadcast people there are actually hearing${drivetime ? ', in the middle of drive time' : nightish ? ', deep into the night shift' : ''}. This is one of the most-listened streams in ${st.country} by community ranking. Sound is unfiltered and unedited — that is the point.`,
+        summary: `Somewhere in ${st.country} a studio is on air this second — not a recording, not a podcast: the same broadcast people there are actually hearing${drivetime ? ', in the middle of drive time' : nightish ? ', deep into the night shift' : ''}. This is one of the most-listened streams in ${st.country} by community ranking; the pin is anchored at ${st.city} as the country's listening post, though the station's exact studio city is not disclosed by the index. Sound is unfiltered and unedited — that is the point.`,
         mediaAudio: st.streamUrl,
         facts: [
           { label: 'Local time there', value: `${timeStr} (longitude-approximate)`, kind: 'interpretation' },
           { label: 'Station', value: st.name.slice(0, 60), kind: 'verified' },
+          { label: 'Pin precision', value: `Country-level — anchored at ${st.city}; exact studio city not disclosed`, kind: 'question' },
           st.tags ? { label: 'Format', value: st.tags, kind: 'verified' } : null,
           { label: 'Community ranking', value: `${st.votes.toLocaleString()} votes in the open radio index`, kind: 'observed' },
           { label: 'Stream format', value: st.codec || 'live audio', kind: 'verified' },
@@ -738,20 +747,20 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   if (storms.length) {
     const strongest = [...storms].sort((a, b) => (b.maxWindKts ?? b.intensity ?? 0) - (a.maxWindKts ?? a.intensity ?? 0))[0];
     const name = strongest.name ?? 'Unnamed system';
-    const windMph = strongest.maxWindMph ?? (strongest.maxWindKts ? Math.round(strongest.maxWindKts * 1.151) : undefined);
+    const windMph = strongest.maxWindMph ?? (strongest.maxWindKts ? Math.round(strongest.maxWindKts * 1.151) : strongest.intensity ? Math.round(strongest.intensity * 1.151) : undefined);
     const classification = strongest.classification ?? 'tropical system';
     const lat = strongest.latitudeNumeric ?? strongest.latitude;
     const lon = strongest.longitudeNumeric ?? strongest.longitude;
     if (Number.isFinite(lat) && Number.isFinite(lon)) {
       const imagery = earthImagery(lat, lon);
       out.push({
-        id: `cyclone-${String(name).toLowerCase().replace(/\s+/g, '-')}`, entityId: strongest.id, template: 'atmosphere', title: `${classification === 'HU' || /hurricane/i.test(classification) ? 'Hurricane' : 'Tropical cyclone'} ${name} is spinning over open water right now`, kicker: 'Named storm, live advisory', visual: 'storm', score: 90 + Math.min(8, Math.round((windMph ?? 60) / 25)), freshness: 'current NHC advisory', mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} near ${name}`,
+        id: `cyclone-${String(name).toLowerCase().replace(/\s+/g, '-')}`, entityId: strongest.id, template: 'atmosphere', title: `${/hurricane/i.test(classification) || classification === 'HU' ? 'Hurricane' : /post/i.test(classification) ? 'Post-tropical' : 'Tropical system'} ${name} — live advisory in effect right now`, kicker: 'Named storm, live advisory', visual: 'storm', score: 90 + Math.min(8, Math.round((windMph ?? 60) / 25)), freshness: 'current NHC advisory', mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} near ${name}`,
         location: { lat, lon, label: `${classification} ${name}` },
         summary: `The National Hurricane Center's active ledger currently lists ${storms.length} named system${storms.length === 1 ? '' : 's'}; ${name} is the strongest${windMph ? `, with sustained winds around ${windMph} mph` : ''}. The position comes straight from the current advisory — where it goes next is the forecasters' open question, honestly labeled as such.`,
         facts: [
           { label: 'Classification', value: String(classification), kind: 'observed' },
           windMph ? { label: 'Sustained winds', value: `${windMph} mph`, kind: 'observed' } : null,
-          strongest.movement ? { label: 'Movement', value: String(strongest.movement), kind: 'observed' } : null,
+          (strongest.movementDir != null || strongest.movementSpeed != null) ? { label: 'Movement', value: `${strongest.movementDir ?? '—'}° at ${strongest.movementSpeed ?? '—'} mph`, kind: 'observed' } : strongest.movement ? { label: 'Movement', value: String(strongest.movement), kind: 'observed' } : null,
           strongest.pressure ? { label: 'Central pressure', value: `${strongest.pressure} mb`, kind: 'observed' } : null,
           { label: 'Active systems', value: String(storms.length), kind: 'observed' },
           { label: 'Track certainty', value: 'Cone of uncertainty widens with every forecast day', kind: 'question' }
@@ -898,7 +907,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   const moonAge = ((Date.now() / 86400000 - 10962.7597) % synodic + synodic) % synodic; // reference new moon 2000-01-06 18:14 UTC
   const moonIllum = Math.round((1 - Math.cos(2 * Math.PI * moonAge / synodic)) / 2 * 100);
   if (latestKp) out.push({ id: 'aurora-watch', template: 'atmosphere',
-    title: kpValue >= 5 ? `A G${kpValue >= 6 ? '2' : '1'} geomagnetic storm is in progress right now — the aurora oval is expanding` : auroraAligned ? 'Aurora conditions are aligned over Lapland right now — the camera is the check' : 'Aurora conditions are being measured above the polar night',
+    title: kpValue >= 5 ? `A G${Math.min(5, Math.max(1, Math.round(kpValue) - 4))} geomagnetic storm is in progress right now — the aurora oval is expanding` : auroraAligned ? 'Aurora conditions are aligned over Lapland right now — the camera is the check' : 'Aurora conditions are being measured above the polar night',
     kicker: kpValue >= 5 ? 'Geomagnetic storm in progress — NOAA measured' : auroraAligned ? 'Live composite: space weather + darkness + sky clarity' : 'NOAA space weather', visual: 'aurora',
     score: 74 + kpValue * 3 + (auroraAligned ? 14 : 0) + (kpValue >= 5 ? 8 : 0), freshness: 'updated minutes ago', mediaImage: 'https://services.swpc.noaa.gov/images/aurora-forecast-northern-hemisphere.jpg', mediaAlt: 'NOAA northern hemisphere aurora forecast', location: { lat: 69.9, lon: 27.0, label: 'Utsjoki, Finnish Lapland' },
     summary: auroraAligned

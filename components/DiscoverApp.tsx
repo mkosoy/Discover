@@ -584,7 +584,7 @@ export default function DiscoverApp() {
 
     <div className="actionDock">
       <button className="surprise" onClick={() => surprise()} disabled={loading}><Shuffle size={20} />{loading ? 'Listening…' : 'Surprise Me'}</button>
-      {showInstallHint && <button className="installHint" onClick={() => { setShowInstallHint(false); window.localStorage.setItem('elsewhere-install-hint-dismissed', '1'); }}>Add Elsewhere to your Home Screen — Share <span aria-hidden>⎋</span> then “Add to Home Screen” · tap to dismiss</button>}
+      {showInstallHint && !panelOpen && <button className="installHint" onClick={() => { setShowInstallHint(false); window.localStorage.setItem('elsewhere-install-hint-dismissed', '1'); }}>Add Elsewhere to your Home Screen — Share <span aria-hidden>⎋</span> then “Add to Home Screen” · tap to dismiss</button>}
       <button className="watch" aria-label="Read the sky above you" onClick={() => {
         if (!navigator.geolocation) { setGeoNotice('Location is not available in this browser'); window.setTimeout(() => setGeoNotice(undefined), 6000); return; }
         navigator.geolocation.getCurrentPosition(
