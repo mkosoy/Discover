@@ -335,9 +335,14 @@ function deltaSince(key: string, hoursBack: number, now = Date.now()): { delta: 
   return { delta: latest.v - best.v, hours: (latest.t - best.t) / 3600000 };
 }
 
-type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waveDelta3h?: number; waveSeries?: Array<{ t: number; v: number }>; pressureSeries?: Array<{ t: number; v: number }>; waterTemp?: number; airTemp?: number; windSpeed?: number; pressure?: number; pressureDelta3h?: number; time: number };
+// Buoys that stopped reporting. Absence is data: sensors die exactly when the
+// ocean gets violent — the dropout itself is often the storm's signature.
+export const silentBuoyReport: Array<{ id: string; name: string; lat: number; lon: number; silentMin: number; lastWaveHeight: number; lastWind: number | null }> = [];
+
+type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; dominantPeriod?: number; waveDir?: number; waveDelta3h?: number; waveSeries?: Array<{ t: number; v: number }>; pressureSeries?: Array<{ t: number; v: number }>; waterTemp?: number; airTemp?: number; windSpeed?: number; pressure?: number; pressureDelta3h?: number; time: number };
 
 export async function buoyObservations(): Promise<BuoyObs[]> {
+  silentBuoyReport.length = 0;
   const rows = await Promise.all(BUOY_STATIONS.map(async ([id, name, lat, lon]) => {
     const t = await text(`https://www.ndbc.noaa.gov/data/realtime2/${id}.txt`);
     if (!t) return null;
@@ -352,11 +357,17 @@ export async function buoyObservations(): Promise<BuoyObs[]> {
       const wtmp = parseFloat(c[14]);
       const atmp = parseFloat(c[13]);
       const wspd = parseFloat(c[6]);
+      const dpd = parseFloat(c[9]);
+      const mwd = parseFloat(c[11]);
       const pres = parseFloat(c[12]);
       const ts = Date.UTC(+c[0], +c[1] - 1, +c[2], +c[3], +c[4]);
       // A buoy that stopped reporting must not win the live ranking with a
       // weeks-old reading — stale observations are dropped, not trusted.
-      if (Date.now() - ts > 3 * 3600000) return null;
+      if (Date.now() - ts > 3 * 3600000) {
+        const silentMin = Math.round((Date.now() - ts) / 60000);
+        if (silentMin < 12 * 60 && Number.isFinite(wvht)) silentBuoyReport.push({ id, name, lat, lon, silentMin, lastWaveHeight: wvht, lastWind: Number.isFinite(wspd) ? wspd : null });
+        return null;
+      }
       // Pressure tendency: scan further rows (older readings) for a reading
       // ~3h back. A fast fall is the atmosphere deepening overhead — the
       // signature of a storm organizing itself, measured before any model.
@@ -420,7 +431,7 @@ export async function buoyObservations(): Promise<BuoyObs[]> {
       const waveDeltaS = deltaFromSeries(waveSeries);
       const presDeltaS = deltaFromSeries(pressureSeries);
       const latestPres = pressureSeries.length ? pressureSeries[pressureSeries.length - 1].v : (Number.isFinite(pres) ? pres : undefined);
-      return { id, name, lat, lon, waveHeight: wvht, waveDelta3h: waveDeltaS ?? waveDelta3h, waveSeries, pressureSeries, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, pressure: latestPres, pressureDelta3h: presDeltaS ?? pressureDelta3h, time: ts };
+      return { id, name, lat, lon, waveHeight: wvht, dominantPeriod: Number.isFinite(dpd) ? dpd : undefined, waveDir: Number.isFinite(mwd) ? mwd : undefined, waveDelta3h: waveDeltaS ?? waveDelta3h, waveSeries, pressureSeries, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, pressure: latestPres, pressureDelta3h: presDeltaS ?? pressureDelta3h, time: ts };
     }
     return null;
   }));
@@ -2510,6 +2521,79 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         sources: [src('OpenStreetMap live changeset stream', 'https://www.openstreetmap.org/history')],
         related: ['humanity-editing-now', 'airborne-now', 'wildlife-pulse']
       });
+    }
+  }
+
+  // --- Swell foreshadowing: long-period waves arriving under calm local
+  // winds. Wave period is the distance signature — only a distant storm makes
+  // 13+ second energy. The storm is still days away; the waves are here first.
+  // Tomorrow's weather, measured today, in a data feed nobody watches.
+  if (Array.isArray(buoys) && buoys.length) {
+    const longSwell = (buoys as any[]).filter(b => (b.dominantPeriod ?? 0) >= 12.5 && b.waveHeight >= 1 && (b.windSpeed ?? 99) < 8);
+    if (longSwell.length) {
+      const b = longSwell.sort((x: any, y: any) => y.dominantPeriod - x.dominantPeriod)[0];
+      const dirText = Number.isFinite(b.waveDir) ? ` from ${Math.round(b.waveDir)}°` : '';
+      out.push({
+        id: 'swell-foreshadow-now', template: 'ocean', title: `Waves with a ${b.dominantPeriod.toFixed(0)}-second period are arriving at ${b.name} — a storm that isn't in the news yet is already here`, kicker: 'Tomorrow’s weather, measured today', visual: 'ocean', score: 83, freshness: 'measured within the hour', mediaImage: (b.waveSeries?.length ?? 0) >= 12 ? buildSeriesChartSvg(`wave height — ${b.name}`, 'm', b.waveSeries, '#4a9eff') ?? undefined : undefined, mediaAlt: 'Wave height series at the buoy',
+        location: { lat: b.lat, lon: b.lon, label: b.name },
+        summary: `The wind at this buoy is calm — under ${Math.max(8, Math.round((b.windSpeed ?? 0) * 3.6))} km/h — yet the water is moving in slow, powerful ${b.dominantPeriod.toFixed(0)}-second rolls${dirText}. That mismatch is the whole story: local wind makes choppy, fast waves; only a distant storm, hundreds or thousands of kilometers away, can organize the ocean into long-period energy like this. The waves literally outran the weather that made them. The swell is the first physical arrival of a storm system that forecasts may not mention for another day or two — measured right now by a buoy almost nobody is watching.`,
+        facts: [
+          { label: 'Dominant wave period', value: `${b.dominantPeriod?.toFixed(1)} seconds — anything over ~12s means distant origin`, kind: 'observed' },
+          { label: 'Wave height', value: `${b.waveHeight.toFixed(1)} m and ${(b.waveDelta3h ?? 0) >= 0 ? 'building' : 'steady'}`, kind: 'observed' },
+          { label: 'Local wind', value: `${Math.round((b.windSpeed ?? 0) * 3.6)} km/h — too calm to be making these waves`, kind: 'observed' },
+          { label: 'What this means', value: 'A storm system is out at sea right now, intense enough to send energy this far. Mariners read period before height for exactly this reason.', kind: 'interpretation' }
+        ],
+        sources: [src('NDBC buoy observations', `https://www.ndbc.noaa.gov/station_page.php?station=${b.id}`)],
+        related: ['Wildest water', 'The measured planet', 'ocean']
+      });
+    }
+  }
+
+  // --- The silent buoy: absence as evidence. Instruments die exactly when
+  // conditions get violent — the dropout is often the storm's own signature.
+  if (silentBuoyReport.length) {
+    const s = [...silentBuoyReport].sort((a, b) => b.lastWaveHeight - a.lastWaveHeight)[0];
+    if (s.lastWaveHeight >= 2 && s.silentMin >= 150) {
+      const hrs = (s.silentMin / 60).toFixed(1);
+      out.push({
+        id: 'silent-buoy-now', template: 'ocean', title: `A buoy in ${s.name} went silent ${hrs} hours ago — its final transmission reported ${s.lastWaveHeight.toFixed(1)} m seas`, kicker: 'Absence as evidence — the instrument dropout', visual: 'ocean', score: 84, freshness: `silent for ${hrs} hours`,
+        location: { lat: s.lat, lon: s.lon, label: `${s.name} — no longer reporting` },
+        summary: `Ocean buoys report every hour, like clockwork, for years. This one stopped — and the last thing it measured before going dark was ${s.lastWaveHeight.toFixed(1)}-meter seas${s.lastWind ? ` and ${Math.round(s.lastWind * 3.6)} km/h winds` : ''}. That pattern is sadly logical: instruments fail precisely when the ocean becomes most interesting, because the violence that makes data valuable is the same violence that tears sensors apart. The silence itself is a measurement — something out there is rough enough to kill a hardened ocean instrument. NOAA crews will eventually steam out and repair it; until then, there is a hole in the planet's nervous system exactly where the action is.`,
+        facts: [
+          { label: 'Final wave reading', value: `${s.lastWaveHeight.toFixed(1)} m — then nothing`, kind: 'observed' },
+          { label: 'Silence duration', value: `${hrs} hours without a transmission`, kind: 'observed' },
+          { label: 'Why silence matters', value: 'Buoys fail most often during storms — the data gap and the interesting event are usually the same event', kind: 'interpretation' },
+          { label: 'What we cannot know', value: 'Whether the sensor failed, the hull capsized, or the mooring broke — only a repair crew will answer that', kind: 'question' }
+        ],
+        sources: [src('NDBC station status', `https://www.ndbc.noaa.gov/station_page.php?station=${s.id}`)],
+        related: ['swell-foreshadow-now', 'The measured planet', 'Wildest water']
+      });
+    }
+  }
+
+  // --- The unwitnessed planet: strong earthquakes almost nobody felt. Most of
+  // Earth's surface has no humans — the shaking is constant and unseen.
+  {
+    const unfelt = (quakes?.features ?? []).filter((f: any) => (f.properties?.mag ?? 0) >= 5 && (f.properties?.felt ?? 0) < 15 && f.geometry?.coordinates);
+    if (unfelt.length >= 1) {
+      const big = unfelt.sort((a: any, b: any) => b.properties.mag - a.properties.mag)[0];
+      const mag = big.properties.mag;
+      if (mag >= 5.4 || unfelt.length >= 3) {
+        const coords = big.geometry.coordinates;
+        out.push({
+          id: 'unwitnessed-earth-now', template: 'geology', title: `A magnitude ${mag.toFixed(1)} earthquake just happened near ${big.properties.place} — and essentially nobody felt it`, kicker: 'The unwitnessed planet', visual: 'seismic', score: 78, freshness: ago(big.properties.time),
+          location: { lat: coords[1], lon: coords[0], label: big.properties.place },
+          summary: `In the past 24 hours, ${unfelt.length} earthquake${unfelt.length > 1 ? 's' : ''} of magnitude 5 or stronger shook the Earth with fewer than 15 felt reports each — this one, magnitude ${mag.toFixed(1)}, is the largest. Not because they were small: a magnitude ${mag.toFixed(0)} releases more energy than the largest nuclear test ever conducted. Because almost nobody was there. Most of the planet's surface is ocean, desert, ice and empty land — the Earth's constant adjusting of its own crust happens almost entirely without witnesses. The seismometers see everything; the news sees only what happens near people. This is the honest background state of the planet: ringing constantly, mostly unheard.`,
+          facts: [
+            { label: 'Magnitude', value: mag.toFixed(1), kind: 'observed' },
+            { label: 'Felt reports', value: `${big.properties.felt ?? 0} — instruments recorded it clearly; humans barely noticed`, kind: 'observed' },
+            { label: 'Unwitnessed today', value: `${unfelt.length} quakes M5+ with almost no human reports in 24h`, kind: 'observed' },
+            { label: 'Perspective', value: 'Earth releases thousands of significant earthquakes a year; only the ones near cities make the news. The shaking never stops — the attention is what varies.', kind: 'interpretation' }
+          ],
+          sources: [src('USGS earthquake catalog', 'https://earthquake.usgs.gov/')],
+          related: ['seismic-drum-live', 'Aftershock pattern', 'quake-']
+        });
+      }
     }
   }
 
