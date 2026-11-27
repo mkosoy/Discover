@@ -3134,7 +3134,12 @@ export async function getDiscoveries(): Promise<Discovery[]> {
           { label: 'The highest', value: `${(top.alt / 1000).toFixed(1)} km altitude${top.temp != null ? `, measuring ${top.temp}°C` : ''}${top.velV != null && top.velV > 1 ? `, still rising at ${top.velV.toFixed(1)} m/s` : ''} — a ${top.subtype}`, kind: 'observed' },
           { label: 'Still climbing', value: `${rising} balloons actively ascending — launched within the last couple of hours`, kind: 'observed' },
           { label: 'The human network', value: 'Hundreds of amateur radio operators receive this telemetry on rooftop antennas and share it publicly in real time', kind: 'verified' },
-          { label: 'Why it matters', value: 'Radiosonde measurements are the backbone of every numerical weather forecast — the models eat exactly this data', kind: 'verified' }
+          { label: 'Why it matters', value: 'Radiosonde measurements are the backbone of every numerical weather forecast — the models eat exactly this data', kind: 'verified' },
+          ...((() => {
+            const utcH = new Date().getUTCHours();
+            const minsSince = ((utcH % 12) * 60 + new Date().getUTCMinutes());
+            return minsSince < 150 ? [{ label: 'The synoptic hour', value: `It is within ${minsSince < 90 ? '90 minutes' : 'two and a half hours'} of a coordinated global launch time (${utcH < 12 ? '00:00' : '12:00'} UTC) — stations worldwide release together so the atmosphere gets a simultaneous snapshot. The wave you see aloft is that ritual.`, kind: 'interpretation' as const }] : [];
+          })())
         ],
         sources: [src('SondeHub live balloon tracking', 'https://sondehub.org/')],
         related: ['extremes', 'Radio Earth', 'aurora']
