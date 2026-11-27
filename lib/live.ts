@@ -1649,7 +1649,73 @@ export async function getInvestigations(): Promise<Investigation[]> {
     }
   } catch { /* aircraft feed unavailable */ }
 
-  const investigationPriority = ['crisis-attention-index', 'empty-sky-audit', 'sunset-chase-live', 'planet-emergency-board', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
+  // --- The wildest water on Earth right now: wave heights across the planet's notorious seas ---
+  try {
+    const seas: Array<[string, number, number, string]> = [
+      ['Drake Passage', -58, -65, 'the funnel between Cape Horn and Antarctica'],
+      ['Southern Ocean, south of Australia', -50, 140, 'the uninterrupted circumpolar fetch'],
+      ['North Atlantic', 55, -30, 'the storm highway between Newfoundland and Ireland'],
+      ['Gulf of Alaska', 57, -145, 'where Pacific storms make landfall'],
+      ['Norwegian Sea', 68, 5, 'inside the Arctic storm track'],
+      ['Tasman Sea', -42, 155, 'between Australia and New Zealand'],
+      ['Cape of Good Hope', -40, 20, 'where oceans collide'],
+      ['Bay of Biscay', 45, -5, 'the shelf that amplifies Atlantic swells'],
+      ['Arabian Sea', 15, 65, 'monsoon-driven control'],
+      ['South China Sea', 15, 115, 'typhoon corridor control'],
+      ['Caribbean Sea', 15, -75, 'tropical control'],
+      ['Mediterranean', 36, 15, 'enclosed-sea control'],
+      ['Baltic Sea', 57, 19, 'nearly enclosed control'],
+      ['Red Sea', 20, 38, 'narrow basin control']
+    ];
+    const marine = await json<any>(`https://marine-api.open-meteo.com/v1/marine?latitude=${seas.map(s => s[1]).join(',')}&longitude=${seas.map(s => s[2]).join(',')}&current=wave_height,swell_wave_height,wave_period&timezone=UTC`, undefined, 7000);
+    if (Array.isArray(marine) && marine.length > 6) {
+      const rows = seas.map(([name, lat, lon, note], index) => ({
+        name, lat, lon, note,
+        height: marine[index]?.current?.wave_height ?? null,
+        swell: marine[index]?.current?.swell_wave_height ?? null,
+        period: marine[index]?.current?.wave_period ?? null
+      })).filter(row => typeof row.height === 'number') as Array<{ name: string; lat: number; lon: number; note: string; height: number; swell: number | null; period: number | null }>;
+      if (rows.length > 6) {
+        const ranked = [...rows].sort((a, b) => b.height - a.height);
+        const wildest = ranked[0];
+        const calmest = ranked[ranked.length - 1];
+        const ratio = calmest.height > 0.2 ? Math.round(wildest.height / calmest.height) : null;
+        out.push({
+          id: 'wildest-water-live',
+          title: ratio && ratio >= 3
+            ? `The ${wildest.name} is running ${ratio}× rougher than the ${calmest.name} right now`
+            : `The ${wildest.name} is the wildest water on Earth right now — ${wildest.height.toFixed(1)}m waves`,
+          dek: 'Wave height is the ocean\'s mood made measurable. Sampled live across the planet\'s notorious seas — the passages sailors fear — against enclosed-water controls, in the same hour.',
+          status: 'corroborated',
+          location: { lat: wildest.lat, lon: wildest.lon, label: `${wildest.name} — ${wildest.note}` },
+          updatedAt: now(),
+          confidence: .92,
+          evidence: [
+            { kind: 'observed', text: `Current modeled significant wave heights: ${ranked.slice(0, 4).map(r => `${r.name} ${r.height.toFixed(1)}m`).join(' · ')} — against ${calmest.name} at ${calmest.height.toFixed(1)}m.`, source: 'https://open-meteo.com/' },
+            { kind: 'interpretation', text: `The ${wildest.name} leads because of ${wildest.note}. Wave height is the average of the highest third of waves — individual waves can run twice the significant height, so a ${wildest.height.toFixed(1)}m sea state produces occasional ${Math.round(wildest.height * 2)}m walls of water.` },
+            { kind: 'interpretation', text: 'These are model-analysis values from the same atmospheric forcing that drives weather — the same physics, verified against buoy networks — not direct buoy readings at each point. Open-ocean buoys are sparse; the model IS the observing system out there.' },
+            { kind: 'question', text: 'What does 8m feel like? Small vessels turn back around 3-4m. The Southern Ocean\'s big days are why the Drake Passage crossing is a rite of passage — and why almost nothing routes through it by choice.' }
+          ],
+          metrics: [
+            { label: 'Wildest water', value: `${wildest.height.toFixed(1)}m`, delta: wildest.name.split(',')[0] },
+            { label: 'Calmest control', value: `${calmest.height.toFixed(1)}m`, delta: calmest.name.split(',')[0] },
+            ...(ratio ? [{ label: 'Roughness ratio', value: `${ratio}×`, delta: 'same hour' }] : []),
+            ...(wildest.period ? [{ label: 'Wave period there', value: `${Math.round(wildest.period)}s` }] : [])
+          ],
+          visuals: ranked.slice(0, 8).map(row => ({ label: row.name.split(',')[0], value: row.height, display: `${row.height.toFixed(1)}m`, highlight: row === wildest })),
+          visualTitle: 'Significant wave height across the planet\'s seas — right now',
+          visualCaption: 'Open-Meteo marine model analysis · sampled in the same hour',
+          liveLinks: [{ label: `Travel to the ${wildest.name.split(',')[0]}`, discoveryId: 'wildest-water-live', lat: wildest.lat, lon: wildest.lon, placeLabel: wildest.name }],
+          sources: [
+            { label: 'Open-Meteo marine forecast API', url: 'https://open-meteo.com/en/docs/marine-weather-api' },
+            { label: 'NOAA wave height conventions', url: 'https://www.ndbc.noaa.gov/' }
+          ]
+        });
+      }
+    }
+  } catch { /* marine model unavailable */ }
+
+  const investigationPriority = ['crisis-attention-index', 'empty-sky-audit', 'sunset-chase-live', 'wildest-water-live', 'planet-emergency-board', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
   const sorted = out.sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
   // Editorial robustness: transient upstream failures (RSS rate limits, UNHCR timeouts) should never
   // silently empty the investigation rail. If this run produced unusually few investigations, merge in
