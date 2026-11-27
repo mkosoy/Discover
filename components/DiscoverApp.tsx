@@ -513,6 +513,13 @@ export default function DiscoverApp() {
     const norm = label.toLowerCase().trim();
     const directDiscovery = discoveries.find(d => d.id === label || d.id === norm || d.title.toLowerCase() === norm);
     if (directDiscovery) { selectDiscovery(directDiscovery); setLensLoading(false); return; }
+    // Truncated or partial titles: references sometimes carry the beginning of a
+    // dynamically-generated title (buoy names, measured values change). A long
+    // label that prefixes exactly one live title resolves to that card.
+    if (norm.length >= 15) {
+      const prefixMatches = discoveries.filter(d => d.title.toLowerCase().startsWith(norm));
+      if (prefixMatches.length >= 1) { selectDiscovery(prefixMatches.sort((a, b) => b.score - a.score)[0]); setLensLoading(false); return; }
+    }
     // Trailing-dash labels are id prefixes ('quake-', 'radio-') — resolve to the
     // best-scored matching card rather than falling through to local weather.
     if (label.endsWith('-')) {

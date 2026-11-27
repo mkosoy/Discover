@@ -1121,7 +1121,7 @@ function detectConvergences(out: Discovery[]): void {
           value: g.insight,
           kind: 'interpretation'
         });
-        const others = g.members.filter(o => o.id !== m.id).map(o => o.title.split('—')[0].trim().slice(0, 60));
+        const others = g.members.filter(o => o.id !== m.id).map(o => o.id);
         if (others.length && !m.related.includes(others[0])) m.related = [others[0], ...m.related].slice(0, 6);
       }
     }
