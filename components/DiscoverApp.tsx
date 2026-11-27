@@ -179,6 +179,15 @@ export default function DiscoverApp() {
     } catch {}
   }, [discoveries.length > 0]);
 
+  const knownIdsRef = useRef<Set<string>>(new Set());
+  const [breaking, setBreaking] = useState<Discovery>();
+
+  useEffect(() => {
+    if (!breaking) return;
+    const timer = window.setTimeout(() => setBreaking(undefined), 11000);
+    return () => window.clearTimeout(timer);
+  }, [breaking]);
+
   useEffect(() => {
     let cancelled = false;
     const load = async (initial = false) => {
@@ -187,6 +196,11 @@ export default function DiscoverApp() {
       const d = await discoveriesPromise;
       if (cancelled) return;
       const nextDiscoveries = d.discoveries ?? [];
+      if (!initial && knownIdsRef.current.size) {
+        const arrived = nextDiscoveries.filter((item: Discovery) => !knownIdsRef.current.has(item.id) && !item.unavailable && (item.visual === 'seismic' || item.visual === 'fire' || item.visual === 'storm') && item.score >= 74);
+        if (arrived.length) setBreaking(arrived.sort((a: Discovery, b: Discovery) => b.score - a.score)[0]);
+      }
+      knownIdsRef.current = new Set(nextDiscoveries.map((item: Discovery) => item.id));
       setDiscoveries(nextDiscoveries);
       const currentActive = activeRef.current;
       const rediscovered = currentActive ? nextDiscoveries.find((item: Discovery) => item.id === currentActive.id) : undefined;
@@ -451,6 +465,14 @@ export default function DiscoverApp() {
         {memoryNote.count} new live moments since {new Date(memoryNote.since).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} — including “{memoryNote.highlight}”
       </motion.button>}
     </section>
+
+    <AnimatePresence>
+      {breaking && <motion.button className="breakingToast" initial={{ opacity: 0, y: -18, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -12 }} transition={{ type: 'spring', damping: 24, stiffness: 300 }} onClick={() => { selectDiscovery(breaking); setBreaking(undefined); }}>
+        <span className="breakingLabel">Just detected</span>
+        <b>{breaking.title}</b>
+        <small>tap to travel there</small>
+      </motion.button>}
+    </AnimatePresence>
 
     {layers && (layers.quakes.length + layers.fires.length + layers.storms.length > 0) && <div className="layerLegend" aria-hidden>
       <span><i className="dotQuake" />earthquakes this week — brighter is fresher</span>
