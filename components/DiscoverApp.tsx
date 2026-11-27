@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Hls from 'hls.js';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowRight, Check, Compass, Eye, Globe2, HelpCircle, LayoutGrid, Loader2, LocateFixed, Newspaper, Play, Radio, Satellite, Share2, Shuffle, Sparkles, Volume2, VolumeX, X } from 'lucide-react';
 import Globe from './Globe';
@@ -75,15 +76,14 @@ function LiveAudio({ src, station, place, autoPlay = false }: { src: string; sta
     const el = audioRef.current;
     if (!el) return;
     // HLS streams (live hydrophones etc): native in Safari, hls.js elsewhere.
-    let hls: any = null;
+    let hls: Hls | null = null;
     if (/\.m3u8/.test(src) && !el.canPlayType('application/vnd.apple.mpegurl')) {
-      import('hls.js').then(({ default: Hls }) => {
-        if (Hls.isSupported()) {
-          hls = new Hls({ maxBufferLength: 20 });
-          hls.loadSource(src);
-          hls.attachMedia(el);
-        } else setFailed(true);
-      }).catch(() => setFailed(true));
+      if (Hls.isSupported()) {
+        hls = new Hls({ maxBufferLength: 20 });
+        hls.loadSource(src);
+        hls.attachMedia(el);
+        hls.on(Hls.Events.ERROR, (_e, data) => { if (data?.fatal) setFailed(true); });
+      } else setFailed(true);
     } else {
       el.src = src;
     }
