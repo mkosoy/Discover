@@ -184,7 +184,7 @@ export async function GET(request: Request) {
     try {
       const probe = await fetch(tileUrl, { signal: AbortSignal.timeout(4000) });
       const bytes = probe.ok ? (await probe.arrayBuffer()).byteLength : 0;
-      if (bytes > 3000) {
+      if (bytes > 800) { // no-coverage tiles measure ~334 bytes; even sparse rain returns exceed this
         imagery = {
           url: tileUrl,
           sourceLabel: 'RainViewer global weather radar composite — measured precipitation, ~10 min update',
