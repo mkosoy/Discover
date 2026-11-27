@@ -130,7 +130,12 @@ const BUOY_STATIONS: Array<[string, string, number, number]> = [
   ['42001', 'mid-Gulf of Mexico buoy', 25.9, -89.67],
   ['46001', 'deep Gulf of Alaska buoy', 56.3, -148.1],
   ['41047', 'northeast Bahamas offshore buoy', 27.47, -71.5],
-  ['46087', 'Neah Bay buoy, off Washington', 48.49, -124.73]
+  ['46087', 'Neah Bay buoy, off Washington', 48.49, -124.73],
+  ['46035', 'Bering Sea buoy', 57.03, -177.6],
+  ['44013', 'Boston buoy, off Massachusetts', 42.35, -70.65],
+  ['41001', 'East of Cape Hatteras buoy', 34.68, -72.66],
+  ['46011', 'Santa Maria buoy, off central California', 34.96, -120.98],
+  ['46042', 'Monterey Bay buoy, California', 36.79, -122.4]
 ];
 
 
