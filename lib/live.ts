@@ -2588,7 +2588,10 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       MRO: 'Mars Reconnaissance Orbiter', MSL: 'the Curiosity rover', MVN: 'MAVEN', TGO: 'the Trace Gas Orbiter',
       EMM: "the UAE's Hope Mars probe", KPLO: "Korea's Danuri lunar orbiter", LUCY: 'Lucy, outbound to the asteroids',
       PSYC: 'Psyche', ORX: 'OSIRIS-REx', MMX: "Japan's Martian Moons explorer", JUICE: "ESA's JUICE, en route to Jupiter",
-      PARKER: 'Parker Solar Probe', PSP: 'Parker Solar Probe', ESCG: 'an ESA spacecraft', GAIA: 'Gaia', SOHO: 'SOHO', ACE: 'ACE'
+      PARKER: 'Parker Solar Probe', PSP: 'Parker Solar Probe', ESCG: 'an ESA spacecraft', GAIA: 'Gaia', SOHO: 'the SOHO solar observatory', ACE: 'ACE',
+      MMS1: 'the MMS magnetospheric constellation', MMS2: 'the MMS constellation', MMS3: 'the MMS constellation', MMS4: 'the MMS constellation',
+      THEMIS: 'THEMIS', THB: 'a THEMIS probe', THC: 'a THEMIS probe', STA: 'STEREO-Ahead', STB: 'STEREO-Behind', DSCOVR: 'DSCOVR at L1', WIND: 'Wind at L1', IBEX: 'IBEX',
+      MOM: "India's Mars Orbiter", CHDR: "India's Chandrayaan", CY3: 'Chandrayaan-3', SOLR: 'Solar Orbiter', SOLO: 'Solar Orbiter', BEPICOLOMBO: 'BepiColombo en route to Mercury', BEPIC: 'BepiColombo en route to Mercury'
     };
     const stations: Record<string, { name: string; lat: number; lon: number }> = {
       gdscc: { name: 'Goldstone, California', lat: 35.4, lon: -116.9 },
