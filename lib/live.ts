@@ -1398,7 +1398,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   const spotted = inatResults
     .map((o: any) => ({
       name: o?.taxon?.preferred_common_name ?? o?.taxon?.name,
-      place: o?.place_guess ?? 'somewhere on Earth',
+      place: (o?.place_guess && !/^\s*[0-9A-Z]{2,4}\+/.test(o.place_guess)) ? o.place_guess : 'an unmapped corner of Earth',
       lat: Array.isArray(o?.location) ? Number(o.location[0]) : (typeof o?.geojson?.coordinates?.[1] === 'number' ? o.geojson.coordinates[1] : undefined),
       lon: Array.isArray(o?.location) ? Number(o.location[1]) : (typeof o?.geojson?.coordinates?.[0] === 'number' ? o.geojson.coordinates[0] : undefined),
       photo: typeof o?.photos?.[0]?.url === 'string' ? o.photos[0].url.replace('square', 'medium') : undefined,
