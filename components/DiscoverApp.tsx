@@ -476,8 +476,9 @@ export default function DiscoverApp() {
 
   useEffect(() => {
     if (!watching || discoveries.length < 2) return;
-    const timer = window.setInterval(() => surprise(false), 11000);
-    return () => window.clearInterval(timer);
+    const dwell = active?.mediaVideo || active?.visual === 'nasa-live' ? 26000 : 12000;
+    const timer = window.setTimeout(() => surprise(false), dwell);
+    return () => window.clearTimeout(timer);
   });
 
   const locationLine = useMemo(() => active ? `${active.location.label} · ${active.freshness}` : 'Reading live Earth signals', [active]);
@@ -563,7 +564,7 @@ export default function DiscoverApp() {
         <button className="panelClose" aria-label="Hide discovery" onClick={() => setPanelOpen(false)}><X size={17} /></button>
         <div className="panelMedia">{active.visual === 'nasa-live' ?
           <LiveVideo title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0&autoplay=1&mute=1&playsinline=1" /> : active.mediaVideo ?
-          <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} autoPlay={active.id.startsWith('camera-pin-')} /> :
+          <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} autoPlay={active.id.startsWith('camera-pin-') || watching} /> :
           <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
           {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? (active.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : active.mediaImage.includes('embed.skylinewebcams.com') ? 'Live camera image · refreshing' : 'Latest public Earth imagery') : 'Animated evidence visualization'}</div>}
         </div>
