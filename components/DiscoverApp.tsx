@@ -151,6 +151,7 @@ export default function DiscoverApp() {
   const [lens, setLens] = useState<any>();
   const [lensLoading, setLensLoading] = useState(false);
   const [path, setPath] = useState<Discovery[]>([]);
+    const [geoNotice, setGeoNotice] = useState<string | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [initialHash] = useState(() => typeof window === 'undefined' ? '' : decodeURIComponent(new URLSearchParams(window.location.search).get('d') || window.location.hash.replace(/^#/, '')));
   const activeRef = useRef<Discovery>();
@@ -515,6 +516,7 @@ export default function DiscoverApp() {
 
     <AnimatePresence>
       {breaking && <motion.button className="breakingToast" initial={{ opacity: 0, y: -18, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -12 }} transition={{ type: 'spring', damping: 24, stiffness: 300 }} onClick={() => { selectDiscovery(breaking); setBreaking(undefined); }}>
+{geoNotice && <div className="breakingToast geoNotice">{geoNotice}</div>}
         <span className="breakingLabel">Just detected</span>
         <b>{breaking.title}</b>
         <small>tap to travel there</small>
@@ -533,10 +535,13 @@ export default function DiscoverApp() {
       <button className="surprise" onClick={() => surprise()} disabled={loading}><Shuffle size={20} />{loading ? 'Listening…' : 'Surprise Me'}</button>
       {showInstallHint && <button className="installHint" onClick={() => { setShowInstallHint(false); window.localStorage.setItem('elsewhere-install-hint-dismissed', '1'); }}>Add Elsewhere to your Home Screen — Share <span aria-hidden>⎋</span> then “Add to Home Screen” · tap to dismiss</button>}
       <button className="watch" aria-label="Read the sky above you" onClick={() => {
-        if (!navigator.geolocation) return;
+        if (!navigator.geolocation) { setGeoNotice('Location is not available in this browser'); window.setTimeout(() => setGeoNotice(undefined), 6000); return; }
         navigator.geolocation.getCurrentPosition(
-          pos => void probePlace({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-          () => {}, { timeout: 8000, maximumAge: 300000 }
+          // Round to ~1 km before coordinates ever leave the device: everything the place
+          // probe reads (weather grid, aircraft within 100 nm, nearest cameras) is far coarser.
+          pos => void probePlace({ lat: Math.round(pos.coords.latitude * 100) / 100, lon: Math.round(pos.coords.longitude * 100) / 100 }),
+          () => { setGeoNotice('Location permission was declined — tap anywhere on Earth instead'); window.setTimeout(() => setGeoNotice(undefined), 7000); },
+          { timeout: 8000, maximumAge: 300000 }
         );
       }}><LocateFixed size={17} />My sky</button>
       <button className={watching ? 'watch active' : 'watch'} onClick={() => setWatching(!watching)}><Play size={17} />{watching ? 'Watching' : 'Watch'}</button>

@@ -1419,7 +1419,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
       visualTitle: 'Global volcanic activity right now',
       visualCaption: 'Smithsonian/USGS weekly consensus feed',
       liveLinks: [
-        { label: 'Watch Etna live', discoveryId: 'camera-mount-etna' },
+        { label: 'Watch Etna live', discoveryId: 'etna-live-volcano' },
         { label: 'Watch Kīlauea live', discoveryId: 'camera-kilauea-crater' },
         { label: 'Watch Iceland live', discoveryId: 'camera-iceland-volcano-watch' }
       ],
