@@ -777,6 +777,36 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     out.push({ id: `quake-${q.id}`, entityId: q.id, occurredAt: new Date(q.properties.time).toISOString(), template: 'geology', title: seismicSurge ? `The Earth is ringing louder than usual — ${quakeCount24h} significant quakes in 24 hours` : 'A significant earthquake just reshaped the seismic map', kicker: seismicSurge ? 'Seismic rate anomaly — USGS live catalog' : 'USGS live event', visual: 'seismic', score: 82 + Math.min(14, q.properties.mag * 2) + (seismicSurge ? 6 : 0), freshness: ago(q.properties.time), mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} around ${q.properties.place}`, location: { lat, lon, label: q.properties.place }, summary: `A magnitude ${q.properties.mag.toFixed(1)} earthquake was recorded near ${q.properties.place} — the largest of ${quakes?.features?.length ?? 'several'} earthquakes magnitude 4.5+ cataloged worldwide in the past 24 hours${depth < 70 ? ', shallow enough to shake the surface hard' : depth > 300 ? ', but so deep its energy spread silently through the mantle' : ''}. The shake is real observed data; broader impact is deliberately left as an open question until corroborated.`, facts: [
       { label: 'Magnitude', value: q.properties.mag.toFixed(1), kind: 'observed' }, { label: 'Depth', value: `${Math.round(depth)} km`, kind: 'observed' }, { label: 'Reports', value: `${q.properties.felt ?? 0} felt reports`, kind: 'verified' }, { label: 'Impact', value: 'Still unknown', kind: 'question' }
     ], sources: [src(imagery.sourceLabel, imagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/'), src('USGS earthquake feed', q.properties.url)], related: ['Aftershock pattern', 'Tsunami bulletins', 'Regional recovery'] });
+
+  // --- The human seismograph: community shaking reports are people, not sensors.
+  // When hundreds of people independently report feeling the same earthquake,
+  // that collective perception is itself the story.
+  {
+    const feltQuakes = (quakes?.features ?? [])
+      .filter((f: any) => (f.properties?.felt ?? 0) >= 250 && f.geometry?.coordinates)
+      .sort((a: any, b: any) => (b.properties.felt ?? 0) - (a.properties.felt ?? 0));
+    const fq = feltQuakes[0];
+    if (fq) {
+      const [flon, flat] = fq.geometry.coordinates;
+      const feltN = fq.properties.felt;
+      const responses = ['II – Weak', 'III – Weak', 'IV – Light', 'V – Moderate', 'VI – Strong', 'VII – Very strong'];
+      const cdi = fq.properties.cdi != null ? responses[Math.max(0, Math.min(5, Math.round(fq.properties.cdi) - 2))] : undefined;
+      out.push({
+        id: `felt-${fq.id}`, entityId: `${fq.id}-felt`, template: 'geology', title: `${feltN.toLocaleString()} people felt the ground move near ${String(fq.properties.place ?? '').split(' of ').pop()} — and reported it`, kicker: 'The human seismograph, live', visual: 'seismic', score: 79 + Math.min(9, Math.round(Math.log10(feltN) * 3)), freshness: ago(fq.properties.time),
+        location: { lat: flat, lon: flon, label: fq.properties.place },
+        summary: `Within hours of a magnitude ${(fq.properties.mag ?? 0).toFixed(1)} earthquake, ${feltN.toLocaleString()} people independently told the USGS they felt it — through the same "Did You Feel It?" system that has crowdsourced shaking maps since the 1990s. No instrument measures human experience; this is ${feltN.toLocaleString()} direct human observations aggregated into evidence.`,
+        facts: [
+          { label: 'Felt reports', value: feltN.toLocaleString(), kind: 'observed' },
+          { label: 'Magnitude', value: (fq.properties.mag ?? 0).toFixed(1), kind: 'observed' },
+          cdi ? { label: 'Community intensity', value: cdi, kind: 'interpretation' } : null,
+          { label: 'Report pattern', value: 'Crowdsourced within hours of the earthquake', kind: 'verified' },
+          { label: 'Why it matters', value: 'Felt-report density maps shaking independent of instruments — and captures what people actually experienced', kind: 'interpretation' }
+        ].filter(Boolean) as any,
+        sources: [src('USGS Did You Feel It? community reports', 'https://earthquake.usgs.gov/data/dyfi/')],
+        related: ['Aftershock pattern', 'Seismic week', 'Regional recovery']
+      });
+    }
+  }
   }
   const eonetRank = (e: any) => {
     const c = (e.categories?.[0]?.title ?? '').toLowerCase();
