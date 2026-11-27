@@ -7,7 +7,9 @@ while true; do
     echo "$(date) dev down — restarting" >> /tmp/watchdog.log
     (NEXT_DIST_DIR=.next-dev nohup npx next dev >/tmp/dev.log 2>&1 & disown)
   fi
-  if ! curl -s -o /dev/null --max-time 8 localhost:3212; then
+  if [ -f /tmp/discover-build-in-progress ]; then
+    echo "$(date) build in progress — skipping prod restart" >> /tmp/watchdog.log
+  elif ! curl -s -o /dev/null --max-time 8 localhost:3212; then
     echo "$(date) prod down — restarting" >> /tmp/watchdog.log
     (nohup npx next start -p 3212 >/tmp/prod.log 2>&1 & disown)
   fi
