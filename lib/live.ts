@@ -573,6 +573,43 @@ export async function tideAnomalies(): Promise<TideAnomaly[]> {
   return rows.filter(Boolean) as TideAnomaly[];
 }
 
+// DART — Deep-ocean Assessment and Reporting of Tsunamis. Bottom pressure
+// recorders bolted to the seafloor, measuring the weight of the entire water
+// column above them in real time. The same keyless NDBC realtime2 channel as
+// surface buoys, but a different file suffix (.dart). This is the actual
+// tsunami early-warning hardware of the Pacific.
+const DART_STATIONS: Array<[string, string, number, number]> = [
+  ['21418', 'NE Pacific — off Cascadia', 45.7, -128.8],
+  ['46404', 'offshore Oregon — Cascadia margin', 45.9, -128.8],
+  ['21413', 'off Kamchatka — the subduction factory', 48.7, 158.3],
+  ['21419', 'off Hokkaido — Japan trench', 41.4, 153.6],
+  ['46412', 'off Chile — the 2010 rupture zone', -32.5, -73.4]
+];
+
+async function dartObservations(): Promise<Array<{ id: string; name: string; lat: number; lon: number; height: number; series: Array<{ t: number; v: number }>; ageMin: number }>> {
+  const rows = await Promise.all(DART_STATIONS.slice(0, 4).map(async ([id, name, lat, lon]) => {
+    try {
+      const raw = await text(`https://www.ndbc.noaa.gov/data/realtime2/${id}.dart`);
+      if (!raw) return null;
+      const lines = raw.split('\n').filter(l => l && !l.startsWith('#'));
+      const series: Array<{ t: number; v: number }> = [];
+      for (const line of lines.slice(0, 400)) {
+        const p = line.trim().split(/\s+/);
+        if (p.length < 8) continue;
+        const t = Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]), Number(p[3]), Number(p[4]), Number(p[5]));
+        const v = Number(p[7]);
+        if (Number.isFinite(t) && Number.isFinite(v) && v > 100) series.push({ t, v });
+      }
+      if (series.length < 10) return null;
+      const latest = series[0];
+      const ageMin = Math.round((Date.now() - latest.t) / 60000);
+      if (ageMin > 240) return null;
+      return { id, name, lat, lon, height: latest.v, series: series.reverse(), ageMin };
+    } catch { return null; }
+  }));
+  return rows.filter(Boolean) as any[];
+}
+
 // Live radio Earth — the planet is broadcasting right now, in every language.
 // radio-browser.info is a keyless community index of ~50k public streams.
 const RADIO_CITIES: Array<[string, string, string, number, number]> = [
@@ -973,7 +1010,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, astros, milAircraft, p2pquakeFeed] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, astros, milAircraft, p2pquakeFeed, darts] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1012,7 +1049,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>(`https://api.carbonintensity.org.uk/intensity/${new Date(Date.now() - 24 * 3600000).toISOString().slice(0, 16)}Z/fw24h`, undefined, 6000),
     json<any>('http://api.open-notify.org/astros.json', undefined, 5000),
     json<any>('https://api.adsb.lol/v2/mil', undefined, 7000),
-    json<any[]>('https://api.p2pquake.net/v2/history?codes=551&limit=3', undefined, 6000)
+    json<any[]>('https://api.p2pquake.net/v2/history?codes=551&limit=3', undefined, 6000),
+    dartObservations()
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -2318,6 +2356,58 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         });
       }
     }
+  }
+
+
+  // --- The weight of the ocean, measured on the seafloor. DART bottom
+  // pressure recorders: the tsunami early-warning network reading itself.
+  if (Array.isArray(darts) && darts.length >= 2) {
+    const deepest = [...darts].sort((a, b) => b.height - a.height)[0];
+    const chartSeries = deepest.series.map(r => ({ t: r.t, v: r.v }));
+    const chart = buildSeriesChartSvg('Water column height', 'm', chartSeries, '#4fc3f7', `seafloor pressure, converted — ${deepest.name}`);
+    const range = Math.max(...deepest.series.map(r => r.v)) - Math.min(...deepest.series.map(r => r.v));
+    out.push({
+      id: 'dart-seafloor-live', template: 'ocean', title: `${Math.round(deepest.height).toLocaleString()} meters of ocean are pressing down on a sensor at ${deepest.name.split('—')[0].trim()} right now`, kicker: 'The tsunami early-warning network, reading itself', visual: 'ocean', score: 83, freshness: `seafloor reading ${deepest.ageMin} minutes old`,
+      location: { lat: deepest.lat, lon: deepest.lon, label: deepest.name },
+      mediaImage: chart ?? undefined, mediaAlt: 'Live trace of the water column height above a seafloor pressure sensor',
+      summary: `Bolted to the Pacific seafloor, a bottom pressure recorder is measuring the weight of ${Math.round(deepest.height).toLocaleString()} meters of water overhead — to centimeter precision — and beaming it up through a surface buoy by acoustic link, right now. This is a DART station: the hardware that detects tsunamis in the open ocean long before they reach a coast. In calm times like these it quietly traces the tide (the column breathes by ${range < 1 ? 'less than a meter' : `about ${range.toFixed(1)} meters`} across this record); in a tsunami it would feel the wave pass overhead as a few centimeters of extra weight — small in the deep ocean, devastating when the wave shoals. ${darts.length} of these stations are reporting live right now.`,
+      facts: [
+        { label: 'Water column overhead', value: `${deepest.height.toFixed(1)} m of ocean pressing on the sensor`, kind: 'observed' },
+        { label: 'Tidal breathing in this record', value: `${range.toFixed(2)} m across the measured series`, kind: 'observed' },
+        { label: 'Stations reporting', value: `${darts.length} DART bottom pressure recorders live`, kind: 'observed' },
+        { label: 'How it talks', value: 'Seafloor sensor → acoustic link → surface buoy → satellite — a chain through 5km of dark water', kind: 'verified' },
+        { label: 'What a tsunami looks like here', value: 'Centimeters of deviation in minutes — this network exists to catch exactly that', kind: 'interpretation' }
+      ],
+      sources: [src('NOAA DART network', 'https://www.ndbc.noaa.gov/dart.shtml'), src(`Station ${deepest.id} data`, `https://www.ndbc.noaa.gov/station_page.php?station=${deepest.id}`)],
+      related: ['sea-defies-moon', 'ocean-measured-now', 'tsunami-watch-japan', 'The measured planet']
+    });
+  }
+
+  // --- Air traffic control, live in your ear. LiveATC is a volunteer network
+  // streaming real tower frequencies — public because aviation radio has always
+  // been public. Rotating airport.
+  {
+    const ATC: Array<[string, string, string, number, number]> = [
+      ['kjfk_twr', 'JFK Tower', 'New York', 40.64, -73.78],
+      ['klax_twr', 'LAX Tower', 'Los Angeles', 33.94, -118.4],
+      ['kord_twr', "O'Hare Tower", 'Chicago', 41.97, -87.9]
+    ];
+    const pick = ATC[Math.floor(Date.now() / 300000) % ATC.length];
+    out.push({
+      id: 'atc-live-audio', template: 'city', title: `A controller at ${pick[1]} is vectoring real aircraft this second — you can listen`, kicker: 'Aviation radio — public since forever', visual: 'city', score: 79, freshness: 'streaming live now',
+      location: { lat: pick[3], lon: pick[4], label: `${pick[1]}, ${pick[2]}` },
+      mediaAudio: `https://d.liveatc.net/${pick[0]}`,
+      mediaImage: buildWaveformSvg(`${pick[1]} — live frequency`), mediaAlt: 'Generative audio visualization for the tower frequency',
+      summary: `Every exchange between pilots and air traffic control happens on open radio frequencies — always has. Right now a controller in the ${pick[1]} cab is sequencing arrivals a few miles apart, reading back clearances, occasionally snapping at someone. A volunteer network of radio enthusiasts streams these frequencies publicly; what you hear is the actual operational voice of one of the world's busiest airspaces, unedited, with static and all. Listen for the rhythm: instructions read back word-for-word, because in aviation a misheard number is a disaster and the culture of repetition is the safety system.`,
+      facts: [
+        { label: 'Frequency type', value: `${pick[1]} — tower control`, kind: 'verified' },
+        { label: 'Why this is public', value: 'Aviation radio is unencrypted by design — safety depends on anyone being able to listen in and speak up', kind: 'interpretation' },
+        { label: 'What you are hearing', value: 'Live operational control of real commercial flights — nothing is simulated', kind: 'observed' },
+        { label: 'The network', value: 'LiveATC — volunteers hosting receivers near airports worldwide since 2002', kind: 'verified' }
+      ],
+      sources: [src('LiveATC.net', 'https://www.liveatc.net/')],
+      related: ['airborne-now', 'military-aircraft-visible', 'aircraft-emergency-now']
+    });
   }
 
   return connectDiscoveries(out.sort((a, b) => b.score - a.score)).map(d => ({ ...d, retrieved } as Discovery));
