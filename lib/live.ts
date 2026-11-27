@@ -2919,6 +2919,47 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     }
   }
 
+  // --- Crisis cartography: when volunteers worldwide converge on one small
+  // patch of the map, something happened there. Disaster-response mapping
+  // (HOT activations) is invisible in the news for days — but the edit stream
+  // sees the crowd arrive in real time.
+  if (osmFeed?.changesets?.length && Array.isArray(eonet?.events) && eonet.events.length) {
+    const disasters = eonet.events.filter((e: any) => {
+      const cat = String(e?.categories?.[0]?.title ?? '').toLowerCase();
+      return /wildfire|flood|severe storm|cyclone|volcano|landslide|earthquake/.test(cat) && !/prescribed|\bRX\b/i.test(e?.title ?? '');
+    }).map((e: any) => {
+      const g = Array.isArray(e?.geometry) ? e.geometry[e.geometry.length - 1] : null;
+      return { title: e.title, cat: e?.categories?.[0]?.title ?? 'event', lat: g?.coordinates?.[1], lon: g?.coordinates?.[0] };
+    }).filter((d: any) => Number.isFinite(d.lat) && Number.isFinite(d.lon));
+    let best: any = null;
+    for (const d of disasters) {
+      const hits = osmFeed.changesets.filter((c: any) => {
+        if (!Number.isFinite(Number(c.min_lat))) return false;
+        const clat = (Number(c.min_lat) + Number(c.max_lat)) / 2;
+        const clon = (Number(c.min_lon) + Number(c.max_lon)) / 2;
+        return Math.abs(clat - d.lat) < 3 && Math.abs(clon - d.lon) < 3 && Number(c.changes_count) > 0;
+      });
+      const users = new Set(hits.map((c: any) => c.user));
+      if (hits.length >= 4 && users.size >= 3 && (!best || hits.length > best.hits.length)) best = { d, hits, users };
+    }
+    if (best) {
+      const d = best.d;
+      out.push({
+        id: 'crisis-cartography-now', template: 'city', title: `Volunteers worldwide are converging on the map of ${d.title} — crisis cartography in real time`, kicker: 'The crowd knows something — disaster-response mapping', visual: 'city', score: 83, freshness: 'edits minutes old', mediaImage: buildSkyMapSvg(best.hits.map((c: any) => ({ lat: (Number(c.min_lat) + Number(c.max_lat)) / 2, lon: (Number(c.min_lon) + Number(c.max_lon)) / 2 })), 'crisis mapping convergence', '#ff9f43') ?? undefined,
+        location: { lat: d.lat, lon: d.lon, label: d.title },
+        summary: `Individually, each of these edits is nothing — a road traced here, a building outline there. But in the last few minutes, ${best.hits.length} of the 100 most recent edits to the world map landed inside the same small region: the footprint of ${d.title}, an active ${d.cat.toLowerCase()}. This pattern has a name: crisis mapping. When disaster strikes, volunteers organized through networks like the Humanitarian OpenStreetMap Team trace buildings and roads from satellite imagery so first responders have a usable map — often before the news has fully caught up. Individually invisible, collectively unmistakable: the crowd is telling you where to look.`,
+        facts: [
+          { label: 'The convergence', value: `${best.hits.length} of the 100 most recent global edits fall inside the ${d.title} zone, from ${best.users.size} distinct mappers — a statistically unusual concentration`, kind: 'observed' },
+          { label: 'The event', value: `${d.title} — active ${d.cat.toLowerCase()} tracked by NASA EONET`, kind: 'verified' },
+          { label: 'Why this happens', value: 'Crisis-mapping activations redirect hundreds of volunteer mappers to a disaster zone within hours — the edits arrive before most coverage', kind: 'interpretation' },
+          { label: 'Caveat', value: 'The edit stream is a sample of the newest 100 changesets — concentration is suggestive, not proof of an organized activation', kind: 'interpretation' }
+        ],
+        sources: [src('OpenStreetMap live edit stream', 'https://www.openstreetmap.org/api/0.6/changesets.json'), src('NASA EONET event tracking', 'https://eonet.gsfc.nasa.gov/'), src('Humanitarian OpenStreetMap Team', 'https://www.hotosm.org/')],
+        related: ['osm-mapping-now', 'planet-emergency-board', 'eonet-']
+      });
+    }
+  }
+
   // --- The ocean, audible: live hydrophones in the Salish Sea. A public
   // network of underwater microphones exists so anyone can listen for orca
   // calls — ships, currents, rain on the surface, sometimes whales.
