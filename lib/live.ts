@@ -836,6 +836,23 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const biggest = darkList.sort((a, b) => b[1] - a[1])[0];
       out.push({
         id: 'humanity-darkness-now', template: 'atmosphere', title: `${Math.round(inDark)} million people are in night right now — ${Math.round(inDay)} million in daylight`, kicker: 'The human terminator, live', visual: 'aurora', score: 73, freshness: 'computed this minute',
+        mediaImage: (() => {
+          const series: Array<{ t: number; v: number }> = [];
+          for (let h = -24; h <= 0; h += 0.5) {
+            const sl = -(((utcHoursH + h) * 60 + eqtimeH) / 4 - 180);
+            let dayPop = 0;
+            for (const [, lat2, lon2, pop2] of metroCities) {
+              let hd = lon2 - sl;
+              while (hd > 180) hd -= 360;
+              while (hd < -180) hd += 360;
+              const el = Math.asin(Math.sin(lat2 * Math.PI / 180) * Math.sin(declH) + Math.cos(lat2 * Math.PI / 180) * Math.cos(declH) * Math.cos(hd * Math.PI / 180)) * 180 / Math.PI;
+              if (el > 0) dayPop += pop2;
+            }
+            series.push({ t: Date.now() + h * 3600000, v: dayPop });
+          }
+          return buildSeriesChartSvg(`humanity in daylight — now ${Math.round(inDay)} million`, 'millions of people with the sun up, 40 largest metros', series, '#ffcc44', 'the curve breathes with the planet: it peaks when Asia is awake — pure orbital geometry') ?? undefined;
+        })(),
+        mediaAlt: 'How much of humanity is in daylight, hour by hour — computed from solar geometry',
         location: { lat: 0, lon: ((subsolarLonH + 90 + 540) % 360) - 180, label: 'The dusk terminator at the equator' },
         summary: `Across Earth's 40 largest metro areas — roughly ${Math.round(total)} million people — ${darkPct}% currently have the sun more than 6° below the horizon, ${Math.round(inTwilight)} million are in twilight, and the rest are in daylight.${biggest ? ` The largest city asleep: ${biggest[0]} (${biggest[1]} million).` : ''}${duskList.length ? ` In ${duskList.slice(0, 2).join(' and ')}, it is the golden hour right now.` : ''} Computed from solar geometry, no upstream feed.`,
         facts: [
