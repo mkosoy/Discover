@@ -220,11 +220,31 @@ async function tideChartDataUri(stationId: string, stationName: string): Promise
 // memory, turning snapshots into narratives. A buoy reading 5m means more
 // when we can also say "it was 2m three hours ago — the sea is building."
 const instrumentHistory: Record<string, Array<{ t: number; v: number }>> = {};
+const HISTORY_FILE = '/tmp/discover-instrument-history.json';
+// Restore measured history across server restarts — a narrative like "seas
+// building for 3 hours" must not reset because the process did.
+try {
+  const fs = require('fs');
+  if (fs.existsSync(HISTORY_FILE)) {
+    const saved = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+    for (const [k, arr] of Object.entries(saved)) {
+      if (Array.isArray(arr)) (instrumentHistory as any)[k] = (arr as any[]).filter(p => p && Number.isFinite(p.t) && Number.isFinite(p.v));
+    }
+  }
+} catch { /* first run */ }
+let historySaveTimer: any = null;
+function scheduleHistorySave() {
+  if (historySaveTimer) return;
+  historySaveTimer = setTimeout(() => {
+    historySaveTimer = null;
+    try { require('fs').writeFileSync(HISTORY_FILE, JSON.stringify(instrumentHistory)); } catch { /* best effort */ }
+  }, 30000);
+}
 
 function recordReading(key: string, v: number, t = Date.now()) {
   if (!Number.isFinite(v)) return;
   const arr = instrumentHistory[key] ?? (instrumentHistory[key] = []);
-  if (!arr.length || arr[arr.length - 1].v !== v) arr.push({ t, v });
+  if (!arr.length || arr[arr.length - 1].v !== v) { arr.push({ t, v }); scheduleHistorySave(); }
   const cutoff = t - 24 * 3600000;
   while (arr.length && arr[0].t < cutoff) arr.shift();
   if (arr.length > 400) arr.splice(0, arr.length - 400);
@@ -1550,7 +1570,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   }
 
   const launch = launches?.results?.[0];
-  if (launch) out.push({ id: `launch-${launch.id}`, entityId: launch.id, occurredAt: launch.net, template: 'launch', title: launch.name, kicker: 'Upcoming space mission', visual: 'launch', score: 70 + (launch.image ? 2 : 0), freshness: launch.net ? until(launch.net) : 'scheduled', mediaImage: typeof launch.image === 'string' && launch.image.startsWith('http') ? launch.image : undefined, mediaAlt: `${launch.name} — mission imagery`, location: { lat: launch.pad?.latitude ?? 28.6, lon: launch.pad?.longitude ?? -80.6, label: launch.pad?.location?.name ?? launch.pad?.name ?? 'Launch complex' }, summary: `${launch.name} is scheduled from ${launch.pad?.name ?? 'a launch complex'}. Countdowns can change, so Elsewhere distinguishes the published schedule from confirmation.`, facts: [
+  if (launch) out.push({ id: `launch-${launch.id}`, entityId: launch.id, occurredAt: launch.net, template: 'launch', title: launch.name, kicker: 'Upcoming space mission', visual: 'launch', score: 70 + ((typeof launch.image === 'string' ? launch.image : launch.image?.image_url) ? 2 : 0), freshness: launch.net ? until(launch.net) : 'scheduled', mediaImage: (() => { const img = typeof launch.image === 'string' ? launch.image : (launch.image?.image_url ?? launch.image?.url); return typeof img === 'string' && img.startsWith('http') ? img : undefined; })(), mediaAlt: `${launch.name} — mission imagery`, location: { lat: launch.pad?.latitude ?? 28.6, lon: launch.pad?.longitude ?? -80.6, label: launch.pad?.location?.name ?? launch.pad?.name ?? 'Launch complex' }, summary: `${launch.name} is scheduled from ${launch.pad?.name ?? 'a launch complex'}. Countdowns can change, so Elsewhere distinguishes the published schedule from confirmation.`, facts: [
     { label: 'Window', value: launch.net ? new Date(launch.net).toLocaleString() : 'TBD', kind: 'verified' }, { label: 'Status', value: launch.status?.name ?? 'Unknown', kind: 'verified' }, { label: 'Provider', value: launch.launch_service_provider?.name ?? 'Unknown', kind: 'verified' }
   ], sources: [src('Launch Library 2', 'https://thespacedevs.com/llapi')], related: ['Mission trajectory', 'Weather constraints', 'Pad cameras'] });
 
