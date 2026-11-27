@@ -580,12 +580,29 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     { label: 'Window', value: launch.net ? new Date(launch.net).toLocaleString() : 'TBD', kind: 'verified' }, { label: 'Status', value: launch.status?.name ?? 'Unknown', kind: 'verified' }, { label: 'Provider', value: launch.launch_service_provider?.name ?? 'Unknown', kind: 'verified' }
   ], sources: [src('Launch Library 2', 'https://thespacedevs.com/llapi')], related: ['Mission trajectory', 'Weather constraints', 'Pad cameras'] });
 
+  const gdacsCamItems = parseGdacsItems(gdacsXml).filter((item: any) => Date.now() - new Date(item.published).getTime() < 1000 * 60 * 60 * 96);
+  const camProximity = (camera: typeof featuredCameras[number]) => {
+    let best: { item: any; distance: number } | undefined;
+    for (const item of gdacsCamItems) {
+      const dLat = (item.lat - camera.lat) * 111;
+      const dLon = (item.lon - camera.lon) * 111 * Math.cos(camera.lat * Math.PI / 180);
+      const distance = Math.hypot(dLat, dLon);
+      if (distance < 320 && (!best || distance < best.distance)) best = { item, distance };
+    }
+    return best;
+  };
+
   featuredCameras.forEach((camera, index) => {
     const copy = cameraCopy[camera.id];
     if (!copy) return;
     const current = Array.isArray(cameraWeather) ? cameraWeather[index]?.current : null;
     const night = current ? !current.is_day : false;
     const nightAdjustment = !current ? 0 : camera.kind === 'aurora' ? (night ? 5 : -16) : camera.kind === 'city' ? (night ? 2 : 0) : (night ? -14 : 0);
+    const nearbyEvent = camProximity(camera);
+    const eventBoost = nearbyEvent ? (nearbyEvent.item.eventType === 'VO' && camera.kind === 'volcano' ? 10 : 7) : 0;
+    const eventContext = nearbyEvent
+      ? ` GDACS is currently modeling ${nearbyEvent.item.eventType === 'VO' ? 'volcanic unrest' : nearbyEvent.item.eventType === 'WF' ? 'wildfire activity' : nearbyEvent.item.eventType === 'TC' ? 'a tropical cyclone' : nearbyEvent.item.eventType === 'FL' ? 'flooding' : nearbyEvent.item.eventType === 'EQ' ? 'earthquake impact' : 'a hazard'} within ${Math.round(nearbyEvent.distance)} km of this view — the camera is the ground truth.`
+      : '';
     const timeContext = !current ? '' : night
       ? camera.kind === 'aurora'
         ? ' It is dark there right now — exactly when this camera matters.'
@@ -597,9 +614,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         : ' It is daylight there right now — the scene is fully visible.';
     out.push({
       id: `camera-${camera.id}`, template: copy.template, title: copy.title, kicker: 'Live look-in', visual: copy.visual,
-      score: Math.min(92, camera.quality - 2) + nightAdjustment, freshness: 'live camera + current weather', mediaVideo: cameraEmbed(camera),
+      score: Math.min(92, camera.quality - 2) + nightAdjustment + eventBoost, freshness: 'live camera + current weather', mediaVideo: cameraEmbed(camera),
       location: { lat: camera.lat, lon: camera.lon, label: camera.place },
-      summary: copy.summary + timeContext,
+      summary: copy.summary + timeContext + eventContext,
       facts: [
         { label: 'Camera source', value: 'Authorized public YouTube embed', kind: 'verified' },
         { label: 'Temperature', value: current ? `${Math.round(current.temperature_2m)}°C` : 'Unavailable', kind: current ? 'observed' : 'question' },

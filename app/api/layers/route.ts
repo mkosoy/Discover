@@ -35,7 +35,7 @@ let cache: { at: number; data: any } = { at: 0, data: null };
 
 async function buildLayers() {
   const [quakes, eonet, gdacsXml] = await Promise.all([
-    fetchJson<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson'),
+    fetchJson<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson'),
     fetchJson<any>('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=40'),
     fetchText('https://www.gdacs.org/xml/rss.xml'),
   ]);
@@ -45,6 +45,7 @@ async function buildLayers() {
       lat: Math.round(feature.geometry.coordinates[1] * 10) / 10,
       lon: Math.round(feature.geometry.coordinates[0] * 10) / 10,
       mag: feature.properties.mag,
+      ageMinutes: Math.max(0, Math.round((Date.now() - feature.properties.time) / 60000)),
     }))
     .filter((point: LayerPoint) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
 

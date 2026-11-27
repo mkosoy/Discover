@@ -33,10 +33,10 @@ function subsolarPoint(date = new Date()) {
 }
 
 type FocusTarget = { id: string; location: { lat: number; lon: number }; connections?: { id: string }[] };
-type LayerPoint = { lat: number; lon: number; mag?: number; kind?: string };
+type LayerPoint = { lat: number; lon: number; mag?: number; kind?: string; ageMinutes?: number };
 type PlanetLayers = { quakes: LayerPoint[]; fires: LayerPoint[]; storms: LayerPoint[]; volcanoes: LayerPoint[] };
 
-function PulseLayer({ points, color, size, altitude = 1.368, opacity = .8, pulse = .3, scaleByMag }: { points: LayerPoint[]; color: string; size: number; altitude?: number; opacity?: number; pulse?: number; scaleByMag?: boolean }) {
+function PulseLayer({ points, color, colorFor, size, altitude = 1.368, opacity = .8, pulse = .3, scaleByMag }: { points: LayerPoint[]; color: string; colorFor?: (point: LayerPoint) => string; size: number; altitude?: number; opacity?: number; pulse?: number; scaleByMag?: boolean }) {
   const ref = useRef<THREE.InstancedMesh>(null);
   const matrices = useMemo(() => points.map(point => {
     const scale = scaleByMag && point.mag ? Math.min(2.1, .5 + (point.mag - 2.4) * .38) : 1;
@@ -49,7 +49,15 @@ function PulseLayer({ points, color, size, altitude = 1.368, opacity = .8, pulse
     if (!ref.current) return;
     matrices.forEach((matrix, index) => ref.current?.setMatrixAt(index, matrix));
     ref.current.instanceMatrix.needsUpdate = true;
-  }, [matrices]);
+    if (colorFor) {
+      const instanceColor = new THREE.Color();
+      points.forEach((point, index) => {
+        instanceColor.set(colorFor(point));
+        ref.current?.setColorAt(index, instanceColor);
+      });
+      if (ref.current.instanceColor) ref.current.instanceColor.needsUpdate = true;
+    }
+  }, [matrices, colorFor, points]);
   useFrame(({ clock }) => {
     if (!ref.current) return;
     const material = ref.current.material as THREE.MeshBasicMaterial;
@@ -58,13 +66,21 @@ function PulseLayer({ points, color, size, altitude = 1.368, opacity = .8, pulse
   if (!points.length) return null;
   return <instancedMesh key={`pulse-${points.length}`} ref={ref} args={[undefined, undefined, Math.max(1, points.length)]}>
     <sphereGeometry args={[size, 6, 6]} />
-    <meshBasicMaterial color={color} transparent opacity={opacity} blending={THREE.AdditiveBlending} depthWrite={false} />
+    <meshBasicMaterial color={colorFor ? '#ffffff' : color} transparent opacity={opacity} blending={THREE.AdditiveBlending} depthWrite={false} />
   </instancedMesh>;
+}
+
+function quakeAgeColor(point: LayerPoint) {
+  const age = point.ageMinutes ?? 1440;
+  if (age < 90) return '#ffd9c8';
+  if (age < 360) return '#ff9a5c';
+  if (age < 1080) return '#e06a3a';
+  return '#8a4526';
 }
 
 function PlanetActivity({ layers }: { layers: PlanetLayers }) {
   return <>
-    <PulseLayer points={layers.quakes} color="#ff8a5c" size={.012} opacity={.62} pulse={.18} scaleByMag />
+    <PulseLayer points={layers.quakes} color="#ff8a5c" colorFor={quakeAgeColor} size={.012} opacity={.66} pulse={.18} scaleByMag />
     <PulseLayer points={layers.fires} color="#ff6b35" size={.017} altitude={1.372} opacity={.78} pulse={.34} />
     <PulseLayer points={layers.storms} color="#8a9dff" size={.026} altitude={1.38} opacity={.34} pulse={.16} />
     <PulseLayer points={layers.volcanoes} color="#ff4d4d" size={.016} altitude={1.372} opacity={.8} pulse={.3} />
