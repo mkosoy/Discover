@@ -669,6 +669,37 @@ function connectDiscoveries(out: Discovery[]) {
   }));
 }
 
+// Stale-while-revalidate cache for the full feed: upstream amplification
+// protection + sub-100ms responses for every visitor after the first.
+const discoveriesCache: { at: number; data: any[] | null; refreshing: boolean } = { at: 0, data: null, refreshing: false };
+
+async function regenerateDiscoveries() {
+  if (discoveriesCache.refreshing) return;
+  discoveriesCache.refreshing = true;
+  try {
+    const fresh = await getDiscoveries();
+    if (Array.isArray(fresh) && fresh.length > 5) {
+      discoveriesCache.data = fresh;
+      discoveriesCache.at = Date.now();
+    }
+  } catch { /* keep serving stale */ } finally {
+    discoveriesCache.refreshing = false;
+  }
+}
+
+export async function getCachedDiscoveries(): Promise<any[]> {
+  const age = Date.now() - discoveriesCache.at;
+  if (discoveriesCache.data && age < 60000) return discoveriesCache.data;
+  if (discoveriesCache.data) {
+    // stale but present — serve instantly, refresh in background
+    void regenerateDiscoveries();
+    return discoveriesCache.data;
+  }
+  // cold cache — first ever request pays the generation cost
+  await regenerateDiscoveries();
+  return discoveriesCache.data ?? [];
+}
+
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
@@ -1667,11 +1698,11 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       out.push({
         id: 'aircraft-emergency-now', template: 'atmosphere', title: is7700 ? `Aircraft ${callsign} is squawking 7700 — a general emergency — right now` : `Aircraft ${callsign} has lost radio contact — squawking 7600 right now`, kicker: 'Live transponder distress signal', visual: 'orbital', score: 91, freshness: 'transponder active now',
         location: { lat: shown.lat, lon: shown.lon, label: `${callsign} — airborne` },
-        summary: `Somewhere above this point, a flight crew has just turned their transponder to ${is7700 ? '7700 — the international code for a general emergency' : '7600 — the code for radio failure'}. Every air traffic controller watching this airspace sees it highlighted instantly. The code itself does not say what is wrong — mechanical, medical, or otherwise — and most such events end in safe landings. What the public data honestly shows: a crew asking for priority, right now${shown.alt_baro != null ? `, at ${Math.round(Number(shown.alt_baro) * 0.3048)} m` : ''}${shown.gs != null ? `, moving at ${Math.round(Number(shown.gs) * 1.852)} km/h` : ''}.`,
+        summary: `Somewhere above this point, a flight crew has just turned their transponder to ${is7700 ? '7700 — the international code for a general emergency' : '7600 — the code for radio failure'}. Every air traffic controller watching this airspace sees it highlighted instantly. The code itself does not say what is wrong — mechanical, medical, or otherwise — and most such events end in safe landings. What the public data honestly shows: a crew asking for priority, right now${Number.isFinite(Number(shown.alt_baro)) ? `, at ${Math.round(Number(shown.alt_baro) * 0.3048)} m` : ''}${shown.gs != null ? `, moving at ${Math.round(Number(shown.gs) * 1.852)} km/h` : ''}.`,
         facts: [
           { label: 'Squawk code', value: is7700 ? '7700 — general emergency' : '7600 — radio failure', kind: 'observed' },
           { label: 'Aircraft', value: `${callsign}${shown.t ? ` — type ${shown.t}` : ''}`, kind: 'observed' },
-          shown.alt_baro != null ? { label: 'Altitude', value: `${Math.round(Number(shown.alt_baro) * 0.3048)} m`, kind: 'observed' } : null,
+          Number.isFinite(Number(shown.alt_baro)) ? { label: 'Altitude', value: `${Math.round(Number(shown.alt_baro) * 0.3048)} m`, kind: 'observed' } : null,
           { label: 'What this does not tell us', value: 'The nature of the emergency — the code is a request for priority, not a diagnosis. Most end safely.', kind: 'interpretation' },
           { label: 'Network', value: `${(squawk7700?.total ?? 0) + (squawk7600?.total ?? 0)} aircraft currently squawking distress codes worldwide`, kind: 'observed' }
         ].filter(Boolean) as any,
