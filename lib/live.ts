@@ -3077,16 +3077,26 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   // islands and ice sheets measure debris of supernovae hitting the atmosphere
   // — and their dips confirm solar storms independently of the satellites.
   {
-    const parseNm = (html: string | null): { dev: number; ageMin: number } | null => {
+    // Units are ambiguous upstream, so interpret empirically: parse the full 24h series.
+    // When the series is already a percentage anomaly (mean ~0), the raw value is the
+    // deviation; otherwise compute deviation from the series' own mean.
+    const parseNm = (html: string | null): { dev: number; ageMin: number; raw: number } | null => {
       if (!html) return null;
       const rows = html.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2};\s*-?\d+\.\d+/g);
-      if (!rows || !rows.length) return null;
-      const last = rows[rows.length - 1].match(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2});\s*(-?\d+\.\d+)/);
-      if (!last) return null;
-      const ts = Date.UTC(Number(last[1]), Number(last[2]) - 1, Number(last[3]), Number(last[4]), Number(last[5]), Number(last[6]));
-      const ageMin = (Date.now() - ts) / 60000;
+      if (!rows || rows.length < 60) return null;
+      const vals: Array<{ t: number; v: number }> = [];
+      for (const row of rows) {
+        const m = row.match(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2});\s*(-?\d+\.\d+)/);
+        if (!m) continue;
+        vals.push({ t: Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6])), v: Number(m[7]) });
+      }
+      if (vals.length < 60) return null;
+      const last = vals[vals.length - 1];
+      const ageMin = (Date.now() - last.t) / 60000;
       if (ageMin < 0 || ageMin > 90) return null;
-      return { dev: Number(last[7]), ageMin: Math.round(ageMin) };
+      const mean = vals.reduce((s, x) => s + x.v, 0) / vals.length;
+      const dev = Math.abs(mean) < 3 ? last.v : ((last.v - mean) / Math.abs(mean)) * 100;
+      return { dev: Math.round(dev * 100) / 100, ageMin: Math.round(ageMin), raw: last.v };
     };
     const kerg = parseNm(nmKergHtml as string | null);
     const sopo = parseNm(nmSopoHtml as string | null);
@@ -3106,9 +3116,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       out.push({
         id: 'cosmic-rays-falling-now', template: 'geology', title: `Debris of dead stars is hitting the atmosphere right now — and a detector ${r.name.includes('Kerguelen') ? 'on a sub-Antarctic island' : 'at ' + r.name} is counting it, minute by minute`, kicker: 'Cosmic rays, live — the galaxy raining on Earth', visual: 'aurora', score: 80, freshness: `reading ${r.ageMin} min old`,
         location: { lat: r.lat, lon: r.lon, label: `Neutron monitor — ${r.name}` },
-        summary: `Every second, thousands of particles accelerated by ancient supernovae and other violent events far outside the solar system slam into Earth's atmosphere. They shatter atoms in the air, producing showers of neutrons — and a small network of neutron monitors, in places like ${r.name}, counts those showers minute by minute. The count is public and minutes old: right now the flux at ${r.name} reads ${r.dev >= 0 ? '+' : ''}${r.dev}% against its baseline. ${story} Almost nobody knows this instrument network exists — yet it is one of the oldest continuous measurements of the space environment, running since the 1950s.`,
+        summary: `Every second, thousands of particles accelerated by ancient supernovae and other violent events far outside the solar system slam into Earth's atmosphere. They shatter atoms in the air, producing showers of neutrons — and a small network of neutron monitors, in places like ${r.name}, counts those showers minute by minute. The count is public and minutes old: right now the flux at ${r.name} reads ${r.dev >= 0 ? '+' : ''}${r.dev}% against its own 24-hour baseline. ${story} Almost nobody knows this instrument network exists — yet it is one of the oldest continuous measurements of the space environment, running since the 1950s.`,
         facts: [
-          { label: 'Right now', value: `${r.dev >= 0 ? '+' : ''}${r.dev}% against baseline at ${r.name} — reading ${ago(Date.now() - r.ageMin * 60000)}`, kind: 'observed' },
+          { label: 'Right now', value: `${r.dev >= 0 ? '+' : ''}${r.dev}% vs its own 24h baseline at ${r.name} — reading ${ago(Date.now() - r.ageMin * 60000)}`, kind: 'observed' },
           ...(readings.length >= 2 ? [{ label: 'Independent confirmation', value: `${readings[1].name} reads ${readings[1].dev >= 0 ? '+' : ''}${readings[1].dev}% — ${bothDrop ? 'the two stations move together, meaning the cause is planetary-scale, not local' : 'diverging from the other station at the moment'}`, kind: 'observed' as const }] : []),
           { label: 'What is being counted', value: 'Neutrons from air showers — debris of cosmic rays (mostly protons accelerated by supernovae) smashing into the upper atmosphere', kind: 'verified' },
           { label: 'The space-weather link', value: `When solar eruptions sweep past Earth they push cosmic rays aside — the monitors dip (a Forbush decrease). Current geomagnetic Kp index: ${kpNow ?? 'unavailable'}`, kind: 'interpretation' },
