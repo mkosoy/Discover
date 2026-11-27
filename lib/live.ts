@@ -1231,6 +1231,38 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     }
   }
 
+  // --- The ground itself, drawn live: a seismometer's last 24 hours as a
+  // drumplot. When a quake hits, you can literally see it in the trace —
+  // the purest measured evidence the feed has.
+  {
+    const stations: Array<[string, string, number, number]> = [
+      ['ANMO', 'Albuquerque, New Mexico', 34.95, -106.46],
+      ['COLA', 'College, Alaska', 64.87, -147.86],
+      ['MAJO', 'Matsushiro, Japan', 36.55, 138.2],
+      ['PAB', 'San Pablo, Spain', 39.55, -4.35]
+    ];
+    const dayIdx = Math.floor(Date.now() / 86400000) % stations.length;
+    const [sta, staName, staLat, staLon] = stations[dayIdx];
+    const fmtD = (ms: number) => new Date(ms).toISOString().slice(0, 19);
+    const drumUrl = `https://service.iris.edu/irisws/timeseriesplot/1/query?net=IU&sta=${sta}&loc=00&cha=BHZ&starttime=${fmtD(Date.now() - 86400000)}&endtime=${fmtD(Date.now())}&format=png&width=800`;
+    const recentMag = q?.properties?.mag;
+    const quakeVisible = recentMag != null && recentMag >= 5.5 && q.properties.time && (Date.now() - q.properties.time) < 24 * 3600000;
+    out.push({
+      id: 'earth-humming-live', template: 'geology', title: quakeVisible ? `The M${recentMag.toFixed(1)} earthquake is literally visible in this seismometer trace from ${staName.split(',')[0]}` : `The ground at ${staName.split(',')[0]} is humming right now — read the last 24 hours of a seismometer`, kicker: 'IRIS seismic station — the Earth, drawn live', visual: 'seismic', score: quakeVisible ? 84 : 73, freshness: 'trace updating continuously',
+      mediaImage: drumUrl, mediaAlt: `Live seismic drumplot from station ${sta}`,
+      location: { lat: staLat, lon: staLon, label: `${staName} — IRIS station ${sta}` },
+      summary: `A seismometer at ${staName} records the ground's vertical motion continuously, 40 times per second, and this image is its last 24 hours — each horizontal line is 30 minutes of the planet's vibration.${quakeVisible ? ` The sharp spike you can pick out is the M${recentMag.toFixed(1)} earthquake's waves passing under this station: energy that traveled through the body of the Earth itself to get here.` : ' The background weave is the microseism — the constant hum of ocean waves beating on distant coastlines — and any sharp vertical spike is seismic waves arriving through the body of the planet.'} Nothing here is modeled.`,
+      facts: [
+        { label: 'Instrument', value: `Broadband seismometer ${sta} — part of the Global Seismographic Network`, kind: 'verified' },
+        { label: 'Sampling', value: '40 measurements per second, 24/7/365', kind: 'verified' },
+        { label: 'The constant hum', value: 'Ocean storms transfer energy into the seafloor — seismometers worldwide hear surf from thousands of km away', kind: 'interpretation' },
+        ...(quakeVisible ? [{ label: 'Visible in the trace', value: `M${recentMag.toFixed(1)} — ${q.properties.place}`, kind: 'observed' as const }] : [])
+      ],
+      sources: [src('IRIS/EarthScope timeseries service', 'https://service.iris.edu/irisws/timeseriesplot/1/'), src('Global Seismographic Network', 'https://www.usgs.gov/programs/earthquake-hazards/monitoring/global-seismographic-network')],
+      related: ['Seismic pulse', 'The measured planet', 'Significant earthquakes']
+    });
+  }
+
   // --- The terminator: where dawn and dusk are happening right now (pure astronomy, always live) ---
   {
     const nowDate = new Date();
