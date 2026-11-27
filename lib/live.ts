@@ -317,16 +317,39 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
   const tleAge = issTle?.tle_timestamp ? ago(Number(issTle.tle_timestamp) * 1000) : 'unavailable';
+  const issCities: Array<[string, number, number, number]> = [
+    ['Tokyo', 35.68, 139.69, 37], ['Sydney', -33.87, 151.2, 5], ['Delhi', 28.6, 77.2, 33], ['Shanghai', 31.2, 121.5, 29],
+    ['Lagos', 6.52, 3.37, 21], ['Cairo', 30.04, 31.23, 22], ['São Paulo', -23.55, -46.63, 22], ['Mexico City', 19.43, -99.13, 22],
+    ['New York', 40.71, -74, 20], ['London', 51.5, -0.12, 15], ['Moscow', 55.75, 37.6, 13], ['Los Angeles', 34.05, -118.24, 13],
+    ['Mumbai', 19.07, 72.87, 21], ['Istanbul', 41, 28.9, 16], ['Bangkok', 13.75, 100.5, 17], ['Nairobi', -1.29, 36.8, 11],
+    ['Buenos Aires', -34.6, -58.4, 15], ['Paris', 48.85, 2.35, 13], ['Jakarta', -6.2, 106.8, 32], ['Manila', 14.6, 120.98, 25]
+  ];
+  let nextOverflight: { city: string; minutes: number; pop: number } | undefined;
+  for (const point of issTrack.filter(p => p.minutes > 2)) {
+    if (nextOverflight) break;
+    for (const [name, lat, lon, pop] of issCities) {
+      const dLat = (point.lat - lat) * 111;
+      const dLon = (point.lon - lon) * 111 * Math.cos(lat * Math.PI / 180);
+      if (Math.hypot(dLat, dLon) < 600) { nextOverflight = { city: name, minutes: Math.round(point.minutes), pop }; break; }
+    }
+  }
+  const overflightFact = nextOverflight
+    ? { label: 'Next city overflight', value: `${nextOverflight.city} in ~${nextOverflight.minutes} min`, kind: 'prediction' as const }
+    : { label: 'Next city overflight', value: 'Beyond this orbit’s horizon', kind: 'prediction' as const };
+  const overflightLine = nextOverflight
+    ? ` In about ${nextOverflight.minutes} minutes it sweeps across the sky above ${nextOverflight.city} — roughly ${nextOverflight.pop} million people below.`
+    : '';
   if (iss?.latitude != null) out.push({
     id: 'iss-over-earth', template: 'orbit', title: 'The ISS is crossing the planet in silence',
     kicker: 'Live orbital pass', visual: 'nasa-live', score: 96, freshness: 'live now', altitude: iss.altitude,
     location: { lat: iss.latitude, lon: iss.longitude, label: `${Number(iss.latitude).toFixed(1)}°, ${Number(iss.longitude).toFixed(1)}°` },
-    summary: 'A football-field-sized laboratory is moving about 7.66 km every second. The position is live, the glowing path is propagated from the current public orbital element set, and the video is an official NASA stream when available.',
+    summary: `A football-field-sized laboratory is moving about 7.66 km every second. The position is live, the glowing path is propagated from the current public orbital element set, and the video is an official NASA stream when available.${overflightLine}`,
     orbitTrack: issTrack,
     facts: [
       { label: 'Velocity', value: `${Math.round(iss.velocity).toLocaleString()} km/h`, kind: 'observed' },
       { label: 'Altitude', value: `${Math.round(iss.altitude)} km`, kind: 'observed' },
       { label: 'Position', value: 'Updated seconds ago', kind: 'observed' },
+      overflightFact,
       { label: 'Orbit model', value: issTrack.length ? `${issTrack.length} propagated positions` : 'Unavailable', kind: issTrack.length ? 'interpretation' : 'question' },
       { label: 'Orbital elements', value: tleAge, kind: issTrack.length ? 'verified' : 'question' }
     ],
