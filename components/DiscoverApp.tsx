@@ -166,11 +166,17 @@ export default function DiscoverApp() {
   }, []);
   useEffect(() => {
     if (!browseOpen && !helpOpen) return;
+    // Remember what had focus before the overlay took it, and return focus
+    // there on close — keyboard users land back on the launcher they used.
+    const previous = document.activeElement as HTMLElement | null;
     const btn = document.querySelector<HTMLElement>('.overlayPanel .panelClose');
     btn?.focus();
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setBrowseOpen(false); setHelpOpen(false); } };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (previous && document.contains(previous)) previous.focus();
+    };
   }, [browseOpen, helpOpen]);
   const tourRef = useRef<{ order: string[]; idx: number }>({ order: [], idx: -1 });
   const [tourProgress, setTourProgress] = useState<{ idx: number; total: number }>();
@@ -698,7 +704,8 @@ export default function DiscoverApp() {
           // Live right now: only cards with a genuine live window — video, audio,
           // refreshing imagery or instrument traces. Stories without one are
           // passed up, per the product bar.
-          const hasLiveWindow = (d: Discovery) => Boolean(d.mediaVideo || d.mediaAudio || (d.mediaImage && (/nesdis\.noaa\.gov|timeseriesplot|embed\.skylinewebcams|seismogram|data:image\/svg/.test(d.mediaImage))));
+          // Mirrors LiveImage's refresh list exactly — if the panel auto-refreshes it, it's a live window.
+          const hasLiveWindow = (d: Discovery) => Boolean(d.mediaVideo || d.mediaAudio || d.visual === 'nasa-live' || (d.mediaImage && (/nesdis\.noaa\.gov|timeseriesplot|embed\.skylinewebcams|images\.webcamgalore\.com|services\.swpc\.noaa\.gov|sdo\.gsfc\.nasa\.gov|seismogram|data:image\/svg/.test(d.mediaImage))));
           const liveNow = discoveries.filter(hasLiveWindow).sort((a, b) => b.score - a.score).slice(0, 10);
           if (!liveNow.length) return null;
           return <div className="browseGroup liveNowGroup">
