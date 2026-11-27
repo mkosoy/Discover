@@ -164,6 +164,14 @@ export default function DiscoverApp() {
       window.localStorage.setItem('elsewhere-onboarded', '1');
     }
   }, []);
+  useEffect(() => {
+    if (!browseOpen && !helpOpen) return;
+    const btn = document.querySelector<HTMLElement>('.overlayPanel .panelClose');
+    btn?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setBrowseOpen(false); setHelpOpen(false); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [browseOpen, helpOpen]);
   const tourRef = useRef<{ order: string[]; idx: number }>({ order: [], idx: -1 });
   const [tourProgress, setTourProgress] = useState<{ idx: number; total: number }>();
   const [tourHint, setTourHint] = useState(false);
@@ -686,6 +694,21 @@ export default function DiscoverApp() {
         <button className="panelClose" aria-label="Close" onClick={() => setBrowseOpen(false)}><X size={17} /></button>
         <h3>Everything happening right now</h3>
         <p className="overlaySub">{discoveries.length} live signals, measured or observed within the last hour — grouped by what part of the planet they belong to. Best first in each group.</p>
+        {(() => {
+          // Live right now: only cards with a genuine live window — video, audio,
+          // refreshing imagery or instrument traces. Stories without one are
+          // passed up, per the product bar.
+          const hasLiveWindow = (d: Discovery) => Boolean(d.mediaVideo || d.mediaAudio || (d.mediaImage && (/nesdis\.noaa\.gov|timeseriesplot|embed\.skylinewebcams|seismogram|data:image\/svg/.test(d.mediaImage))));
+          const liveNow = discoveries.filter(hasLiveWindow).sort((a, b) => b.score - a.score).slice(0, 10);
+          if (!liveNow.length) return null;
+          return <div className="browseGroup liveNowGroup">
+            <h4>Live right now — tune in<span>{liveNow.length} windows open</span></h4>
+            {liveNow.map(d => <button key={d.id} className="browseItem liveNowItem" onClick={() => { setBrowseOpen(false); selectDiscovery(d); }}>
+              <b>{d.title}</b>
+              <small><em className="liveDot">● LIVE</em>{(d as any).inNews ? <em className="inNewsBadge">in the news</em> : <em className="unreportedBadge">not in the news yet</em>} · {d.freshness}</small>
+            </button>)}
+          </div>;
+        })()}
         {([
           ['Ocean', (d: Discovery) => d.template === 'ocean'],
           ['Solid Earth', (d: Discovery) => d.template === 'geology' || d.template === 'wildfire'],
@@ -693,11 +716,11 @@ export default function DiscoverApp() {
           ['Human systems', (d: Discovery) => d.template === 'city'],
           ['Space & orbit', (d: Discovery) => d.template === 'orbit' || d.template === 'launch']
         ] as Array<[string, (d: Discovery) => boolean]>).map(([cat, match]) => {
-          const items = discoveries.filter(match).sort((a, b) => b.score - a.score).slice(0, 8);
+          const items = discoveries.filter(match).sort((a, b) => b.score - a.score);
           if (!items.length) return null;
           return <div key={cat} className="browseGroup">
             <h4>{cat}<span>{discoveries.filter(match).length} live</span></h4>
-            {items.map(d => <button key={d.id} className="browseItem" onClick={() => { setBrowseOpen(false); selectDiscovery(d, undefined, true); }}>
+            {items.map(d => <button key={d.id} className="browseItem" onClick={() => { setBrowseOpen(false); selectDiscovery(d); }}>
               <b>{d.title}</b>
               <small>{d.kicker} · {d.freshness}</small>
             </button>)}
@@ -705,7 +728,7 @@ export default function DiscoverApp() {
         })}
         {investigations.length > 0 && <div className="browseGroup">
           <h4>Deeper investigations<span>{investigations.length} live</span></h4>
-          {investigations.slice(0, 6).map(i2 => <button key={i2.id} className="browseItem investigationItem" onClick={() => { setBrowseOpen(false); selectInvestigation(i2); }}>
+          {investigations.map(i2 => <button key={i2.id} className="browseItem investigationItem" onClick={() => { setBrowseOpen(false); selectInvestigation(i2); }}>
             <b>{i2.title}</b>
             <small>confidence {i2.confidence}%</small>
           </button>)}
@@ -729,10 +752,10 @@ export default function DiscoverApp() {
         <details className="sourcesDirectory"><summary>The public data behind this — {(() => { const urls = new Set<string>(); discoveries.forEach(d => d.sources?.forEach((s: any) => urls.add(s.url))); investigations.forEach(i2 => i2.sources?.forEach((s: any) => urls.add(s.url))); return urls.size; })()} live sources</summary>
           <p className="overlaySub">Every source is a free public feed — no keys, no scraping, no private data. These are instruments and observations humanity publishes openly; Elsewhere just listens to all of them at once.</p>
           {(() => {
-            const byLabel = new Map<string, string>();
-            discoveries.forEach(d => d.sources?.forEach((s: any) => byLabel.set(s.label, s.url)));
-            investigations.forEach(i2 => i2.sources?.forEach((s: any) => byLabel.set(s.label, s.url)));
-            return [...byLabel.entries()].sort().map(([label, url]) => <a key={url + label} href={url} target="_blank">{label}</a>);
+            const byUrl = new Map<string, string>();
+            discoveries.forEach(d => d.sources?.forEach((s: any) => byUrl.set(s.url, s.label)));
+            investigations.forEach(i2 => i2.sources?.forEach((s: any) => byUrl.set(s.url, s.label)));
+            return [...byUrl.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([url, label]) => <a key={url} href={url} target="_blank">{label}</a>);
           })()}
         </details>
       </div>

@@ -1179,7 +1179,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1222,6 +1222,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     riverNonBlocking(),
     text('https://eyes.nasa.gov/dsn/data/dsn.xml'),
     json<any>('https://api.openstreetmap.org/api/0.6/changesets.json', { headers: { 'User-Agent': 'Elsewhere/1.0 earth discovery' } }, 7000),
+    text('https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en'),
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -2879,6 +2880,28 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         sources: [src('Open-Meteo global weather model', 'https://open-meteo.com/')],
         related: ['storm-deepening-now', 'wildest-water-live', 'earth-extremes-now']
       });
+    }
+  }
+
+  // --- News-awareness: is each live signal being talked about? Google News
+  // top stories, keyless RSS. Cards the news hasn't noticed yet are the
+  // underreported gems — the entire point of the product.
+  if (newsXml && typeof newsXml === 'string') {
+    const STOP = new Set(['the','a','an','and','or','of','in','on','at','to','for','with','after','over','amid','says','say','new','now','live','right','earth','measured','being','what','why','how','is','are','was','were','has','have','its','it','this','that','these','those','from','into','their','they','them','his','her','she','him','you','your','but','not','will','would','could','than','then','when','where','which','while','about','against','between','under','more','most','first','second','just','like','some','any','all','who','whom','whose','been','being','does','doing','done','make','makes','made','take','takes','get','gets','got','one','two','three','year','years','day','days','time','times','people','world','report','reports','according','update','updates','watch','video','photos']);
+    const items = [...newsXml.matchAll(/<item>[\s\S]*?<title>([^<]+)<\/title>/g)].map(m => m[1]).slice(0, 40);
+    const headlineSets = items.map(h => new Set(h.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !STOP.has(w))));
+    for (const card of out) {
+      const cardText = `${card.title} ${card.location?.label ?? ''}`.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+      const cardWords = new Set(cardText.split(/\s+/).filter(w => w.length >= 4 && !STOP.has(w)));
+      let inNews = false;
+      for (const hs of headlineSets) {
+        let overlap = 0;
+        for (const w of cardWords) if (hs.has(w)) overlap++;
+        // A single proper-name overlap (city/country/disaster-word) or any 2+
+        // shared significant words counts as news coverage.
+        if (overlap >= 2) { inNews = true; break; }
+      }
+      (card as any).inNews = inNews;
     }
   }
 

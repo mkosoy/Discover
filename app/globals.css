@@ -87,3 +87,20 @@ main.watching .heroCopy{opacity:0;transform:translateY(-8px);pointer-events:none
   .overlayShade { align-items: center; }
   .overlayPanel { border-radius: 20px; border-bottom: 1px solid rgba(120, 170, 255, 0.18); max-height: 78vh; }
 }
+
+/* Live right now — tune-in section */
+.liveNowGroup h4 { color: #ff7d6b; }
+.liveNowItem { border-color: rgba(255, 125, 107, 0.28); background: rgba(255, 110, 90, 0.06); }
+.liveNowItem:active, .liveNowItem:hover { background: rgba(255, 110, 90, 0.14); }
+.liveNowItem small { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.liveDot { color: #ff5d4b; font-style: normal; font-size: 9px; letter-spacing: 0.08em; font-weight: 700; animation: livePulse 1.6s ease-in-out infinite; }
+@keyframes livePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.inNewsBadge { font-style: normal; font-size: 10px; color: #8fa8c8; background: rgba(120, 150, 190, 0.14); padding: 1px 7px; border-radius: 8px; }
+.unreportedBadge { font-style: normal; font-size: 10px; color: #ffd166; background: rgba(255, 209, 102, 0.12); padding: 1px 7px; border-radius: 8px; }
+
+/* Narrow phones: the dock scrolls horizontally instead of losing buttons offscreen */
+@media(max-width:760px){
+  .actionDock{left:10px;right:10px;transform:none;overflow-x:auto;scrollbar-width:none;justify-content:flex-start;padding-bottom:3px}
+  .actionDock::-webkit-scrollbar{display:none}
+  .surprise,.watch,.share,.ambient{padding:12px 15px;font-size:13px;flex:0 0 auto;gap:7px}
+}
