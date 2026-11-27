@@ -1781,6 +1781,19 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       out.push({
         id: `terminator-${isDawn ? 'dawn' : 'dusk'}`, template: 'atmosphere', title: `${isDawn ? 'Dawn' : 'Dusk'} is breaking over ${pick.name} right now`, kicker: 'The terminator, computed live',
         visual: 'orbital', score: 73, freshness: 'computed this minute',
+        mediaImage: (() => {
+          const series: Array<{ t: number; v: number }> = [];
+          for (let h = -24; h <= 0; h += 0.5) {
+            const tUtc = utcHours + h;
+            const sl = -((tUtc * 60 + eqtime) / 4 - 180);
+            const ha = norm(pick.lon - sl) * Math.PI / 180;
+            const latR2 = pick.lat * Math.PI / 180;
+            const el = Math.asin(Math.sin(latR2) * Math.sin(decl) + Math.cos(latR2) * Math.cos(decl) * Math.cos(ha)) * 180 / Math.PI;
+            series.push({ t: Date.now() + h * 3600000, v: el });
+          }
+          return buildSeriesChartSvg(`the sun's arc over ${pick.name} — now ${pick.elev >= 0 ? '+' : ''}${pick.elev.toFixed(1)}°`, 'sun elevation, degrees above horizon', series, '#ffcc44', `the last 24 hours of the sun's arc, ending now — pure orbital geometry`) ?? undefined;
+        })(),
+        mediaAlt: 'The sun\u2019s elevation over this city across the day — computed from orbital geometry',
         location: { lat: pick.lat, lon: pick.lon, label: `${pick.name} — on the day-night line` },
         summary: `The line between day and night is sweeping across the planet at about ${termSpeed.toLocaleString()} km/h at this latitude, and right now it is crossing ${pick.name}. This is pure astronomy — no feed, no lag, just the clockwork the whole planet runs on.`,
         facts: [
