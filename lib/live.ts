@@ -1179,7 +1179,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml, orcaFeeds, orcaDetections, antMawsonHtml, antDavisHtml, antCaseyHtml] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml, orcaFeeds, orcaDetections, antMawsonHtml, antDavisHtml, antCaseyHtml, nmKergHtml, nmSopoHtml] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1228,6 +1228,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     text('https://www.antarctica.gov.au/antarctic-operations/webcams/mawson/'),
     text('https://www.antarctica.gov.au/antarctic-operations/webcams/davis/'),
     text('https://www.antarctica.gov.au/antarctic-operations/webcams/casey/'),
+    text('https://www.nmdb.eu/nest/draw_graph.php?formchk=1&stations[]=KERG&output=ascii&tabchoice=revori&dtype=corr_for_efficiency&date_choice=last&last_days=1'),
+    text('https://www.nmdb.eu/nest/draw_graph.php?formchk=1&stations[]=SOPO&output=ascii&tabchoice=revori&dtype=corr_for_efficiency&date_choice=last&last_days=1'),
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -3049,6 +3051,53 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         ],
         sources: [src('Australian Antarctic Program webcams', 'https://www.antarctica.gov.au/antarctic-operations/webcams/')],
         related: ['aurora', 'extremes', 'terminator']
+      });
+    }
+  }
+
+  // --- Cosmic rays, counted minute by minute: neutron monitors on remote
+  // islands and ice sheets measure debris of supernovae hitting the atmosphere
+  // — and their dips confirm solar storms independently of the satellites.
+  {
+    const parseNm = (html: string | null): { dev: number; ageMin: number } | null => {
+      if (!html) return null;
+      const rows = html.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2};\s*-?\d+\.\d+/g);
+      if (!rows || !rows.length) return null;
+      const last = rows[rows.length - 1].match(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2});\s*(-?\d+\.\d+)/);
+      if (!last) return null;
+      const ts = Date.UTC(Number(last[1]), Number(last[2]) - 1, Number(last[3]), Number(last[4]), Number(last[5]), Number(last[6]));
+      const ageMin = (Date.now() - ts) / 60000;
+      if (ageMin < 0 || ageMin > 90) return null;
+      return { dev: Number(last[7]), ageMin: Math.round(ageMin) };
+    };
+    const kerg = parseNm(nmKergHtml as string | null);
+    const sopo = parseNm(nmSopoHtml as string | null);
+    const readings = [
+      kerg ? { name: 'Kerguelen Island — sub-Antarctic Indian Ocean', lat: -49.35, lon: 70.26, ...kerg } : null,
+      sopo ? { name: 'the South Pole', lat: -90, lon: 0, ...sopo } : null
+    ].filter(Boolean) as Array<{ name: string; lat: number; lon: number; dev: number; ageMin: number }>;
+    if (readings.length) {
+      const r = readings[0];
+      const kpNow = Array.isArray(kp) && kp.length > 1 ? Number(kp[kp.length - 1]?.[1] ?? 0) : null;
+      const bothDrop = readings.length >= 2 && Math.abs(readings[0].dev - readings[1].dev) < 1.5;
+      const story = r.dev <= -2.5
+        ? `something is shielding the planet right now — a Forbush decrease: when a coronal mass ejection sweeps past Earth, its magnetic field pushes cosmic rays aside and monitors worldwide dip together. The satellites we track see the solar wind directly; these ground stations confirm it from an entirely independent direction.`
+        : r.dev >= 1.5
+          ? `the flux is running high — which usually means the Sun's magnetic shielding is weak right now, letting more of the galaxy in.`
+          : `the flux is near its quiet baseline — the galaxy's steady rain, undisturbed for now.`;
+      out.push({
+        id: 'cosmic-rays-falling-now', template: 'geology', title: `Debris of dead stars is hitting the atmosphere right now — and a detector ${r.name.includes('Kerguelen') ? 'on a sub-Antarctic island' : 'at ' + r.name} is counting it, minute by minute`, kicker: 'Cosmic rays, live — the galaxy raining on Earth', visual: 'aurora', score: 80, freshness: `reading ${r.ageMin} min old`,
+        location: { lat: r.lat, lon: r.lon, label: `Neutron monitor — ${r.name}` },
+        summary: `Every second, thousands of particles accelerated by ancient supernovae and other violent events far outside the solar system slam into Earth's atmosphere. They shatter atoms in the air, producing showers of neutrons — and a small network of neutron monitors, in places like ${r.name}, counts those showers minute by minute. The count is public and minutes old: right now the flux at ${r.name} reads ${r.dev >= 0 ? '+' : ''}${r.dev}% against its baseline. ${story} Almost nobody knows this instrument network exists — yet it is one of the oldest continuous measurements of the space environment, running since the 1950s.`,
+        facts: [
+          { label: 'Right now', value: `${r.dev >= 0 ? '+' : ''}${r.dev}% against baseline at ${r.name} — reading ${ago(Date.now() - r.ageMin * 60000)}`, kind: 'observed' },
+          ...(readings.length >= 2 ? [{ label: 'Independent confirmation', value: `${readings[1].name} reads ${readings[1].dev >= 0 ? '+' : ''}${readings[1].dev}% — ${bothDrop ? 'the two stations move together, meaning the cause is planetary-scale, not local' : 'diverging from the other station at the moment'}`, kind: 'observed' as const }] : []),
+          { label: 'What is being counted', value: 'Neutrons from air showers — debris of cosmic rays (mostly protons accelerated by supernovae) smashing into the upper atmosphere', kind: 'verified' },
+          { label: 'The space-weather link', value: `When solar eruptions sweep past Earth they push cosmic rays aside — the monitors dip (a Forbush decrease). Current geomagnetic Kp index: ${kpNow ?? 'unavailable'}`, kind: 'interpretation' },
+          { label: 'The instrument', value: 'The worldwide neutron monitor network has run continuously since the 1950s — one of the longest space-environment records in existence', kind: 'verified' }
+        ],
+        sources: [src('Neutron Monitor Database (NMDB)', 'https://www.nmdb.eu/')],
+        related: ['solar wind', 'aurora', 'Space weather', 'antarctic-polar-day-live']
       });
     }
   }
