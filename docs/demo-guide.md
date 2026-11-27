@@ -30,3 +30,13 @@ Tap Watch — cinematic auto-tour, hero copy fades, planet commands the screen. 
 
 ## If asked about data honesty
 Every card labels evidence as observed/verified/interpretation/question. Freshness is honest ("positions ~40s old", model vs measurement). Nothing is fabricated; absence of data says so.
+
+## Round VIII–X additions (newest first)
+- **My sky** — dock button. Grant location once; the probe reads aircraft within 100 nautical miles *overhead*, nearest live cameras, weather, hazards. Coordinates rounded to ~1 km on-device before leaving the browser. (This is the personal hook — try it live on the call.)
+- **The living planet layers** — the globe itself is now the data: earthquake belt glowing along the Ring of Fire (brighter = fresher, a full week deep), active fires, storms, volcanoes, and NOAA's aurora oval as a green polar ring that expands with geomagnetic activity. Legend bottom-left.
+- **Breaking toast** — if a major quake/fire enters the feed while you're watching, it announces itself top-center; tap to travel there.
+- **Memory** — return visits show "N new live moments since…" (per-device).
+- **Sound** — generative ambient drone tuned per discovery type (WebAudio, zero assets). Toggle in the dock.
+- **New cards**: wildlife pulse (iNaturalist live sightings with real observer photos), Earth's extremes (hottest/coldest/windiest at the same minute across 16 extreme sites), humanity's day/night split (population-weighted: "248 million in night right now"), Point Nemo moment (when ISS astronauts become the nearest humans to the loneliest place on Earth — conditional, only appears when true).
+- **New investigations**: the sunset chase (every airborne aircraft classified by solar elevation — "126 aircraft are flying through Earth's sunset line"), wildest water (live wave heights across 14 seas — "Drake Passage running 15× rougher than the Red Sea").
+- **Camera rotation** — the Surprise loop now rotates quality gems from the full 451-camera registry every 30 minutes instead of the same 14 cameras; taps on related pills ("Wildest water", "Terminator") open the real investigation/card, not generic weather.
