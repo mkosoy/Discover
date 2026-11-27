@@ -133,7 +133,7 @@ const BUOY_STATIONS: Array<[string, string, number, number]> = [
   ['46087', 'Neah Bay buoy, off Washington', 48.49, -124.73]
 ];
 
-type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waterTemp?: number; airTemp?: number; windSpeed?: number; time: number };
+type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waterTemp?: number; airTemp?: number; windSpeed?: number; pressure?: number; pressureDelta3h?: number; time: number };
 
 async function buoyObservations(): Promise<BuoyObs[]> {
   const rows = await Promise.all(BUOY_STATIONS.map(async ([id, name, lat, lon]) => {
@@ -150,11 +150,29 @@ async function buoyObservations(): Promise<BuoyObs[]> {
       const wtmp = parseFloat(c[14]);
       const atmp = parseFloat(c[13]);
       const wspd = parseFloat(c[6]);
+      const pres = parseFloat(c[12]);
       const ts = Date.UTC(+c[0], +c[1] - 1, +c[2], +c[3], +c[4]);
       // A buoy that stopped reporting must not win the live ranking with a
       // weeks-old reading — stale observations are dropped, not trusted.
       if (Date.now() - ts > 3 * 3600000) return null;
-      return { id, name, lat, lon, waveHeight: wvht, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, time: ts };
+      // Pressure tendency: scan further rows (older readings) for a reading
+      // ~3h back. A fast fall is the atmosphere deepening overhead — the
+      // signature of a storm organizing itself, measured before any model.
+      let pressureDelta3h: number | undefined;
+      if (Number.isFinite(pres)) {
+        for (const line2 of t.split('\n').slice(1, 32)) {
+          if (!line2.trim() || line2.startsWith('#')) continue;
+          const c2 = line2.trim().split(/\s+/);
+          if (c2.length < 13) continue;
+          const ts2 = Date.UTC(+c2[0], +c2[1] - 1, +c2[2], +c2[3], +c2[4]);
+          const hoursBack = (ts - ts2) / 3600000;
+          if (hoursBack >= 2.5 && hoursBack <= 4.5) {
+            const pres2 = parseFloat(c2[12]);
+            if (Number.isFinite(pres2) && pres2 < 1100 && pres < 1100) { pressureDelta3h = pres - pres2; break; }
+          }
+        }
+      }
+      return { id, name, lat, lon, waveHeight: wvht, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, pressure: Number.isFinite(pres) ? pres : undefined, pressureDelta3h, time: ts };
     }
     return null;
   }));
@@ -784,6 +802,30 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   }
 
 
+
+  // --- A storm organizing itself, caught in the act: rapidly falling pressure
+  // at a buoy is the atmosphere deepening overhead — measured directly, hours
+  // before any forecast updates. Conditional: only while physics is loud.
+  if (buoys?.length >= 4) {
+    const falling = buoys.filter(b => b.pressureDelta3h != null && b.pressureDelta3h <= -1.5).sort((a, b) => (a.pressureDelta3h ?? 0) - (b.pressureDelta3h ?? 0))[0];
+    if (falling) {
+      const drop = Math.abs(falling.pressureDelta3h ?? 0);
+      out.push({
+        id: 'storm-deepening-now', template: 'ocean', title: `The pressure at ${falling.name.split(',')[0]} just fell ${drop.toFixed(1)} millibars in 3 hours — a storm is deepening overhead`, kicker: 'Caught in the act — pressure tendency, measured', visual: 'storm', score: 87 + Math.min(6, Math.round(drop)), freshness: 'barometer reading minutes old',
+        location: { lat: falling.lat, lon: falling.lon, label: falling.name },
+        summary: `Barometers don't predict storms — they feel them forming. A moored buoy at ${falling.name} has measured the air pressure falling ${drop.toFixed(1)} millibars over the last 3 hours. That rate of fall means the atmosphere overhead is literally deepening: air is being evacuated upward, winds are accelerating inward, and a storm system is organizing itself right now${falling.windSpeed ? ` — the same buoy already measures ${Math.round(falling.windSpeed * 3.6)} km/h winds` : ''}${falling.waveHeight ? ` and ${falling.waveHeight.toFixed(1)} m seas building` : ''}. This is the earliest physical signature of a storm, caught live.`,
+        facts: [
+          { label: 'Pressure tendency', value: `${(falling.pressureDelta3h ?? 0).toFixed(1)} mb over 3 hours — measured at the buoy`, kind: 'observed' },
+          { label: 'Current pressure', value: falling.pressure ? `${falling.pressure.toFixed(1)} mb` : '—', kind: 'observed' },
+          falling.windSpeed != null ? { label: 'Wind at the buoy', value: `${Math.round(falling.windSpeed * 3.6)} km/h`, kind: 'observed' } : null,
+          falling.waveHeight != null ? { label: 'Seas building', value: `${falling.waveHeight.toFixed(1)} m significant wave height`, kind: 'observed' } : null,
+          { label: 'Why it matters', value: 'Pressure falls precede the worst weather — this is the storm before the storm, measured not modeled', kind: 'interpretation' }
+        ].filter(Boolean) as any,
+        sources: [src('NOAA NDBC real-time buoy observations', 'https://www.ndbc.noaa.gov/')],
+        related: ['The ocean, measured', 'The measured planet', 'Storms on the board']
+      });
+    }
+  }
 
   // --- The sea vs the moon: measured water level minus astronomical prediction.
   // A big anomaly is the ocean literally defying the moon — wind or pressure
