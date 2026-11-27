@@ -448,15 +448,16 @@ export async function tideAnomalies(): Promise<TideAnomaly[]> {
   const base = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter';
   const rows = await Promise.all(TIDE_STATIONS.map(async ([id, name, lat, lon]) => {
     try {
-      const [wl, wlSeries, pred] = await Promise.all([
-        json<any>(`${base}?product=water_level&application=elsewhere-discovery&date=latest&station=${id}&time_zone=gmt&units=metric&datum=MSL&format=json`, undefined, 6000),
-        json<any>(`${base}?product=water_level&application=elsewhere-discovery&date=today&station=${id}&time_zone=gmt&units=metric&datum=MSL&format=json`, undefined, 6000),
+      const [wl, pred] = await Promise.all([
+        json<any>(`${base}?product=water_level&application=elsewhere-discovery&date=today&station=${id}&time_zone=gmt&units=metric&datum=MSL&format=json`, undefined, 8000),
         json<any>(`${base}?product=predictions&application=elsewhere-discovery&begin_date=${(() => { const d = new Date(Date.now() - 86400000); return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`; })()}&end_date=${(() => { const d = new Date(Date.now() + 86400000); return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`; })()}&station=${id}&time_zone=gmt&units=metric&datum=MSL&interval=h&format=json`, undefined, 6000)
       ]);
-      const measured = Number(wl?.data?.[0]?.v);
+      const wlRows: any[] = Array.isArray(wl?.data) ? wl.data : [];
+      const latestRow = wlRows[wlRows.length - 1];
+      const measured = Number(latestRow?.v);
       const predictions: any[] = pred?.predictions ?? [];
       if (!Number.isFinite(measured) || !predictions.length) return null;
-      const measuredTime = new Date(String(wl.data[0].t).replace(' ', 'T') + 'Z').getTime();
+      const measuredTime = new Date(String(latestRow.t).replace(' ', 'T') + 'Z').getTime();
       // Linear interpolation between the bracketing hourly predictions —
       // tidal slope near mid-tide can exceed 0.5 m/hour, so nearest-hour
       // sampling alone would manufacture false anomalies of ~25 cm.
@@ -475,9 +476,9 @@ export async function tideAnomalies(): Promise<TideAnomaly[]> {
         if (!nearest || Math.abs(nearest.t - measuredTime) > 30 * 60000) return null;
         predicted = nearest.v;
       }
-      const measuredSeries: Array<{ t: number; v: number }> = (wlSeries?.data ?? []).map((r: any) => ({ t: new Date(String(r.t).replace(' ', 'T') + 'Z').getTime(), v: Number(r.v) })).filter((r: any) => Number.isFinite(r.v));
+      const measuredSeries: Array<{ t: number; v: number }> = wlRows.map((r: any) => ({ t: new Date(String(r.t).replace(' ', 'T') + 'Z').getTime(), v: Number(r.v) })).filter((r: any) => Number.isFinite(r.v) && Number.isFinite(r.t));
       const predictedSeries = timed;
-      return { id, name, lat, lon, measured, predicted, anomaly: measured - predicted, time: wl.data[0].t, measuredSeries, predictedSeries };
+      return { id, name, lat, lon, measured, predicted, anomaly: measured - predicted, time: latestRow.t, measuredSeries, predictedSeries };
     } catch { return null; }
   }));
   return rows.filter(Boolean) as TideAnomaly[];
@@ -775,7 +776,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://api.adsb.lol/v2/squawk/7700', undefined, 6000),
     json<any>('https://api.adsb.lol/v2/squawk/7600', undefined, 6000),
     json<any[]>('https://services.swpc.noaa.gov/products/alerts.json', undefined, 6000),
-    json<any>('https://api.carbonintensity.org.uk/intensity/date', undefined, 6000)
+    json<any>(`https://api.carbonintensity.org.uk/intensity/${new Date(Date.now() - 24 * 3600000).toISOString().slice(0, 16)}Z/fw24h`, undefined, 6000)
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
