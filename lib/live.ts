@@ -259,8 +259,9 @@ function noveltyZ(series: Array<{ t: number; v: number }> | undefined): number |
   const vs = series.map(r => r.v).filter(Number.isFinite);
   if (vs.length < 12) return null;
   const latest = vs[vs.length - 1];
-  const mean = vs.reduce((a, b) => a + b, 0) / vs.length;
-  const variance = vs.reduce((a, b) => a + (b - mean) ** 2, 0) / vs.length;
+  const base = vs.slice(0, -1);
+  const mean = base.reduce((a, b) => a + b, 0) / base.length;
+  const variance = base.reduce((a, b) => a + (b - mean) ** 2, 0) / base.length;
   const sd = Math.sqrt(variance);
   if (sd < 1e-9) return null;
   return (latest - mean) / sd;
@@ -1772,15 +1773,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const medianAltitude = altitudes.length ? (altitudes.length % 2 ? altitudes[middle] : (altitudes[middle - 1] + altitudes[middle]) / 2) : 0;
     const feedAge = flights?.now ? Math.max(0, (Date.now() - Number(flights.now)) / 1000) : 0;
     const latestSeen = Math.min(...flightRows.map((a: any) => Number(a.seen_pos ?? a.seen ?? 30)).filter(Number.isFinite)) + feedAge;
-    out.push({ id: 'tokyo-air-corridor', template: 'city', title: 'Aircraft are threading through Tokyo’s sky right now', kicker: 'Live ADS-B aggregation', visual: 'city', score: 74 + Math.min(10, flightCount / 20), freshness: Number.isFinite(latestSeen) ? `positions ~${Math.max(0, Math.round(latestSeen))}s old` : 'live feed', location: { lat: 35.68, lon: 139.69, label: 'Tokyo airspace, aggregated' }, summary: 'Public ADS-B receivers are seeing aircraft around Tokyo. Elsewhere aggregates the traffic instead of exposing individual aircraft identifiers; coverage is crowdsourced and not authoritative air-traffic control data.', facts: [
-      { label: 'Aircraft in sample', value: String(flightCount), kind: 'observed' }, { label: 'Median altitude', value: `${Math.round(medianAltitude / 100) / 10}k ft`, kind: 'observed' }, { label: 'Newest position', value: Number.isFinite(latestSeen) ? `~${Math.max(0, Math.round(latestSeen))}s old at retrieval` : 'Unknown', kind: 'observed' }, { label: 'Coverage', value: 'Crowdsourced receivers', kind: 'interpretation' }
-    ], sources: [src('adsb.lol open ADS-B API', 'https://api.adsb.lol/')], related: ['City cameras', 'Night lights', 'Air quality pulse'] });
   }
 
   const wave = marine?.current;
-  if (wave) out.push({ id: 'nazare-swell', template: 'ocean', title: 'Atlantic swell is reorganizing the edge of Portugal', kicker: 'Near-real-time ocean model', visual: 'ocean', score: 68 + Math.min(16, Number(wave.wave_height ?? 0) * 4), freshness: ago(wave.time), location: { lat: 39.6, lon: -9.07, label: 'Nazaré, Portugal' }, summary: 'A high-resolution ocean model estimates waves and swell off Nazaré, a coastline famous for amplifying Atlantic energy. These are model values, not a buoy observation.', facts: [
-    { label: 'Wave height', value: `${Number(wave.wave_height ?? 0).toFixed(1)} m`, kind: 'interpretation' }, { label: 'Swell period', value: `${Math.round(wave.swell_wave_period ?? wave.wave_period ?? 0)} s`, kind: 'interpretation' }, { label: 'Data type', value: 'Numerical ocean model', kind: 'verified' }, { label: 'Breaking surf', value: 'Not proven', kind: 'question' }
-  ], sources: [src('Open-Meteo marine API', 'https://open-meteo.com/en/docs/marine-weather-api')], related: ['Storm surge', 'Coastal cameras', 'Portugal coastal currents'] });
 
   const carbonNow = carbon?.data?.[0]?.intensity;
   const mix = generation?.data?.generationmix ?? [];
@@ -2408,6 +2403,67 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       sources: [src('LiveATC.net', 'https://www.liveatc.net/')],
       related: ['airborne-now', 'military-aircraft-visible', 'aircraft-emergency-now']
     });
+  }
+
+
+  // --- The meta-scan: across every instrument series currently flowing through
+  // the system, which single measurement is the most statistically unusual right
+  // now? This is the measured-novelty detector generalized — the app auditing its
+  // own instruments. Conditional: appears only when something is genuinely odd.
+  {
+    const candidates: Array<{ z: number; instrument: string; value: string; meaning: string; lat: number; lon: number; label: string; series?: Array<{ t: number; v: number }> }> = [];
+    if (Array.isArray(buoys)) for (const b of buoys as any[]) {
+      const zw = noveltyZ(b.waveSeries);
+      if (zw != null && Math.abs(zw) >= 2) candidates.push({ z: zw, instrument: `wave height at ${b.name}`, value: `${Number(b.waveHeight).toFixed(1)} m seas`, meaning: zw > 0 ? 'seas running unusually high for this buoy right now' : 'unusually flat — the ocean holding its breath', lat: b.lat, lon: b.lon, label: b.name, series: b.waveSeries });
+      const zp = noveltyZ(b.pressureSeries);
+      if (zp != null && Math.abs(zp) >= 2) candidates.push({ z: zp, instrument: `barometric pressure at ${b.name}`, value: `${Number(b.pressure).toFixed(1)} hPa`, meaning: zp < 0 ? 'pressure unusually low or falling fast — cyclonic behavior' : 'pressure unusually high — strong ridge building', lat: b.lat, lon: b.lon, label: b.name, series: b.pressureSeries });
+    }
+    if (Array.isArray(darts)) for (const d of darts as any[]) {
+      const zd = noveltyZ(d.series);
+      if (zd != null && Math.abs(zd) >= 2) candidates.push({ z: zd, instrument: `seafloor water column at DART ${d.id}`, value: `${d.height.toFixed(2)} m`, meaning: 'the weight of the ocean above the tsunami sensor is deviating from its own recent behavior', lat: d.lat, lon: d.lon, label: d.name, series: d.series });
+    }
+    if (Array.isArray(kp) && kp.length > 8) {
+      const rows = kp.slice(1).map((r: any) => ({ t: new Date(r[0]).getTime(), v: Number(r[1]) })).filter((r: any) => Number.isFinite(r.v) && Number.isFinite(r.t));
+      const z = noveltyZ(rows);
+      const latestRow = rows[rows.length - 1];
+      if (z != null && Math.abs(z) >= 2 && latestRow) candidates.push({ z, instrument: 'planetary K index — global geomagnetic disturbance', value: `Kp ${latestRow.v.toFixed(1)}`, meaning: z > 0 ? 'the magnetosphere is ringing harder than its own recent baseline' : 'unusually quiet space weather', lat: 0, lon: 0, label: 'Global magnetometer network', series: rows });
+    }
+    const ukRows = ukIntensity24h?.data ?? [];
+    const ukSeries = ukRows.map((r: any) => ({ t: new Date(r.from).getTime(), v: r?.intensity?.actual })).filter((p: any) => Number.isFinite(p.v) && Number.isFinite(p.t));
+    {
+      const z = noveltyZ(ukSeries);
+      if (z != null && Math.abs(z) >= 2 && ukSeries.length) candidates.push({ z, instrument: 'UK grid carbon intensity', value: `${Math.round(ukSeries[ukSeries.length - 1].v)} gCO₂/kWh`, meaning: z > 0 ? 'the grid is running unusually dirty against its own daily rhythm' : 'the grid is running unusually clean — wind or demand shifting', lat: 52.5, lon: -1.8, label: 'Great Britain grid', series: ukSeries });
+    }
+    if (Array.isArray(xrays) && xrays.length > 20) {
+      const xs = xrays.map((r: any) => ({ t: new Date(r.time_tag).getTime(), v: Number(r.flux) })).filter((r: any) => Number.isFinite(r.v) && r.v > 0 && Number.isFinite(r.t));
+      if (xs.length > 20) {
+        // log-scale: flares are multiplicative events
+        const logSeries = xs.map(r => ({ t: r.t, v: Math.log10(r.v) }));
+        const z = noveltyZ(logSeries);
+        if (z != null && Math.abs(z) >= 2) candidates.push({ z, instrument: 'solar X-ray flux at GOES', value: `${xs[xs.length - 1].v.toExponential(1)} W/m²`, meaning: z > 0 ? 'the Sun just got brighter in X-rays — the signature of a flare in progress' : 'the Sun unusually quiet in X-rays', lat: 0, lon: 0, label: 'GOES X-ray sensor, geostationary orbit', series: undefined });
+      }
+    }
+    candidates.sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
+    const top = candidates[0];
+    if (top && Math.abs(top.z) >= 2.5) {
+      const others = candidates.slice(1, 4);
+      const chart = top.series && top.series.length >= 12 ? buildSeriesChartSvg(top.instrument, 'measured series', top.series, '#ffd166', 'the trailing record this reading is judged against') : null;
+      out.push({
+        id: 'most-unusual-measurement', template: 'ocean', title: `The most statistically unusual measurement on Earth right now: ${top.instrument}`, kicker: 'The planet auditing itself — novelty detection across all live instruments', visual: 'ocean', score: 86 + Math.min(8, Math.round(Math.abs(top.z))), freshness: 'computed this minute',
+        location: { lat: top.lat, lon: top.lon, label: top.label },
+        mediaImage: chart ?? undefined, mediaAlt: 'Instrument series with the anomalous latest reading',
+        summary: `Every minute this system asks the same question of every instrument it can read: compared to your own recent behavior, how strange is what you are measuring right now? The current answer: ${top.instrument} reads ${top.value} — a z-score of ${top.z > 0 ? '+' : ''}${top.z.toFixed(1)}, meaning the reading is ${Math.abs(top.z).toFixed(1)} standard deviations from this instrument's own trailing baseline. ${top.meaning.charAt(0).toUpperCase() + top.meaning.slice(1)}. This is how genuinely interesting events separate themselves from noise: not by crossing fixed thresholds, but by being unusual for the place that is measuring them.`,
+        facts: [
+          { label: 'Reading', value: top.value, kind: 'observed' },
+          { label: 'Novelty (z-score)', value: `${top.z > 0 ? '+' : ''}${top.z.toFixed(2)} standard deviations vs the instrument's own trailing series`, kind: 'observed' },
+          { label: 'What it means', value: top.meaning, kind: 'interpretation' },
+          others.length ? { label: 'Runners-up right now', value: others.map(o => `${o.instrument} (${o.z > 0 ? '+' : ''}${o.z.toFixed(1)})`).join(' · ').slice(0, 140), kind: 'observed' } : null,
+          { label: 'Method honesty', value: 'Each instrument is only ever compared to itself — no cross-instrument false precision. Needs 12+ points of history or the instrument sits out.', kind: 'verified' }
+        ].filter(Boolean) as any,
+        sources: [src('Instrument series as cited on each card', 'https://www.ndbc.noaa.gov/')],
+        related: ['measured-planet-live', 'storm-deepening-now', 'space-weather-now']
+      });
+    }
   }
 
   return connectDiscoveries(out.sort((a, b) => b.score - a.score)).map(d => ({ ...d, retrieved } as Discovery));

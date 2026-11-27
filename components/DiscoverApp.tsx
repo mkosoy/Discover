@@ -670,7 +670,7 @@ export default function DiscoverApp() {
           <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} autoPlay /> : active.mediaAudio ?
           <LiveAudio src={active.mediaAudio} station={active.title.split('—')[0].trim()} place={active.location.label} autoPlay={watching} /> :
           <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
-          {active.visual !== 'nasa-live' && !active.mediaVideo && !active.mediaAudio && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? (active.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : active.mediaImage.includes('embed.skylinewebcams.com') ? 'Live camera image · refreshing' : active.mediaImage.includes('timeseriesplot') ? 'Live instrument trace — updating' : active.mediaImage.startsWith('data:image/svg') ? 'Chart rendered from live gauge data' : 'Latest public Earth imagery') : 'Animated evidence visualization'}</div>}
+          {active.visual !== 'nasa-live' && !active.mediaVideo && !active.mediaAudio && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? (active.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : active.mediaImage.includes('embed.skylinewebcams.com') ? 'Live camera image · refreshing' : active.mediaImage.includes('timeseriesplot') ? 'Live instrument trace — updating' : active.mediaImage.startsWith('data:image/svg') ? 'Live data visualization — rendered from current readings' : 'Latest public Earth imagery') : 'Animated evidence visualization'}</div>}
         </div>
         <div className="panelBody">
           <div className="eyebrow"><Sparkles size={14} />{active.kicker}</div>
