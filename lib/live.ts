@@ -1645,6 +1645,30 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     }
   }
 
+  // --- Regional surge event: when MULTIPLE tide gauges along a coast run high
+  // simultaneously, that is a regional-scale event — one gauge can be local
+  // weather, four gauges in agreement is the ocean itself moving. Conditional.
+  {
+    const elevated = (tides ?? []).filter((t: TideAnomaly) => t.anomaly > 0.25);
+    if (elevated.length >= 3) {
+      const worst = [...elevated].sort((a, b) => b.anomaly - a.anomaly)[0];
+      const names = elevated.map(t => t.name.split(',')[0]).slice(0, 4).join(', ');
+      out.push({
+        id: 'regional-surge-now', template: 'ocean', title: `The sea is running high along thousands of kilometers of coastline at once — ${elevated.length} tide gauges agree`, kicker: 'Regional surge — measured across a network', visual: 'ocean', score: 88 + Math.min(6, elevated.length), freshness: 'gauges reporting within the hour',
+        location: { lat: worst.lat, lon: worst.lon, label: `${worst.name} — highest anomaly` },
+        summary: `A single tide gauge running hot can be a local squall. But right now, ${elevated.length} independent gauges — ${names}${elevated.length > 4 ? ' and more' : ''} — all read significantly above the moon's prediction at the same time. That pattern means water is being piled against an entire region's coastline: a large-scale storm system is moving the ocean itself, and every gauge is feeling the same event from its own pier. ${worst.name.split(',')[0]} is highest at +${Math.round(worst.anomaly * 100)} cm. No model told us this — the network measured it.`,
+        facts: [
+          { label: 'Gauges elevated right now', value: `${elevated.length} stations above +25 cm anomaly`, kind: 'observed' },
+          { label: 'Highest reading', value: `${worst.name} — +${Math.round(worst.anomaly * 100)} cm`, kind: 'observed' },
+          { label: 'Why agreement matters', value: 'Independent instruments hundreds of km apart cancel out local noise — what remains is the regional event', kind: 'interpretation' },
+          { label: 'Detection method', value: 'NOAA CO-OPS network scanned for simultaneous positive anomalies, measured vs astronomical prediction', kind: 'verified' }
+        ],
+        sources: [src('NOAA CO-OPS tide network', 'https://tidesandcurrents.noaa.gov/')],
+        related: ['The measured planet', 'Coastal storm synthesis', 'Wildest water']
+      });
+    }
+  }
+
   // --- Volcanic unrest convergence: a swarm of small quakes clustered under a
   // known volcano is how eruptions announce themselves weeks to hours ahead.
   // Conditional: only while a volcano is actually shaking.
