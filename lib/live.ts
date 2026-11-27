@@ -1837,6 +1837,19 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       out.push({
         id: `polar-extremes-${northern ? 'north' : 'south'}`, template: 'atmosphere', title: `The sun never rises on ${darkPick.name.split(',')[0]} — and never sets on ${lightPick.name.split(',')[0]}`, kicker: 'The planet’s seasonal extreme, live',
         visual: 'aurora', score: 72, freshness: 'computed this minute',
+        mediaImage: (() => {
+          const series: Array<{ t: number; v: number }> = [];
+          const utcH2 = new Date().getUTCHours() + new Date().getUTCMinutes() / 60;
+          for (let h = -24; h <= 0; h += 0.5) {
+            const sl = -(((utcH2 + h) * 60 + eqtime) / 4 - 180);
+            const ha = norm(darkPick.lon - sl) * Math.PI / 180;
+            const latR3 = darkPick.lat * Math.PI / 180;
+            const el = Math.asin(Math.sin(latR3) * Math.sin(decl) + Math.cos(latR3) * Math.cos(decl) * Math.cos(ha)) * 180 / Math.PI;
+            series.push({ t: Date.now() + h * 3600000, v: el });
+          }
+          return buildSeriesChartSvg(`the sun over ${darkPick.name.split(',')[0]} — 24 hours, never rising`, 'sun elevation, degrees (negative = below horizon)', series, '#8899ff', 'the whole day below zero — polar night, computed from orbital geometry') ?? undefined;
+        })(),
+        mediaAlt: 'The sun\u2019s elevation across a full polar day — flat below the horizon',
         location: { lat: darkPick.lat, lon: darkPick.lon, label: `${darkPick.name} — polar night` },
         summary: `At solar noon in ${darkPick.name}, the sun climbs to only ${darkPick.noonElev.toFixed(1)}° — below the horizon all day. At the same moment, in ${lightPick.name}, the sun is still ${lightPick.midnightElev.toFixed(1)}° above the horizon at midnight. One planet, two opposite sky-clocks, both computed from the same orbital geometry.`,
         facts: [
