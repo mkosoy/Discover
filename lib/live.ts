@@ -254,6 +254,35 @@ function recordReading(key: string, v: number, t = Date.now()) {
 // instrument's own recent history (z-score). This is the core of honest
 // "is this interesting right now" detection — the instrument's own
 // baseline decides, not an arbitrary threshold.
+// --- Feed delta memory: compact snapshots of the whole feed over time, so the
+// app can answer "what changed on Earth in the last hour?" — the temporal
+// dimension of interesting. Persisted across restarts like instrument history.
+const feedSnapshots: Array<{ t: number; ids: Array<{ id: string; title: string; score: number }> }> = [];
+const SNAPSHOT_FILE = '/tmp/discover-feed-snapshots.json';
+try {
+  const fs = require('fs');
+  if (fs.existsSync(SNAPSHOT_FILE)) {
+    const saved = JSON.parse(fs.readFileSync(SNAPSHOT_FILE, 'utf8'));
+    if (Array.isArray(saved)) for (const s of saved) if (s && Number.isFinite(s.t) && Array.isArray(s.ids)) feedSnapshots.push(s);
+  }
+} catch { /* first run */ }
+
+function snapshotFeed(cards: Array<{ id: string; title: string; score: number }>) {
+  const last = feedSnapshots[feedSnapshots.length - 1];
+  if (last && Date.now() - last.t < 4 * 60000) return;
+  feedSnapshots.push({ t: Date.now(), ids: cards.map(c => ({ id: c.id, title: c.title.slice(0, 110), score: Math.round(c.score) })) });
+  const cutoff = Date.now() - 36 * 3600000;
+  while (feedSnapshots.length && feedSnapshots[0].t < cutoff) feedSnapshots.shift();
+  if (feedSnapshots.length > 240) feedSnapshots.splice(0, feedSnapshots.length - 240);
+  try { require('fs').writeFileSync(SNAPSHOT_FILE, JSON.stringify(feedSnapshots)); } catch { /* best effort */ }
+}
+
+// Rotating-by-design cards would spam the delta with noise — a new radio
+// station every few minutes is rotation, not planetary change.
+function isRotationalId(id: string): boolean {
+  return /^(radio-|wildlife-pulse-|camera-|atc-|epic-earth-|terminator-|sunset-chase|tokyo-waking|airborne-now|humanity-editing|military-aircraft|uk-grid|keeling|ocean-skin|earth-extremes|humanity-darkness|wildest-water|lightning-space|point-nemo)/.test(id);
+}
+
 function noveltyZ(series: Array<{ t: number; v: number }> | undefined): number | null {
   if (!series || series.length < 12) return null;
   const vs = series.map(r => r.v).filter(Number.isFinite);
@@ -572,6 +601,38 @@ export async function tideAnomalies(): Promise<TideAnomaly[]> {
     } catch { return null; }
   }));
   return rows.filter(Boolean) as TideAnomaly[];
+}
+
+// USGS river discharge — the continents bleeding freshwater into the sea,
+// measured at physical gauges every 15 minutes. Too slow for the main batch
+// (10-15s per query), so it lives in its own 10-minute cache tier — river
+// cadence is slow anyway. This is real measured water, not model output.
+const RIVER_SITES: Array<[string, string, number, number, number]> = [
+  // [siteId, label, lat, lon, typicalCfs — rough median for context]
+  ['07022000', 'Mississippi at Thebes, Illinois', 37.22, -89.46, 200000],
+  ['09380000', 'Colorado at Lees Ferry, Arizona', 36.87, -111.59, 12000],
+  ['14105700', 'Columbia at The Dalles, Oregon', 45.61, -121.17, 150000],
+  ['01358000', 'Hudson at Green Island, New York', 42.75, -73.69, 13000]
+];
+const riverCache: { at: number; data: any[] } = { at: 0, data: [] };
+
+async function riverObservations(): Promise<any[]> {
+  if (riverCache.data.length && Date.now() - riverCache.at < 10 * 60000) return riverCache.data;
+  const rows = await Promise.all(RIVER_SITES.map(async ([site, label, lat, lon, typical]) => {
+    try {
+      const data = await json<any>(`https://waterservices.usgs.gov/nwis/iv/?format=json&sites=${site}&parameterCd=00060&period=PT12H`, undefined, 14000);
+      const ts = data?.value?.timeSeries?.[0];
+      const values: Array<{ t: number; v: number }> = (ts?.values?.[0]?.value ?? []).map((r: any) => ({ t: new Date(r.dateTime).getTime(), v: Number(r.value) })).filter((r: any) => Number.isFinite(r.v) && r.v >= 0 && Number.isFinite(r.t));
+      if (values.length < 8) return null;
+      const latest = values[values.length - 1];
+      const ageMin = Math.round((Date.now() - latest.t) / 60000);
+      if (ageMin > 240) return null;
+      return { site, label, lat, lon, typical, latest: latest.v, series: values, ageMin };
+    } catch { return null; }
+  }));
+  const good = rows.filter(Boolean);
+  if (good.length) { riverCache.data = good; riverCache.at = Date.now(); }
+  return riverCache.data.length ? riverCache.data : good;
 }
 
 // DART — Deep-ocean Assessment and Reporting of Tsunamis. Bottom pressure
@@ -1011,7 +1072,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, astros, milAircraft, p2pquakeFeed, darts] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, astros, milAircraft, p2pquakeFeed, darts, rivers] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1051,7 +1112,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('http://api.open-notify.org/astros.json', undefined, 5000),
     json<any>('https://api.adsb.lol/v2/mil', undefined, 7000),
     json<any[]>('https://api.p2pquake.net/v2/history?codes=551&limit=3', undefined, 6000),
-    dartObservations()
+    dartObservations(),
+    riverObservations()
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -2464,6 +2526,79 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         related: ['measured-planet-live', 'storm-deepening-now', 'space-weather-now']
       });
     }
+  }
+
+
+  // --- What changed on Earth: the feed diffed against itself an hour ago.
+  // The temporal insight layer — events are nouns, but change is the verb.
+  {
+    snapshotFeed(out.map(c => ({ id: c.id, title: c.title, score: c.score })));
+    const nowT = Date.now();
+    const reference = [...feedSnapshots].reverse().find(s => nowT - s.t >= 45 * 60000 && nowT - s.t <= 5 * 3600000)
+        ?? (feedSnapshots.length >= 3 ? [...feedSnapshots].reverse().find(s => nowT - s.t >= 15 * 60000) : undefined);
+    if (reference && reference.ids.length > 10) {
+      const minutes = Math.round((nowT - reference.t) / 60000);
+      const refIds = new Set(reference.ids.map(r => r.id));
+      const nowIds = new Set(out.map(c => c.id));
+      const appeared = out.filter(c => !refIds.has(c.id) && !isRotationalId(c.id)).sort((a, b) => b.score - a.score);
+      const resolved = reference.ids.filter(r => !nowIds.has(r.id) && !isRotationalId(r.id));
+      // measurement movers from instrument history
+      const movers: Array<{ key: string; delta: number; hours: number }> = [];
+      for (const key of Object.keys(instrumentHistory)) {
+        const d = deltaSince(key, minutes / 60);
+        if (d && Number.isFinite(d.delta) && Math.abs(d.hours - minutes / 60) < 1.5) movers.push({ key, ...d });
+      }
+      const waveMovers = movers.filter(m => m.key.includes('waves')).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+      const presMovers = movers.filter(m => m.key.includes('pressure')).sort((a, b) => a.delta - b.delta);
+      const lines: string[] = [];
+      if (appeared.length) lines.push(`${appeared.length} new event${appeared.length > 1 ? 's' : ''} entered the record — led by "${appeared[0].title.split('—')[0].trim().slice(0, 70)}"`);
+      if (resolved.length) lines.push(`${resolved.length} event${resolved.length > 1 ? 's' : ''} faded from the live record`);
+      if (waveMovers.length && Math.abs(waveMovers[0].delta) >= 0.4) lines.push(`seas at the fastest-changing buoy ${waveMovers[0].delta > 0 ? 'built' : 'dropped'} ${Math.abs(waveMovers[0].delta).toFixed(1)} m`);
+      if (presMovers.length && Math.abs(presMovers[0].delta) >= 1.5) lines.push(`pressure ${presMovers[0].delta < 0 ? 'fell' : 'rose'} ${Math.abs(presMovers[0].delta).toFixed(1)} hPa at the fastest-changing barometer`);
+      if (lines.length) {
+        out.push({
+          id: 'earth-delta-hour', template: 'atmosphere', title: `The last ${minutes >= 90 ? Math.round(minutes / 60) + ' hours' : 'hour'} on Earth, diffed: ${lines[0].charAt(0).toLowerCase() + lines[0].slice(1)}`, kicker: 'The planet as a diff — what actually changed', visual: 'storm', score: 81, freshness: `compared against ${minutes} minutes ago`,
+          location: { lat: appeared[0]?.location.lat ?? 0, lon: appeared[0]?.location.lon ?? 0, label: appeared[0]?.location.label ?? 'Global' },
+          summary: `Most news tells you what is happening. This tells you what CHANGED — the feed compared against itself ${minutes} minutes ago, instrument deltas included. ${lines.join('; ')}. Change is the truest signal of a living planet: a static extreme is climate, but a delta is an event.`,
+          facts: [
+            appeared.length ? { label: 'New events', value: appeared.slice(0, 3).map(a => a.title.split('—')[0].trim().slice(0, 55)).join(' · '), kind: 'observed' } : null,
+            resolved.length ? { label: 'Resolved or faded', value: `${resolved.length} — including "${resolved[0].title.split('—')[0].trim().slice(0, 50)}"`, kind: 'observed' } : null,
+            waveMovers.length ? { label: 'Fastest seas change', value: `${waveMovers[0].delta > 0 ? '+' : ''}${waveMovers[0].delta.toFixed(1)} m at ${waveMovers[0].key.split('-')[1]} over the window`, kind: 'observed' } : null,
+            presMovers.length ? { label: 'Fastest pressure change', value: `${presMovers[0].delta > 0 ? '+' : ''}${presMovers[0].delta.toFixed(1)} hPa`, kind: 'observed' } : null,
+            { label: 'Method', value: 'Feed snapshots persisted continuously; rotational cards (radio, cameras) excluded so only real planetary change surfaces', kind: 'verified' }
+          ].filter(Boolean) as any,
+          sources: [src('Elsewhere continuous feed memory', 'https://github.com/mkosoy/Discover')],
+          related: ['measured-planet-live', 'most-unusual-measurement', 'coastal-storm-synthesis']
+        });
+      }
+    }
+  }
+
+
+  // --- The continental water pulse: major rivers measured at physical gauges.
+  if (Array.isArray(rivers) && (rivers as any[]).length >= 2) {
+    const rr = rivers as any[];
+    const withZ = rr.map(r => ({ ...r, z: noveltyZ(r.series) })).filter(r => r.z != null);
+    const mostUnusual = withZ.sort((a, b) => Math.abs(b.z!) - Math.abs(a.z!))[0];
+    const totalCfs = rr.reduce((a, r) => a + r.latest, 0);
+    const totalM3s = Math.round(totalCfs * 0.0283);
+    const biggest = [...rr].sort((a, b) => b.latest - a.latest)[0];
+    const chart = buildSeriesChartSvg(`${biggest.label.split(' at ')[0]} discharge`, 'cubic feet per second, measured', biggest.series, '#5cc8ff', `USGS gauge ${biggest.site} — physical measurement, not model`);
+    const isSurging = mostUnusual && Math.abs(mostUnusual.z!) >= 2.2;
+    out.push({
+      id: 'river-pulse-live', template: 'ocean', title: isSurging ? `The ${mostUnusual.label.split(' at ')[0]} is ${mostUnusual.z! > 0 ? 'surging' : 'running unusually low'} — ${Math.abs(mostUnusual.z!).toFixed(1)} standard deviations off its own baseline` : `Four of America's great rivers are carrying about ${totalM3s.toLocaleString()} cubic meters per second right now`, kicker: 'Continental water, measured at physical gauges', visual: 'ocean', score: isSurging ? 88 : 75, freshness: `gauged ${biggest.ageMin} minutes ago`,
+      location: { lat: biggest.lat, lon: biggest.lon, label: biggest.label },
+      mediaImage: chart ?? undefined, mediaAlt: 'Measured river discharge over the last 12 hours',
+      summary: `Every fifteen minutes, automated gauges in the USGS network measure how much water the continents are actually moving — stage height converted to discharge by physically surveyed rating curves. Right now: ${rr.map(r => `${r.label.split(' at ')[0]} ${Math.round(r.latest * 0.0283).toLocaleString()} m³/s`).join(', ')}. ${isSurging ? `The ${mostUnusual.label.split(' at ')[0]} stands out statistically: its current flow is ${Math.abs(mostUnusual.z!).toFixed(1)} standard deviations ${mostUnusual.z! > 0 ? 'above' : 'below'} its own trailing 12 hours — the kind of signature that follows heavy rain upstream or a dam release.` : 'No river is currently surprising its own baseline — the continental water cycle is in an ordinary mood tonight. These gauges are the same instruments that issue flood warnings.'}`,
+      facts: [
+        { label: 'Combined measured flow', value: `~${totalM3s.toLocaleString()} m³/s across ${rr.length} major rivers`, kind: 'observed' },
+        ...rr.slice(0, 4).map(r => ({ label: r.label.split(' at ')[0], value: `${Math.round(r.latest * 0.0283).toLocaleString()} m³/s${r.z != null && Math.abs(r.z) >= 1.5 ? ` — z ${r.z > 0 ? '+' : ''}${r.z.toFixed(1)}` : ''}`, kind: 'observed' as const })),
+        { label: 'How it is measured', value: 'Physical gauge — stage height through surveyed rating curves, every 15 minutes', kind: 'verified' },
+        { label: 'Why it matters', value: 'Rivers are the continents\' hydrological pulse: floods, droughts and dam operations all write themselves here first', kind: 'interpretation' }
+      ],
+      sources: [src('USGS Water Services', 'https://waterservices.usgs.gov/')],
+      related: ['sea-defies-moon', 'dart-seafloor-live', 'ocean-measured-now', 'The measured planet']
+    });
   }
 
   return connectDiscoveries(out.sort((a, b) => b.score - a.score)).map(d => ({ ...d, retrieved } as Discovery));
