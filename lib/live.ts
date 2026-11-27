@@ -685,7 +685,9 @@ const DART_STATIONS: Array<[string, string, number, number]> = [
   ['46412', 'off Chile — the 2010 rupture zone', -32.5, -73.4]
 ];
 
+const dartCache: { at: number; data: any[] } = { at: 0, data: [] };
 async function dartObservations(): Promise<Array<{ id: string; name: string; lat: number; lon: number; height: number; series: Array<{ t: number; v: number }>; ageMin: number }>> {
+  if (dartCache.data.length && Date.now() - dartCache.at < 8 * 60000) return dartCache.data;
   const rows = await Promise.all(DART_STATIONS.slice(0, 4).map(async ([id, name, lat, lon]) => {
     try {
       const raw = await text(`https://www.ndbc.noaa.gov/data/realtime2/${id}.dart`);
@@ -706,7 +708,9 @@ async function dartObservations(): Promise<Array<{ id: string; name: string; lat
       return { id, name, lat, lon, height: latest.v, series: series.reverse(), ageMin };
     } catch { return null; }
   }));
-  return rows.filter(Boolean) as any[];
+  const goodDarts = rows.filter(Boolean) as any[];
+  if (goodDarts.length) { dartCache.data = goodDarts; dartCache.at = Date.now(); }
+  return dartCache.data.length ? dartCache.data : goodDarts;
 }
 
 // Live radio Earth — the planet is broadcasting right now, in every language.
@@ -2747,7 +2751,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
   const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
   const currentYear = new Date().getFullYear();
-  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace, volcanoXml, myanmarNewsXml, haitiNewsXml, drcNewsXml, yemenNewsXml, myanmarUnhcr, haitiUnhcr, drcUnhcr, yemenUnhcr, upcomingLaunches, kpIndexRaw, plasmaRaw, xrayRaw, cityAir, gdacsBoardXml, invBuoys, invTides] = await Promise.all([
+  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace, volcanoXml, myanmarNewsXml, haitiNewsXml, drcNewsXml, yemenNewsXml, myanmarUnhcr, haitiUnhcr, drcUnhcr, yemenUnhcr, upcomingLaunches, kpIndexRaw, plasmaRaw, xrayRaw, cityAir, gdacsBoardXml, invBuoys, invTides, invDarts, invRivers] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
@@ -2783,6 +2787,9 @@ export async function getInvestigations(): Promise<Investigation[]> {
     text('https://www.gdacs.org/xml/rss.xml'),
     buoyObservations(),
     tideAnomalies()
+  ,
+    dartObservations(),
+    riverObservations()
   ]);
   const q = quake?.features?.[0];
   const evt = eonet?.events?.[0];
@@ -3660,12 +3667,14 @@ export async function getInvestigations(): Promise<Investigation[]> {
     out.push({
       id: 'measured-planet-live',
       title: `Right now, physical instruments are reading the planet: a buoy at ${rough.waveHeight.toFixed(1)} m seas${tideHit && Math.abs(tideHit.anomaly) >= 0.15 ? `, a tide gauge ${Math.round(Math.abs(tideHit.anomaly) * 100)} cm off its moon` : ''}`,
-      dek: `Not models — instruments. ${invBuoys.length} moored buoys are riding the open ocean reporting real wave heights; ${invTides?.length ?? 0} coastal tide gauges compare the actual sea against the astronomically predicted one; a lightning mapper in orbit counts optical flashes directly. This investigation is the planet's sensor network, read live, with the measurement method labeled on every number.`,
+      dek: `Not models — instruments. ${invBuoys.length} moored buoys are riding the open ocean reporting real wave heights; ${invTides?.length ?? 0} coastal tide gauges compare the actual sea against the astronomically predicted one; ${invDarts?.length ?? 0} bottom pressure recorders on the Pacific seafloor weigh the entire water column overhead; ${invRivers?.length ?? 0} continental river gauges measure what the land is shedding; a lightning mapper in orbit counts optical flashes directly. This investigation is the planet's sensor network, read live, with the measurement method labeled on every number.`,
       status: 'corroborated', location: { lat: rough.lat, lon: rough.lon, label: rough.name },
       updatedAt: new Date().toISOString(), confidence: 92,
       evidence: [
         { kind: 'observed', text: `Roughest measured sea: ${rough.waveHeight.toFixed(1)} m significant wave height at ${rough.name} — a physical buoy riding the surface, not a wave model.`, source: 'NOAA NDBC' },
         ...(tideHit ? [{ kind: 'observed' as const, text: `Largest tide anomaly: ${tideHit.anomaly >= 0 ? '+' : ''}${Math.round(tideHit.anomaly * 100)} cm at ${tideHit.name} — measured water level minus the lunar prediction, interpolated hourly.`, source: 'NOAA CO-OPS' }] : []),
+        ...(invDarts?.length ? [{ kind: 'observed' as const, text: `Deepest measurement: ${Math.round(invDarts[0].height).toLocaleString()} m of water pressing on the DART seafloor sensor at ${invDarts[0].name} — the tsunami early-warning network reading itself.`, source: 'NOAA DART' }] : []),
+        ...(invRivers?.length ? [{ kind: 'observed' as const, text: `Continental water: the ${invRivers[0].label.split(' at ')[0]} is carrying ${Math.round(invRivers[0].latest * 0.0283).toLocaleString()} m³/s past a physical gauge right now.`, source: 'USGS' }] : []),
         { kind: 'verified', text: 'Lightning over the Americas is optically detected by the GOES GLM sensor — each flash is a real optical pulse, not a radar inference.', source: 'NOAA GLM' },
         { kind: 'interpretation', text: 'The distinction matters: models interpolate the world, instruments experience it. Where the two disagree, the instrument is usually right.' }
       ],
