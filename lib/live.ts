@@ -1415,10 +1415,14 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     // Prefer community-confirmed (research-grade) sightings; fall back to the newest upload
     // with honest labeling rather than implying confirmation that has not happened yet.
     const research = spotted.filter((s: any) => s.grade === 'research');
-    // Prefer rarity: a seldom-documented species is a better story than a mallard —
-    // rank research-grade sightings by how rarely the species is observed network-wide.
+    // Freshness first: research-grade sightings are inherently days old (community
+    // confirmation takes time), so they can never be "just spotted". Filter to what
+    // was actually uploaded in the last 3 hours, then prefer rarity within that —
+    // a seldom-documented species is a far better story than a mallard.
     const byRarity = (a: any, b: any) => (a.taxonCount ?? 9e9) - (b.taxonCount ?? 9e9);
-    const pick = (research.length ? [...research].sort(byRarity)[0] : undefined) ?? [...spotted].sort(byRarity)[0];
+    const fresh = spotted.filter((s: any) => s.when && Date.now() - Date.parse(s.when) < 3 * 3600000);
+    const pool = fresh.length ? fresh : spotted;
+    const pick = (research.filter((s: any) => pool.includes(s)).length ? [...research.filter((s: any) => pool.includes(s))].sort(byRarity)[0] : undefined) ?? [...pool].sort(byRarity)[0];
     const observedMs = pick.observedOn ? Date.parse(pick.observedOn) : NaN;
     const uploadMs = pick.when ? Date.parse(pick.when) : NaN;
     const observedAgeH = Number.isFinite(observedMs) ? (Date.now() - observedMs) / 3600000 : NaN;
