@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { earthImagery, nightLightsSnapshot } from '@/lib/satellite';
 import { nearestPublicCameras } from '@/lib/cameras';
+import { currentWeather } from '@/lib/weather';
 
 async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
@@ -81,7 +82,7 @@ export async function GET(request: Request) {
   const lon = Number(url.searchParams.get('lon'));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return NextResponse.json({ error: 'invalid coordinates' }, { status: 400 });
   const [weather, place, air, quakes, gdacsXml, aircraftFeed, wiki] = await Promise.all([
-    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,weather_code,wind_speed_10m,wind_direction_10m,is_day&daily=sunrise,sunset&timezone=auto`),
+    currentWeather(lat, lon),
     json<any>(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=en`, { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }),
     json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,ozone&timezone=auto`),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson'),
@@ -145,9 +146,9 @@ export async function GET(request: Request) {
   }
   const notable = (wiki?.query?.geosearch ?? []).filter((n: any) => n?.title && !(/^(canton|arrondissement|province|prefecture|county|district|municipality|department|oblast|region|state) of /i.test(n.title) || /^(county|province|district|prefecture|oblast|region) \w+$/i.test(n.title) || /\b(county|prefecture|oblast|municipality|arrondissement)$/i.test(n.title)) && !/\((department|province|county|district|municipality|state|region|oblast|prefecture)\)/i.test(n.title));
   const facts = [
-    current ? { label: 'Weather', value: `${weatherText(current.weather_code)}, ${Math.round(current.temperature_2m)}°C`, kind: 'observed' } : { label: 'Weather', value: 'Unavailable', kind: 'question' },
-    current ? { label: 'Wind', value: `${Math.round(current.wind_speed_10m)} km/h from ${Math.round(current.wind_direction_10m)}°`, kind: 'observed' } : null,
-    current ? { label: 'Cloud cover', value: `${Math.round(current.cloud_cover)}%`, kind: 'observed' } : null,
+    current?.temperature_2m != null ? { label: 'Weather', value: `${weatherText(current.weather_code)}, ${Math.round(current.temperature_2m)}°C`, kind: 'observed' } : { label: 'Weather', value: 'Unavailable', kind: 'question' },
+    current?.wind_speed_10m != null ? { label: 'Wind', value: `${Math.round(current.wind_speed_10m)} km/h from ${Math.round(current.wind_direction_10m ?? 0)}°`, kind: 'observed' } : null,
+    current?.cloud_cover != null ? { label: 'Cloud cover', value: `${Math.round(current.cloud_cover)}%`, kind: 'observed' } : null,
     daylight ? { label: 'Light', value: daylight, kind: 'observed' } : null,
     weather?.daily?.sunrise?.[0] && weather?.daily?.sunset?.[0] ? { label: 'Sun rhythm', value: `${weather.daily.sunrise[0].slice(11, 16)} sunrise · ${weather.daily.sunset[0].slice(11, 16)} sunset`, kind: 'verified' } : null,
     current?.precipitation != null ? { label: 'Precipitation', value: `${Number(current.precipitation).toFixed(1)} mm now`, kind: 'observed' } : null,
@@ -163,6 +164,7 @@ export async function GET(request: Request) {
     nearestCameras.length > 1 ? { label: 'More look-ins', value: nearestCameras.slice(1).map(c => `${c.place} (${Math.round(c.distance)} km)`).join(' · '), kind: 'verified' } : null,
     notable.length ? { label: 'Notable nearby', value: notable.slice(0, 2).map((n: any) => `${n.title}${n.dist ? ` · ${n.dist < 1000 ? Math.round(n.dist) + ' m' : (n.dist / 1000).toFixed(1) + ' km'}` : ''}`).join(' — '), kind: 'verified' } : null,
     { label: 'Satellite context', value: imagery.nearRealtime ? 'GOES GeoColor sector image, usually minutes old' : 'Latest daylight swath; orbital gaps possible', kind: 'observed' },
+    { label: 'Weather provider', value: current?.provider === 'met.no' ? 'met.no (Open-Meteo fallback active)' : 'Open-Meteo', kind: 'verified' },
     { label: 'Attribution', value: 'Weather is model/grid data; reverse geocoding is approximate; populated places may be coarse', kind: 'question' }
   ].filter(Boolean);
   return NextResponse.json({

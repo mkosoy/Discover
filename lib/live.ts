@@ -3,6 +3,7 @@ import { ago, until } from './time';
 import * as satellite from 'satellite.js';
 import { earthImagery, worldviewSnapshot } from './satellite';
 import { cameraEmbed, nearestPublicCameras, publicCameras } from './cameras';
+import { currentWeather, currentWeatherBatch, isDaylightNow } from './weather';
 
 const now = () => new Date().toISOString();
 const src = (label: string, url: string) => ({ label, url, retrievedAt: now() });
@@ -352,7 +353,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=10'),
     json<any[]>('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
     json<any>('https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=4&mode=detailed'),
-    json<any>('https://api.open-meteo.com/v1/forecast?latitude=35.68&longitude=139.69&current=temperature_2m,weather_code,wind_speed_10m&daily=sunrise,sunset&timezone=auto'),
+    currentWeather(35.68, 139.69),
     json<any[]>('https://services.swpc.noaa.gov/json/ace/swepam/ace_swepam_1h.json'),
     json<any[]>('https://services.swpc.noaa.gov/json/ace/mag/ace_mag_1h.json'),
     json<any[]>('https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json'),
@@ -362,14 +363,14 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://api.carbonintensity.org.uk/intensity'),
     json<any>('https://api.carbonintensity.org.uk/generation'),
     text('https://www.gdacs.org/xml/rss.xml'),
-    json<any>('https://api.open-meteo.com/v1/forecast?latitude=-23.65&longitude=15.95&current=temperature_2m,weather_code,wind_speed_10m,is_day&timezone=auto'),
-    json<any>('https://api.open-meteo.com/v1/forecast?latitude=37.73&longitude=15.0&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day&timezone=auto'),
+    currentWeather(-23.65, 15.95),
+    currentWeather(37.73, 15.0),
     head('https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg'),
 
     nwsAlertsJson(),
-    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${featuredNow.map(camera => camera.lat).join(',')}&longitude=${featuredNow.map(camera => camera.lon).join(',')}&current=temperature_2m,wind_speed_10m,is_day,cloud_cover&timezone=auto`),
+    currentWeatherBatch(featuredNow.map(camera => [camera.lat, camera.lon] as [number, number]), 'temperature_2m,wind_speed_10m,is_day,cloud_cover'),
     json<any[]>('https://epic.gsfc.nasa.gov/api/natural', undefined, 6000),
-    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=36.5,29.3,14.24,63.46,-78.46,-89.99,71.29,72.58,-66.9,-41.29,-53.16,27.99,-23.5,23.0,1.35,55.75&longitude=-116.9,47.9,40.3,142.79,106.83,15,-156.79,-38.46,142.67,174.78,-70.91,86.93,-68.5,5.0,103.82,37.62&current=temperature_2m,wind_speed_10m,wind_gusts_10m&timezone=auto`),
+    currentWeatherBatch([[36.5,-116.9],[29.3,47.9],[14.24,40.3],[63.46,142.79],[-78.46,106.83],[-89.99,15],[71.29,-156.79],[72.58,-38.46],[-66.9,142.67],[-41.29,174.78],[-53.16,-70.91],[27.99,86.93],[-23.5,-68.5],[23.0,5.0],[1.35,103.82],[55.75,37.62]]),
     json<any>(`https://api.inaturalist.org/v1/observations?order=desc&order_by=created_at&per_page=14&photos=true&taxon_id=3&verifiable=true`, undefined, 6000),
     buoyObservations(),
     json<any>('https://www.nhc.noaa.gov/CurrentStorms.json', undefined, 6000)
@@ -814,7 +815,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   const kpValue = Number(latestKp?.Kp ?? latestKp?.[1] ?? 0);
   const utsjokiIndex = featuredNow.findIndex(c => c.id === 'utsjoki-aurora');
   const utsjokiSky = utsjokiIndex >= 0 && Array.isArray(cameraWeather) ? cameraWeather[utsjokiIndex]?.current : null;
-  const skyDark = utsjokiSky ? !utsjokiSky.is_day : null;
+  const utsjokiCam = utsjokiIndex >= 0 ? featuredNow[utsjokiIndex] : null;
+  const skyDark = utsjokiSky && utsjokiCam ? !isDaylightNow(utsjokiCam.lat, utsjokiCam.lon, utsjokiSky.is_day) : null;
   const skyCloud = utsjokiSky ? Number(utsjokiSky.cloud_cover) : null;
   const auroraAligned = skyDark === true && skyCloud != null && skyCloud < 45 && kpValue >= 3;
   // Lunar illumination from the synodic cycle — bright moonlight is a real aurora-visibility competitor.
@@ -863,7 +865,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   ], sources: [src('Carbon Intensity API', 'https://carbonintensity.org.uk/')], related: ['Grid weather context', 'Night lights', 'Historical comparison'] });
 
   if (tokyo?.current) out.push({ id: 'tokyo-waking', mediaVideo: 'https://www.youtube.com/embed/5B4LmH4JbnY?rel=0&autoplay=1&mute=1&playsinline=1', template: 'city', title: 'Tokyo is moving through its evening atmosphere', kicker: 'Open-Meteo city pulse', visual: 'city', score: 52, freshness: 'current conditions', location: { lat: 35.68, lon: 139.69, label: 'Tokyo' }, summary: 'Weather, air quality, aircraft activity and local time combine into a portrait of a megacity changing state. Air quality is modeled current data, not a direct roadside sensor reading.', facts: [
-    { label: 'Temperature', value: `${Math.round(tokyo.current.temperature_2m)}°C`, kind: 'observed' }, { label: 'Wind', value: `${Math.round(tokyo.current.wind_speed_10m)} km/h`, kind: 'observed' }, { label: 'PM2.5', value: tokyoAir?.current?.pm2_5 != null ? `${Math.round(tokyoAir.current.pm2_5)} μg/m³ model` : '—', kind: 'interpretation' }, { label: 'Sunrise', value: tokyo.daily?.sunrise?.[0]?.slice(11) ?? '—', kind: 'verified' }
+    { label: 'Temperature', value: `${Math.round(tokyo.current.temperature_2m ?? 0)}°C`, kind: 'observed' }, { label: 'Wind', value: `${Math.round(tokyo.current.wind_speed_10m ?? 0)} km/h`, kind: 'observed' }, { label: 'PM2.5', value: tokyoAir?.current?.pm2_5 != null ? `${Math.round(tokyoAir.current.pm2_5)} μg/m³ model` : '—', kind: 'interpretation' }, { label: 'Sunrise', value: tokyo.daily?.sunrise?.[0]?.slice(11) ?? '—', kind: 'verified' }
   ], sources: [src('Open-Meteo', 'https://open-meteo.com/'), src('Open-Meteo air quality', 'https://open-meteo.com/en/docs/air-quality-api')], related: ['Air quality pulse', 'City cameras', 'Night lights'] });
   if (namib?.current) out.push({
     id: 'namib-live-camera', template: 'atmosphere', title: 'A live camera is watching the Namib Desert breathe', kicker: 'Live landscape webcam', visual: 'city', score: 77,
@@ -871,9 +873,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     location: { lat: -23.65, lon: 15.95, label: 'Namib Desert, Namibia' },
     summary: 'A public live camera looks across one of Earth’s oldest deserts while current model weather grounds the scene. The camera shows what is visible now; wildlife or movement is never guaranteed.',
     facts: [
-      { label: 'Temperature', value: `${Math.round(namib.current.temperature_2m)}°C`, kind: 'observed' },
-      { label: 'Wind', value: `${Math.round(namib.current.wind_speed_10m)} km/h`, kind: 'observed' },
-      { label: 'Light', value: namib.current.is_day ? 'Daylight now' : 'Dark now', kind: 'observed' },
+      { label: 'Temperature', value: `${Math.round(namib.current.temperature_2m ?? 0)}°C`, kind: 'observed' },
+      { label: 'Wind', value: `${Math.round(namib.current.wind_speed_10m ?? 0)} km/h`, kind: 'observed' },
+      { label: 'Light', value: isDaylightNow(-23.65, 15.95, namib.current.is_day) ? 'Daylight now' : 'Dark now', kind: 'observed' },
       { label: 'Wildlife', value: 'Possible, never promised', kind: 'question' }
     ],
     sources: [src('NamibCam YouTube live stream', 'https://www.youtube.com/watch?v=ydYDqZQpim8'), src('Open-Meteo current weather', 'https://open-meteo.com/')],
@@ -886,9 +888,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     location: { lat: 37.73, lon: 15.0, label: 'Mount Etna, Sicily' },
     summary: 'A real-time camera faces one of Europe’s most active volcanoes while current weather supplies wind, temperature and daylight context. A quiet frame is still meaningful: the camera does not prove eruption or calm by itself.',
     facts: [
-      { label: 'Temperature', value: `${Math.round(etna.current.temperature_2m)}°C`, kind: 'observed' },
-      { label: 'Wind', value: `${Math.round(etna.current.wind_speed_10m)} km/h from ${Math.round(etna.current.wind_direction_10m)}°`, kind: 'observed' },
-      { label: 'Light', value: etna.current.is_day ? 'Daylight now' : 'Dark now', kind: 'observed' },
+      { label: 'Temperature', value: `${Math.round(etna.current.temperature_2m ?? 0)}°C`, kind: 'observed' },
+      { label: 'Wind', value: `${Math.round(etna.current.wind_speed_10m ?? 0)} km/h from ${Math.round(etna.current.wind_direction_10m ?? 0)}°`, kind: 'observed' },
+      { label: 'Light', value: isDaylightNow(37.73, 15.0, etna.current.is_day) ? 'Daylight now' : 'Dark now', kind: 'observed' },
       { label: 'Eruption status', value: 'Not inferred from camera alone', kind: 'question' }
     ],
     sources: [src('Mount Etna live camera', 'https://www.youtube.com/watch?v=JmKT_-IAUPc'), src('Open-Meteo current weather', 'https://open-meteo.com/')],
@@ -943,7 +945,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   featuredNow.forEach((camera, index) => {
     const copy = cameraCopy[camera.id] ?? generatedCopy(camera);
     const current = Array.isArray(cameraWeather) ? cameraWeather[index]?.current : null;
-    const night = current ? !current.is_day : false;
+    const night = current ? !isDaylightNow(camera.lat, camera.lon, current.is_day) : false;
     const nightAdjustment = !current ? 0 : camera.kind === 'aurora' ? (night ? 5 : -16) : camera.kind === 'city' ? (night ? 2 : 0) : (night ? -14 : 0);
     const nearbyEvent = camProximity(camera);
     const eventBoost = nearbyEvent ? (nearbyEvent.item.eventType === 'VO' && camera.kind === 'volcano' ? 10 : 7) : 0;
@@ -968,7 +970,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         { label: 'Camera source', value: 'Authorized public YouTube embed', kind: 'verified' },
         { label: 'Temperature', value: current ? `${Math.round(current.temperature_2m)}°C` : 'Unavailable', kind: current ? 'observed' : 'question' },
         { label: 'Wind', value: current ? `${Math.round(current.wind_speed_10m)} km/h` : 'Unavailable', kind: current ? 'observed' : 'question' },
-        { label: 'Light / cloud', value: current ? `${current.is_day ? 'Daylight' : 'Dark'} · ${Math.round(current.cloud_cover)}% cloud` : 'Unavailable', kind: current ? 'observed' : 'question' },
+        { label: 'Light / cloud', value: current ? `${isDaylightNow(camera.lat, camera.lon, current.is_day) ? 'Daylight' : 'Dark'} · ${Math.round(current.cloud_cover ?? 0)}% cloud` : 'Unavailable', kind: current ? 'observed' : 'question' },
         { label: 'What the camera proves', value: 'Only its own visible frame', kind: 'interpretation' }
       ],
       sources: [src(`${camera.title} live camera`, `https://www.youtube.com/watch?v=${camera.youtubeId}`), src('Open-Meteo current weather', 'https://open-meteo.com/')],
