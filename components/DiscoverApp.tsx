@@ -751,11 +751,14 @@ function LiveImage({ src, alt }: { src: string; alt: string }) {
     : null;
   useEffect(() => setFailed(false), [src, refreshTick]);
   useEffect(() => {
-    if (!(src.includes('embed.skylinewebcams.com') || src.includes('images.webcamgalore.com'))) return;
-    const timer = window.setInterval(() => setRefreshTick(tick => tick + 1), 60000);
+    const webcam = src.includes('embed.skylinewebcams.com') || src.includes('images.webcamgalore.com');
+    const satellite = src.includes('nesdis.noaa.gov') || src.includes('services.swpc.noaa.gov');
+    if (!webcam && !satellite) return;
+    const timer = window.setInterval(() => setRefreshTick(tick => tick + 1), webcam ? 60000 : 300000);
     return () => window.clearInterval(timer);
   }, [src]);
-  const liveSrc = (src.includes('embed.skylinewebcams.com') || src.includes('images.webcamgalore.com')) ? `${src}${src.includes('?') ? '&' : '?'}t=${refreshTick}` : src;
+  const refreshing = src.includes('embed.skylinewebcams.com') || src.includes('images.webcamgalore.com') || src.includes('nesdis.noaa.gov') || src.includes('services.swpc.noaa.gov');
+  const liveSrc = refreshing && refreshTick > 0 ? `${src}${src.includes('?') ? '&' : '?'}t=${refreshTick}` : src;
   if (failed) return null;
   const effectiveSrc = loop && loopUrl ? loopUrl : liveSrc;
   return <span className="liveImageWrap">

@@ -183,7 +183,7 @@ async function tideAnomalies(): Promise<TideAnomaly[]> {
     try {
       const [wl, pred] = await Promise.all([
         json<any>(`${base}?product=water_level&application=elsewhere-discovery&date=latest&station=${id}&time_zone=gmt&units=metric&datum=MSL&format=json`, undefined, 6000),
-        json<any>(`${base}?product=predictions&application=elsewhere-discovery&date=today&range=30&station=${id}&time_zone=gmt&units=metric&datum=MSL&interval=h&format=json`, undefined, 6000)
+        json<any>(`${base}?product=predictions&application=elsewhere-discovery&begin_date=${(() => { const d = new Date(Date.now() - 86400000); return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`; })()}&end_date=${(() => { const d = new Date(Date.now() + 86400000); return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`; })()}&station=${id}&time_zone=gmt&units=metric&datum=MSL&interval=h&format=json`, undefined, 6000)
       ]);
       const measured = Number(wl?.data?.[0]?.v);
       const predictions: any[] = pred?.predictions ?? [];
@@ -739,8 +739,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   // GOES GLM optical sensors count near-instantaneous flashes continuously;
   // the map updates every few minutes. Zero modeling — direct detection.
   out.push({
-    id: 'lightning-space-now', template: 'atmosphere', title: 'Every lightning flash over America right now, seen from 36,000 km up', kicker: 'GOES lightning mapper — optical detection', visual: 'storm', score: 82, freshness: 'updated every few minutes',
-    mediaImage: 'https://cdn.star.nesdis.noaa.gov/GOES16/GLM/CONUS/EXTENT3/latest.jpg', mediaAlt: 'GOES-East Geostationary Lightning Mapper flash extent density over North America',
+    id: 'lightning-space-now', template: 'atmosphere', title: 'Every lightning flash over the Americas right now, seen from 36,000 km up', kicker: 'GOES lightning mapper — optical detection', visual: 'storm', score: 82, freshness: 'updated every few minutes',
+    mediaImage: 'https://cdn.star.nesdis.noaa.gov/GOES16/GLM/FD/EXTENT3/latest.jpg', mediaAlt: 'GOES-East Geostationary Lightning Mapper full-disk flash density over the Americas',
     location: { lat: 38, lon: -97, label: 'GOES-East view of North America' },
     summary: 'A camera in geostationary orbit watches for the microsecond optical pulse of every lightning flash across the Americas — day and night, cloud-top or inside the storm. What you are looking at is flash density measured in the last few minutes: the atmosphere\u2019s electrical activity as a live map. Thunderstorms are not modeled here; they are detected.',
     facts: [
@@ -797,9 +797,10 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         location: { lat: loudest.lat, lon: loudest.lon, label: loudest.name },
         summary: `Astronomical tides are among the most predictable phenomena on Earth — the moon's pull, computed decades ahead. So when a NOAA tide gauge reads ${cm} cm ${direction} than that prediction right now, something physical is overriding the moon: wind piling water against the coast, pressure lifting or pressing the surface, or surge. Across ${tides.length} US coastal gauges, this is the loudest current anomaly. The measurement is direct; the cause is the open question.`,
         facts: [
+          ...((() => { const zoneAlerts = Array.isArray(nwsAlerts) ? nwsAlerts : []; const coastal = zoneAlerts.find((a: any) => /coastal flood|storm surge|high surf|wind advisory|gale/i.test((a?.event ?? '') + ' ' + (a?.headline ?? ''))); return coastal ? [{ label: 'Possible cause, live', value: `NWS has an active ${coastal.event} in effect — consistent with wind or pressure piling water against the coast`, kind: 'observed' as const }] : []; })()),
           { label: 'Measured water level', value: `${loudest.measured.toFixed(2)} m above MSL`, kind: 'observed' },
           { label: 'Astronomical prediction', value: `${loudest.predicted.toFixed(2)} m`, kind: 'verified' },
-          { label: 'Anomaly', value: `${loudest.anomaly > 0 ? '+' : ''}${cm} cm`, kind: 'interpretation' },
+          { label: 'Anomaly', value: `${loudest.anomaly >= 0 ? '+' : '−'}${cm} cm`, kind: 'interpretation' },
           { label: 'Network context', value: tides.map(t => `${t.name.split(',')[0]}: ${t.anomaly >= 0 ? '+' : ''}${Math.round(t.anomaly * 100)} cm`).join(' · '), kind: 'observed' },
           { label: 'Attribution', value: 'Wind stress, pressure and surge compete — the gauge alone cannot separate them', kind: 'question' }
         ],
@@ -1048,7 +1049,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     { label: 'Kp index', value: String(latestKp?.Kp ?? latestKp?.[1] ?? "—"), kind: 'observed' },
     ...((() => {
       const alertText = (swpcAlerts ?? []).filter((a: any) => a?.message && Date.now() - new Date(String(a.issue_datetime ?? '').replace(' ', 'T') + 'Z').getTime() < 48 * 3600000)
-        .map((a: any) => String(a.message)).find((m: string) => /WARNING|WATCH/i.test(m) && /geomagnetic|storm/i.test(m));
+        .map((a: any) => String(a.message)).find((m: string) => /WARNING|WATCH/i.test(m) && /geomagnetic|storm/i.test(m) && (/G[1-5]/i.test(m) || /K\s*=\s*[5-9]|K[5-9]/i.test(m)));
       if (!alertText) return [];
       const match = alertText.match(/(G[1-5])[^\n]*/);
       return [{ label: 'NOAA alert', value: match ? `${match[1]} storm watch/warning issued within 48h` : 'Geomagnetic storm watch/warning issued within 48h', kind: 'verified' as const }];
@@ -2264,15 +2265,6 @@ export async function getInvestigations(): Promise<Investigation[]> {
     }
   } catch { /* marine model unavailable */ }
 
-  const investigationPriority = ['measured-planet-live', 'crisis-attention-index', 'empty-sky-audit', 'sunset-chase-live', 'wildest-water-live', 'planet-emergency-board', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
-  const sorted = out.sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
-  // Editorial robustness: transient upstream failures (RSS rate limits, UNHCR timeouts) should never
-  // silently empty the investigation rail. If this run produced unusually few investigations, merge in
-  // last-good entries from the past hour, preferring fresh copies of anything regenerated this run.
-  const freshIds = new Set(sorted.map(i => i.id));
-  const carry = investigationMemory.filter(i => !freshIds.has(i.id) && Date.now() - new Date(i.updatedAt).getTime() < 3600000);
-  const merged = [...sorted, ...carry].sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
-  if (sorted.length >= 5) investigationMemory.splice(0, investigationMemory.length, ...sorted);
 // --- The measured planet: every physical instrument reading the Earth right
   // now, synthesized. Buoys ride waves, tide gauges feel the sea defy the moon,
   // lightning is optically detected from orbit — zero models in this one.
@@ -2304,7 +2296,16 @@ export async function getInvestigations(): Promise<Investigation[]> {
     });
   }
 
-  return merged.length >= sorted.length ? merged : sorted;
+  const investigationPriority = ['measured-planet-live', 'crisis-attention-index', 'empty-sky-audit', 'sunset-chase-live', 'wildest-water-live', 'planet-emergency-board', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
+  const sorted = out.sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
+  // Editorial robustness: transient upstream failures (RSS rate limits, UNHCR timeouts) should never
+  // silently empty the investigation rail. If this run produced unusually few investigations, merge in
+  // last-good entries from the past hour, preferring fresh copies of anything regenerated this run.
+  const freshIds = new Set(sorted.map(i => i.id));
+  const carry = investigationMemory.filter(i => !freshIds.has(i.id) && Date.now() - new Date(i.updatedAt).getTime() < 3600000);
+  const merged = [...sorted, ...carry].sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
+  if (sorted.length >= 5) investigationMemory.splice(0, investigationMemory.length, ...sorted);
+    return merged.length >= sorted.length ? merged : sorted;
 }
 
 const investigationMemory: any[] = [];
