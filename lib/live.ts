@@ -1179,7 +1179,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml, orcaFeeds, orcaDetections] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml, orcaFeeds, orcaDetections, antMawsonHtml, antDavisHtml, antCaseyHtml] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1225,6 +1225,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     text('https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en'),
     json<any>('https://beta.orcasound.net/api/json/feeds', { headers: { 'User-Agent': 'Elsewhere/1.0 earth discovery' } }, 7000),
     json<any>('https://beta.orcasound.net/api/json/detections?limit=25', { headers: { 'User-Agent': 'Elsewhere/1.0 earth discovery' } }, 7000),
+    text('https://www.antarctica.gov.au/antarctic-operations/webcams/mawson/'),
+    text('https://www.antarctica.gov.au/antarctic-operations/webcams/davis/'),
+    text('https://www.antarctica.gov.au/antarctic-operations/webcams/casey/'),
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -3008,6 +3011,45 @@ export async function getDiscoveries(): Promise<Discovery[]> {
           });
         }
       } catch { /* node offline — absence is fine */ }
+    }
+  }
+
+  // --- The polar day watch: Australian Antarctic station webcams in perpetual
+  // daylight. In late November the sun has not set on these stations for weeks
+  // and will not set again until February — anyone on Earth can look.
+  {
+    const stations: Array<{ key: string; name: string; lat: number; lon: number; html: string | null }> = [
+      { key: 'mawson', name: 'Mawson', lat: -67.6, lon: 62.87, html: antMawsonHtml as string | null },
+      { key: 'davis', name: 'Davis', lat: -68.58, lon: 77.97, html: antDavisHtml as string | null },
+      { key: 'casey', name: 'Casey', lat: -66.28, lon: 110.53, html: antCaseyHtml as string | null }
+    ];
+    const cams: Array<{ name: string; lat: number; lon: number; url: string; ageMin: number }> = [];
+    for (const st of stations) {
+      if (!st.html) continue;
+      const m = st.html.match(/images\.antarctica\.gov\.au\/webcams\/[a-z-]+\/(\d{4})\/(\d{2})\/(\d{2})\/[A-Z](\d{2})(\d{2})(\d{2})(\d{2})(\d{2})s\.jpg/);
+      if (!m) continue;
+      const ts = Date.UTC(2000 + Number(m[4]), Number(m[5]) - 1, Number(m[6]), Number(m[7]), Number(m[8]));
+      const ageMin = (Date.now() - ts) / 60000;
+      if (ageMin < 0 || ageMin > 240) continue;
+      cams.push({ name: st.name, lat: st.lat, lon: st.lon, url: 'https://' + m[0], ageMin: Math.round(ageMin) });
+    }
+    if (cams.length) {
+      cams.sort((a, b) => a.ageMin - b.ageMin);
+      const cam = cams[0];
+      out.push({
+        id: 'antarctic-polar-day-live', template: 'city', title: `The sun will not set at ${cam.name} Station for months — and the webcam is lit right now`, kicker: 'Polar day — the bottom of the world, live', visual: 'aurora', score: 85, freshness: `frame ${cam.ageMin} min old`, mediaImage: cam.url, mediaAlt: `Latest webcam frame from ${cam.name} Station, Antarctica`,
+        location: { lat: cam.lat, lon: cam.lon, label: `${cam.name} Station, Antarctica` },
+        summary: `It is late November in Antarctica, which means the sun does not set. At ${cam.name} Station it has been daylight continuously since late October, and the sun will not dip below the horizon again until February — the station webcam, updating about every fifteen minutes, shows a world permanently lit. While the Arctic endures polar night and the aurora-watchers look north, the bottom of the planet is in the opposite season entirely: the same axial tilt that darkens the north floods the south with constant sun. The frame you are looking at was captured ${cam.ageMin} minutes ago by a camera on one of the most remote human outposts on Earth — and it is simply public, there for anyone.`,
+        facts: [
+          { label: 'The frame', value: `Webcam at ${cam.name} Station — captured ${ago(Date.now() - cam.ageMin * 60000)}, updates roughly every 15 minutes`, kind: 'observed' },
+          { label: 'The season', value: 'Polar day — continuous daylight since late October; the sun will not set again until February', kind: 'verified' },
+          { label: 'The split-screen planet', value: 'The same axial tilt producing endless day here is producing polar night in the Arctic — the two poles are in opposite seasons at once', kind: 'interpretation' },
+          { label: 'Who is there', value: `${cam.name} hosts a small overwintering research crew — one of the most isolated human communities on Earth`, kind: 'verified' },
+          { label: 'Other windows', value: `${cams.length} Antarctic station cameras currently live: ${cams.map(c => c.name).join(', ')}`, kind: 'observed' }
+        ],
+        sources: [src('Australian Antarctic Program webcams', 'https://www.antarctica.gov.au/antarctic-operations/webcams/')],
+        related: ['aurora', 'extremes', 'terminator']
+      });
     }
   }
 
