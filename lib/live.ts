@@ -1634,6 +1634,40 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     }
   }
 
+  // --- Volcanic unrest convergence: a swarm of small quakes clustered under a
+  // known volcano is how eruptions announce themselves weeks to hours ahead.
+  // Conditional: only while a volcano is actually shaking.
+  {
+    const volcanoes: Array<[string, number, number]> = [
+      ['Mount Etna', 37.75, 14.99], ['Kīlauea', 19.42, -155.29], ['Merapi', -7.54, 110.44],
+      ['Fagradalsfjall', 63.9, -22.27], ['Popocatépetl', 19.02, -98.62], ['Sakurajima', 31.58, 130.66],
+      ['Stromboli', 38.79, 15.21], ['Erebus', -77.53, 167.17]
+    ];
+    const dayAgo = Date.now() - 24 * 3600000;
+    const swarm = volcanoes.map(([vname, vlat, vlon]) => {
+      const near = (quakes?.features ?? []).filter((f: any) => {
+        const [qlon, qlat] = f.geometry?.coordinates ?? [];
+        return Number.isFinite(qlat) && (f.properties?.time ?? 0) > dayAgo && Math.hypot(qlat - vlat, qlon - vlon) < 1.2;
+      });
+      return { vname, vlat, vlon, count: near.length, biggest: near.reduce((m: number, f: any) => Math.max(m, f.properties?.mag ?? 0), 0) };
+    }).filter(v => v.count >= 4).sort((a, b) => b.count - a.count)[0];
+    if (swarm) {
+      out.push({
+        id: 'volcano-swarm-now', template: 'geology', title: `The ground under ${swarm.vname} has shaken ${swarm.count} times in the last 24 hours`, kicker: 'Volcanic unrest — measured seismic swarm', visual: 'fire', score: 86 + Math.min(8, swarm.count), freshness: 'swarm ongoing',
+        location: { lat: swarm.vlat, lon: swarm.vlon, label: swarm.vname },
+        summary: `Volcanoes rarely erupt silently. Magma moving underground fractures rock, and seismometers hear every crack. In the last 24 hours, ${swarm.count} earthquakes have been recorded within roughly 100 km of ${swarm.vname}${swarm.biggest ? `, the largest magnitude ${swarm.biggest.toFixed(1)}` : ''}. A swarm like this does not mean eruption is certain — most pass quietly — but this is precisely what the hours or weeks before an eruption look like. If a live camera exists for this volcano, this is the moment it matters.`,
+        facts: [
+          { label: 'Quakes in 24h within ~100 km', value: String(swarm.count), kind: 'observed' },
+          ...(swarm.biggest ? [{ label: 'Largest so far', value: `M${swarm.biggest.toFixed(1)}`, kind: 'observed' as const }] : []),
+          { label: 'What swarms mean', value: 'Magma or gas movement fracturing rock underground — necessary but not sufficient for eruption', kind: 'interpretation' },
+          { label: 'Detection method', value: 'USGS global earthquake catalog scanned for spatial clustering under known volcanic centers', kind: 'verified' }
+        ],
+        sources: [src('USGS earthquake catalog', 'https://earthquake.usgs.gov/')],
+        related: ['Volcano consensus', 'Seismic pulse', 'The measured planet']
+      });
+    }
+  }
+
   // --- The terminator: where dawn and dusk are happening right now (pure astronomy, always live) ---
   {
     const nowDate = new Date();
