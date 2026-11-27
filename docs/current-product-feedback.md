@@ -136,3 +136,15 @@ Next hill-climb candidates:
 - watchdog.sh keeps dev:3000 and prod:3212 alive overnight (60s loop, logged to /tmp/watchdog.log).
 - Full-loop validation: 0 console errors across surprise×2 + investigate at 1440px.
 - PUSHED everything to origin devin/discover-polish as backup — PR #1 current through f253aab. CI still fails only on Vercel deploy quota.
+
+## Round VII — Living planet layers + sensory depth (2026-11-26 evening PT)
+- Persistent globe data layers: week of earthquakes (age-colored: hot white-orange <90min fading to dim embers), active fires, storms/floods, volcanoes, and a live aurora oval from NOAA's ovation model — all with a bottom-left legend.
+- Generative ambient sound (WebAudio, no assets): root frequency tuned per discovery visual type, wind noise for ocean. Toggle in dock; icon-only on mobile.
+- Return-visitor memory note: "N new live moments since [date] — including …" from localStorage diff. Validated end-to-end.
+- Cinematic intro: camera zooms in from deep space over 3.2s + staggered hero text.
+- Breaking-event toast: major quake/fire/storm entering the feed mid-session announces itself; tap to travel there.
+- ISS next city overflight prediction from live TLE propagation ("in ~58 minutes it sweeps across the sky above São Paulo — 22 million people below").
+- Event-aware camera curation: cameras within 320km of a GDACS-modeled hazard boosted with "camera is the ground truth" framing; volcano cams boosted extra during volcanic unrest.
+- Mobile GPU budget: capped DPR 1.5, half starfield, no AA on small screens.
+- New investigations: sunset-chase-live (aircraft classified by solar elevation — 126 in the twilight band at first measurement) and wildest-water-live (Drake Passage 15× rougher than Red Sea, live wave heights across 14 seas). 13 investigations total.
+- Polar extremes card: sun never rises on Longyearbyen / never sets on South Pole Station, computed live, rotates seasonally.
