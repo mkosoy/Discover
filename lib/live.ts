@@ -667,6 +667,10 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     });
   }
 
+  const quakeCount24h = quakes?.features?.length ?? 0;
+  // Global M4.5+ baseline is roughly 30-40/day; at 2× the Earth is genuinely
+  // ringing louder than usual — worth saying, honestly framed as a rate anomaly.
+  const seismicSurge = quakeCount24h >= 60;
   const q = quakes?.features?.sort((a: any, b: any) => (b.properties?.mag ?? 0) - (a.properties?.mag ?? 0))[0];
   // --- The ocean, measured: real buoys reporting actual wave heights right now.
   // Unlike the model-based wildest-water investigation, these are physical
@@ -761,7 +765,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   if (q) {
     const [lon, lat, depth] = q.geometry.coordinates;
     const imagery = earthImagery(lat, lon);
-    out.push({ id: `quake-${q.id}`, entityId: q.id, occurredAt: new Date(q.properties.time).toISOString(), template: 'geology', title: 'A significant earthquake just reshaped the seismic map', kicker: 'USGS live event', visual: 'seismic', score: 82 + Math.min(14, q.properties.mag * 2), freshness: ago(q.properties.time), mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} around ${q.properties.place}`, location: { lat, lon, label: q.properties.place }, summary: `A magnitude ${q.properties.mag.toFixed(1)} earthquake was recorded near ${q.properties.place} — the largest of ${quakes?.features?.length ?? 'several'} earthquakes magnitude 4.5+ cataloged worldwide in the past 24 hours${depth < 70 ? ', shallow enough to shake the surface hard' : depth > 300 ? ', but so deep its energy spread silently through the mantle' : ''}. The shake is real observed data; broader impact is deliberately left as an open question until corroborated.`, facts: [
+    out.push({ id: `quake-${q.id}`, entityId: q.id, occurredAt: new Date(q.properties.time).toISOString(), template: 'geology', title: seismicSurge ? `The Earth is ringing louder than usual — ${quakeCount24h} significant quakes in 24 hours` : 'A significant earthquake just reshaped the seismic map', kicker: seismicSurge ? 'Seismic rate anomaly — USGS live catalog' : 'USGS live event', visual: 'seismic', score: 82 + Math.min(14, q.properties.mag * 2) + (seismicSurge ? 6 : 0), freshness: ago(q.properties.time), mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} around ${q.properties.place}`, location: { lat, lon, label: q.properties.place }, summary: `A magnitude ${q.properties.mag.toFixed(1)} earthquake was recorded near ${q.properties.place} — the largest of ${quakes?.features?.length ?? 'several'} earthquakes magnitude 4.5+ cataloged worldwide in the past 24 hours${depth < 70 ? ', shallow enough to shake the surface hard' : depth > 300 ? ', but so deep its energy spread silently through the mantle' : ''}. The shake is real observed data; broader impact is deliberately left as an open question until corroborated.`, facts: [
       { label: 'Magnitude', value: q.properties.mag.toFixed(1), kind: 'observed' }, { label: 'Depth', value: `${Math.round(depth)} km`, kind: 'observed' }, { label: 'Reports', value: `${q.properties.felt ?? 0} felt reports`, kind: 'verified' }, { label: 'Impact', value: 'Still unknown', kind: 'question' }
     ], sources: [src(imagery.sourceLabel, imagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/'), src('USGS earthquake feed', q.properties.url)], related: ['Aftershock pattern', 'Tsunami bulletins', 'Regional recovery'] });
   }
@@ -894,9 +898,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   const moonAge = ((Date.now() / 86400000 - 10962.7597) % synodic + synodic) % synodic; // reference new moon 2000-01-06 18:14 UTC
   const moonIllum = Math.round((1 - Math.cos(2 * Math.PI * moonAge / synodic)) / 2 * 100);
   if (latestKp) out.push({ id: 'aurora-watch', template: 'atmosphere',
-    title: auroraAligned ? 'Aurora conditions are aligned over Lapland right now — the camera is the check' : 'Aurora conditions are being measured above the polar night',
-    kicker: auroraAligned ? 'Live composite: space weather + darkness + sky clarity' : 'NOAA space weather', visual: 'aurora',
-    score: 74 + kpValue * 3 + (auroraAligned ? 14 : 0), freshness: 'updated minutes ago', mediaImage: 'https://services.swpc.noaa.gov/images/aurora-forecast-northern-hemisphere.jpg', mediaAlt: 'NOAA northern hemisphere aurora forecast', location: { lat: 69.9, lon: 27.0, label: 'Utsjoki, Finnish Lapland' },
+    title: kpValue >= 5 ? `A G${kpValue >= 6 ? '2' : '1'} geomagnetic storm is in progress right now — the aurora oval is expanding` : auroraAligned ? 'Aurora conditions are aligned over Lapland right now — the camera is the check' : 'Aurora conditions are being measured above the polar night',
+    kicker: kpValue >= 5 ? 'Geomagnetic storm in progress — NOAA measured' : auroraAligned ? 'Live composite: space weather + darkness + sky clarity' : 'NOAA space weather', visual: 'aurora',
+    score: 74 + kpValue * 3 + (auroraAligned ? 14 : 0) + (kpValue >= 5 ? 8 : 0), freshness: 'updated minutes ago', mediaImage: 'https://services.swpc.noaa.gov/images/aurora-forecast-northern-hemisphere.jpg', mediaAlt: 'NOAA northern hemisphere aurora forecast', location: { lat: 69.9, lon: 27.0, label: 'Utsjoki, Finnish Lapland' },
     summary: auroraAligned
       ? 'Three independent signals currently agree over Finnish Lapland: geomagnetic activity is elevated, it is dark, and the sky is mostly clear. That combination is the actual aurora checklist — the live sky camera in Utsjoki is the ground-truth check, one tap away.'
       : 'The planetary K index is a real-time geomagnetic measurement. Aurora visibility still depends on darkness and cloud cover, so Elsewhere labels the opportunity as conditional rather than a promise.',
