@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://elsewhere-discover-nine.vercel.app'),
   title: 'Elsewhere — Discover what\'s happening',
   description: 'Discover what\'s happening. Understand what it means. A cinematic live discovery platform for Earth.',
   applicationName: 'Elsewhere',
