@@ -516,11 +516,11 @@ export default function DiscoverApp() {
 
     <AnimatePresence>
       {breaking && <motion.button className="breakingToast" initial={{ opacity: 0, y: -18, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -12 }} transition={{ type: 'spring', damping: 24, stiffness: 300 }} onClick={() => { selectDiscovery(breaking); setBreaking(undefined); }}>
-{geoNotice && <div className="breakingToast geoNotice">{geoNotice}</div>}
         <span className="breakingLabel">Just detected</span>
         <b>{breaking.title}</b>
         <small>tap to travel there</small>
       </motion.button>}
+      {geoNotice && <motion.div className="breakingToast geoNotice" initial={{ opacity: 0, y: -18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>{geoNotice}</motion.div>}
     </AnimatePresence>
 
     {layers && (layers.quakes.length + layers.fires.length + layers.storms.length > 0) && <div className="layerLegend" aria-hidden>
