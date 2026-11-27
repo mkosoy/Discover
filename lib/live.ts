@@ -739,7 +739,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -774,7 +774,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://air-quality-api.open-meteo.com/v1/air-quality?latitude=28.61,31.55,39.9,19.08,30.04,6.52,24.86,33.72,41.01,1.35,51.5,34.05&longitude=77.21,74.34,116.4,72.88,31.24,3.38,67.0,73.05,28.98,103.82,-0.13,-118.24&current=pm2_5,us_aqi&timezone=auto', undefined, 9000),
     json<any>('https://api.adsb.lol/v2/squawk/7700', undefined, 6000),
     json<any>('https://api.adsb.lol/v2/squawk/7600', undefined, 6000),
-    json<any[]>('https://services.swpc.noaa.gov/products/alerts.json', undefined, 6000)
+    json<any[]>('https://services.swpc.noaa.gov/products/alerts.json', undefined, 6000),
+    json<any>('https://api.carbonintensity.org.uk/intensity/date', undefined, 6000)
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -1510,7 +1511,11 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   const mix = generation?.data?.generationmix ?? [];
   const windShare = mix.find((m: any) => m.fuel === 'wind')?.perc ?? 0;
   const gasShare = mix.find((m: any) => m.fuel === 'gas')?.perc ?? 0;
-  if (carbonNow || mix.length) out.push({ id: 'uk-grid-wind-pulse', template: 'city', title: 'Britain’s electricity mix is shifting in half-hourly pulses', kicker: 'Live grid carbon intensity', visual: 'city', score: 58 + windShare / 4, freshness: generation?.data?.from ? ago(generation.data.from) : 'half-hourly', location: { lat: 52.5, lon: -1.8, label: 'Great Britain electricity grid' }, summary: 'The UK grid publishes current carbon intensity and generation mix. This is a systems view of weather, infrastructure and demand interacting in near-real time.', facts: [
+  if (carbonNow || mix.length) out.push({ id: 'uk-grid-wind-pulse', template: 'city', title: 'Britain’s electricity mix is shifting in half-hourly pulses', kicker: 'Live grid carbon intensity', visual: 'city', score: 58 + windShare / 4, mediaImage: (() => {
+      const rows = ukIntensity24h?.data ?? [];
+      const series = rows.map((r: any) => ({ t: new Date(r.from).getTime(), v: r?.intensity?.actual })).filter((p: any) => Number.isFinite(p.v) && Number.isFinite(p.t));
+      return buildSeriesChartSvg('UK grid carbon intensity — the pulse of a nation', 'g CO₂ per kWh, half-hourly', series, '#66ddaa') ?? undefined;
+    })(), mediaAlt: 'Carbon intensity of the UK grid across 24 hours — demand and renewables in half-hourly pulses', freshness: generation?.data?.from ? ago(generation.data.from) : 'half-hourly', location: { lat: 52.5, lon: -1.8, label: 'Great Britain electricity grid' }, summary: 'The UK grid publishes current carbon intensity and generation mix. This is a systems view of weather, infrastructure and demand interacting in near-real time.', facts: [
     { label: 'Carbon intensity', value: carbonNow?.actual ? `${carbonNow.actual} gCO₂/kWh` : carbonNow?.forecast ? `${carbonNow.forecast} forecast` : '—', kind: carbonNow?.actual ? 'observed' : 'interpretation' }, { label: 'Wind share', value: `${windShare}%`, kind: 'observed' }, { label: 'Gas share', value: `${gasShare}%`, kind: 'observed' }, { label: 'Grid stress', value: 'Not inferable', kind: 'question' }
   ], sources: [src('Carbon Intensity API', 'https://carbonintensity.org.uk/')], related: ['Grid weather context', 'Night lights', 'Historical comparison'] });
 
