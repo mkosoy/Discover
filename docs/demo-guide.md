@@ -40,3 +40,8 @@ Every card labels evidence as observed/verified/interpretation/question. Freshne
 - **New cards**: wildlife pulse (iNaturalist live sightings with real observer photos), Earth's extremes (hottest/coldest/windiest at the same minute across 16 extreme sites), humanity's day/night split (population-weighted: "248 million in night right now"), Point Nemo moment (when ISS astronauts become the nearest humans to the loneliest place on Earth — conditional, only appears when true).
 - **New investigations**: the sunset chase (every airborne aircraft classified by solar elevation — "126 aircraft are flying through Earth's sunset line"), wildest water (live wave heights across 14 seas — "Drake Passage running 15× rougher than the Red Sea").
 - **Camera rotation** — the Surprise loop now rotates quality gems from the full 451-camera registry every 30 minutes instead of the same 14 cameras; taps on related pills ("Wildest water", "Terminator") open the real investigation/card, not generic weather.
+
+## Round XI additions
+- Satellite time-lapse: any GOES imagery card has a "▶ time-lapse" toggle — hours of cloud motion in one loop. Best demo: any NWS alert or fire card in the US.
+- My sky: dock button probes the sky above the viewer (aircraft within 100nm, nearest cameras, weather) — coords rounded to ~1km on-device before leaving the browser.
+- Notable-nearby: globe taps now surface real Wikipedia landmarks (museums, parks, monuments) with distances — administrative noise filtered.
