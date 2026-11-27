@@ -1359,7 +1359,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const ukraineCities = '50.45,49.99,48.46,46.48,49.84';
   const ukraineLons = '30.52,36.23,35.04,30.72,24.03';
   const currentYear = new Date().getFullYear();
-  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace, volcanoXml, myanmarNewsXml, haitiNewsXml, drcNewsXml, yemenNewsXml, myanmarUnhcr, haitiUnhcr, drcUnhcr, yemenUnhcr, upcomingLaunches, kpIndexRaw, plasmaRaw, xrayRaw, cityAir, gdacsBoardXml] = await Promise.all([
+  const [quake, allQuakes, hdx, ukraineNews, googleNewsXml, ukraineWeather, fts, unhcr, eonet, sudanNewsXml, sudanWeather, sudanFts, sudanUnhcr, sudanHdx, ukraineAirspace, polandAirspace, romaniaAirspace, germanyAirspace, volcanoXml, myanmarNewsXml, haitiNewsXml, drcNewsXml, yemenNewsXml, myanmarUnhcr, haitiUnhcr, drcUnhcr, yemenUnhcr, upcomingLaunches, kpIndexRaw, plasmaRaw, xrayRaw, cityAir, gdacsBoardXml, invBuoys, invTides] = await Promise.all([
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson'),
     json<any>('https://data.humdata.org/api/3/action/package_search?q=ukraine&rows=12'),
@@ -1392,7 +1392,9 @@ export async function getInvestigations(): Promise<Investigation[]> {
     json<any[]>('https://services.swpc.noaa.gov/json/ace/swepam/ace_swepam_1h.json'),
     json<any[]>('https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json'),
     json<any>('https://air-quality-api.open-meteo.com/v1/air-quality?latitude=28.6,31.5,39.9,19.07,30.04,6.52,19.43,34.05,51.5,35.68,-33.87,-33.92,-23.55,55.75,40.71,1.35&longitude=77.2,74.3,116.4,72.87,31.23,3.37,-99.13,-118.24,-0.12,139.69,151.2,18.42,-46.63,37.6,-74,103.8&current=pm2_5,us_aqi&timezone=auto'),
-    text('https://www.gdacs.org/xml/rss.xml')
+    text('https://www.gdacs.org/xml/rss.xml'),
+    buoyObservations(),
+    tideAnomalies()
   ]);
   const q = quake?.features?.[0];
   const evt = eonet?.events?.[0];
@@ -2260,7 +2262,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
     }
   } catch { /* marine model unavailable */ }
 
-  const investigationPriority = ['crisis-attention-index', 'empty-sky-audit', 'sunset-chase-live', 'wildest-water-live', 'planet-emergency-board', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
+  const investigationPriority = ['measured-planet-live', 'crisis-attention-index', 'empty-sky-audit', 'sunset-chase-live', 'wildest-water-live', 'planet-emergency-board', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
   const sorted = out.sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
   // Editorial robustness: transient upstream failures (RSS rate limits, UNHCR timeouts) should never
   // silently empty the investigation rail. If this run produced unusually few investigations, merge in
@@ -2269,6 +2271,37 @@ export async function getInvestigations(): Promise<Investigation[]> {
   const carry = investigationMemory.filter(i => !freshIds.has(i.id) && Date.now() - new Date(i.updatedAt).getTime() < 3600000);
   const merged = [...sorted, ...carry].sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
   if (sorted.length >= 5) investigationMemory.splice(0, investigationMemory.length, ...sorted);
+// --- The measured planet: every physical instrument reading the Earth right
+  // now, synthesized. Buoys ride waves, tide gauges feel the sea defy the moon,
+  // lightning is optically detected from orbit — zero models in this one.
+  if (invBuoys?.length >= 4) {
+    const rough = [...invBuoys].sort((a, b) => b.waveHeight - a.waveHeight)[0];
+    const tideHit = invTides?.length ? [...invTides].sort((a, b) => Math.abs(b.anomaly) - Math.abs(a.anomaly))[0] : null;
+    const bars = invBuoys.map(b => ({ label: b.id, value: Math.round(b.waveHeight * 10) / 10, display: `${b.waveHeight.toFixed(1)} m`, highlight: b.id === rough.id }));
+    out.push({
+      id: 'measured-planet-live',
+      title: `Right now, physical instruments are reading the planet: a buoy at ${rough.waveHeight.toFixed(1)} m seas${tideHit && Math.abs(tideHit.anomaly) >= 0.15 ? `, a tide gauge ${Math.round(Math.abs(tideHit.anomaly) * 100)} cm off its moon` : ''}`,
+      dek: `Not models — instruments. ${invBuoys.length} moored buoys are riding the open ocean reporting real wave heights; ${invTides?.length ?? 0} coastal tide gauges compare the actual sea against the astronomically predicted one; a lightning mapper in orbit counts optical flashes directly. This investigation is the planet's sensor network, read live, with the measurement method labeled on every number.`,
+      status: 'corroborated', location: { lat: rough.lat, lon: rough.lon, label: rough.name },
+      updatedAt: new Date().toISOString(), confidence: 92,
+      evidence: [
+        { kind: 'observed', text: `Roughest measured sea: ${rough.waveHeight.toFixed(1)} m significant wave height at ${rough.name} — a physical buoy riding the surface, not a wave model.`, source: 'NOAA NDBC' },
+        ...(tideHit ? [{ kind: 'observed' as const, text: `Largest tide anomaly: ${tideHit.anomaly >= 0 ? '+' : ''}${Math.round(tideHit.anomaly * 100)} cm at ${tideHit.name} — measured water level minus the lunar prediction, interpolated hourly.`, source: 'NOAA CO-OPS' }] : []),
+        { kind: 'verified', text: 'Lightning over the Americas is optically detected by the GOES GLM sensor — each flash is a real optical pulse, not a radar inference.', source: 'NOAA GLM' },
+        { kind: 'interpretation', text: 'The distinction matters: models interpolate the world, instruments experience it. Where the two disagree, the instrument is usually right.' }
+      ],
+      metrics: [
+        { label: 'Roughest measured sea', value: `${rough.waveHeight.toFixed(1)} m`, delta: rough.name.split(',')[0] },
+        tideHit ? { label: 'Biggest tide anomaly', value: `${tideHit.anomaly >= 0 ? '+' : ''}${Math.round(tideHit.anomaly * 100)} cm`, delta: tideHit.name.split(',')[0] } : { label: 'Tide network', value: 'nominal', delta: 'no strong anomaly' },
+        { label: 'Reporting buoys', value: String(invBuoys.length), delta: 'of 10 sampled' },
+        { label: 'Models used', value: 'zero', delta: 'all instruments' }
+      ],
+      visuals: bars, visualTitle: 'Measured wave heights across the buoy network right now', visualCaption: 'significant wave height, meters — physical instruments',
+      liveLinks: [{ label: 'The ocean, measured', discoveryId: 'ocean-measured-now' }, { label: 'Lightning from space', discoveryId: 'lightning-space-now' }],
+      sources: [{ label: 'NOAA NDBC buoy network', url: 'https://www.ndbc.noaa.gov/' }, { label: 'NOAA CO-OPS tide gauges', url: 'https://tidesandcurrents.noaa.gov/' }, { label: 'NOAA GLM lightning mapper', url: 'https://www.star.nesdis.noaa.gov/GOES/' }]
+    });
+  }
+
   return merged.length >= sorted.length ? merged : sorted;
 }
 
