@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { earthImagery, nightLightsSnapshot } from '@/lib/satellite';
 import { nearestPublicCameras } from '@/lib/cameras';
+import { buoyObservations, tideAnomalies } from '@/lib/live';
 import { currentWeather } from '@/lib/weather';
 
 async function json<T>(url: string, init?: RequestInit): Promise<T | null> {
@@ -81,14 +82,16 @@ export async function GET(request: Request) {
   const lat = Number(url.searchParams.get('lat'));
   const lon = Number(url.searchParams.get('lon'));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return NextResponse.json({ error: 'invalid coordinates' }, { status: 400 });
-  const [weather, place, air, quakes, gdacsXml, aircraftFeed, wiki] = await Promise.all([
+  const [weather, place, air, quakes, gdacsXml, aircraftFeed, wiki, buoysNear, tidesNear] = await Promise.all([
     currentWeather(lat, lon),
     json<any>(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=en`, { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }),
     json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,ozone&timezone=auto`),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson'),
     text('https://www.gdacs.org/xml/rss.xml'),
     jsonLive<any>(`https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/100`),
-    json<any>(`https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=10000&gslimit=4&format=json&origin=*`)
+    json<any>(`https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=10000&gslimit=4&format=json&origin=*`),
+    buoyObservations(),
+    tideAnomalies()
   ]);
   const current = weather?.current;
   const address = place?.address ?? {};
@@ -114,6 +117,8 @@ export async function GET(request: Request) {
     .sort((a: any, b: any) => a.distance - b.distance)[0];
   const daylight = current?.is_day != null ? (current.is_day ? 'Daylight now' : 'Dark now') : (solarElevationDeg(lat, lon) < -1 ? 'Dark now (computed from solar position)' : 'Daylight now (computed from solar position)');
   const nearestCameras = nearestPublicCameras(lat, lon, 3);
+  const nearestBuoy = (buoysNear ?? []).map(b => ({ ...b, distance: distanceKm(lat, lon, b.lat, b.lon) })).sort((a, b) => a.distance - b.distance)[0];
+  const nearestTide = (tidesNear ?? []).map(t => ({ ...t, distance: distanceKm(lat, lon, t.lat, t.lon) })).sort((a, b) => a.distance - b.distance)[0];
   const nearestCamera = nearestCameras[0];
   const hook = nearestHazard && nearestHazard.distance < 250
     ? `This point sits within ${Math.round(nearestHazard.distance)} km of a ${nearestHazard.alert} ${nearestHazard.type || 'hazard'} model, while current weather, aircraft and satellite context explain what can and cannot be corroborated right now.`
@@ -146,6 +151,8 @@ export async function GET(request: Request) {
   }
   const notable = (wiki?.query?.geosearch ?? []).filter((n: any) => n?.title && !(/^(canton|arrondissement|province|prefecture|county|district|municipality|department|oblast|region|state) of /i.test(n.title) || /^(county|province|district|prefecture|oblast|region) \w+$/i.test(n.title) || /\b(county|prefecture|oblast|municipality|arrondissement)$/i.test(n.title)) && !/\((department|province|county|district|municipality|state|region|oblast|prefecture)\)/i.test(n.title));
   const facts = [
+    nearestBuoy && nearestBuoy.distance <= 600 ? { label: 'Nearest measured sea', value: `${nearestBuoy.waveHeight.toFixed(1)} m waves${nearestBuoy.waterTemp != null ? `, ${nearestBuoy.waterTemp.toFixed(1)}°C water` : ''} at ${nearestBuoy.name.split(',')[0]} — ${Math.round(nearestBuoy.distance)} km away, instrument not model`, kind: 'observed' } : null,
+    nearestTide && nearestTide.distance <= 400 && Math.abs(nearestTide.anomaly) >= 0.1 ? { label: 'Tide vs prediction', value: `${nearestTide.anomaly >= 0 ? '+' : '−'}${Math.round(Math.abs(nearestTide.anomaly) * 100)} cm at ${nearestTide.name.split(',')[0]}, ${Math.round(nearestTide.distance)} km away`, kind: 'observed' } : null,
     current?.temperature_2m != null ? { label: 'Weather', value: `${weatherText(current.weather_code)}, ${Math.round(current.temperature_2m)}°C`, kind: 'observed' } : { label: 'Weather', value: 'Unavailable', kind: 'question' },
     current?.wind_speed_10m != null ? { label: 'Wind', value: `${Math.round(current.wind_speed_10m)} km/h from ${Math.round(current.wind_direction_10m ?? 0)}°`, kind: 'observed' } : null,
     current?.cloud_cover != null ? { label: 'Cloud cover', value: `${Math.round(current.cloud_cover)}%`, kind: 'observed' } : null,

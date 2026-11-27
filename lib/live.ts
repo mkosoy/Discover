@@ -135,7 +135,7 @@ const BUOY_STATIONS: Array<[string, string, number, number]> = [
 
 type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waterTemp?: number; airTemp?: number; windSpeed?: number; pressure?: number; pressureDelta3h?: number; time: number };
 
-async function buoyObservations(): Promise<BuoyObs[]> {
+export async function buoyObservations(): Promise<BuoyObs[]> {
   const rows = await Promise.all(BUOY_STATIONS.map(async ([id, name, lat, lon]) => {
     const t = await text(`https://www.ndbc.noaa.gov/data/realtime2/${id}.txt`);
     if (!t) return null;
@@ -195,7 +195,7 @@ const TIDE_STATIONS: Array<[string, string, number, number]> = [
 
 type TideAnomaly = { id: string; name: string; lat: number; lon: number; measured: number; predicted: number; anomaly: number; time: string };
 
-async function tideAnomalies(): Promise<TideAnomaly[]> {
+export async function tideAnomalies(): Promise<TideAnomaly[]> {
   const base = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter';
   const rows = await Promise.all(TIDE_STATIONS.map(async ([id, name, lat, lon]) => {
     try {
