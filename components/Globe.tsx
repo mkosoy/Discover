@@ -33,8 +33,45 @@ function subsolarPoint(date = new Date()) {
 }
 
 type FocusTarget = { id: string; location: { lat: number; lon: number }; connections?: { id: string }[] };
+type LayerPoint = { lat: number; lon: number; mag?: number; kind?: string };
+type PlanetLayers = { quakes: LayerPoint[]; fires: LayerPoint[]; storms: LayerPoint[]; volcanoes: LayerPoint[] };
 
-function Earth({ active, discoveries, investigations, cameras, sky, onSelect, onSelectCamera, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; cameras: PublicCamera[]; sky?: { lat: number; lon: number }[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectCamera: (camera: PublicCamera) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
+function PulseLayer({ points, color, size, altitude = 1.368, opacity = .8, pulse = .3, scaleByMag }: { points: LayerPoint[]; color: string; size: number; altitude?: number; opacity?: number; pulse?: number; scaleByMag?: boolean }) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const matrices = useMemo(() => points.map(point => {
+    const scale = scaleByMag && point.mag ? Math.min(2.1, .5 + (point.mag - 2.4) * .38) : 1;
+    const matrix = new THREE.Matrix4();
+    matrix.makeScale(scale, scale, scale);
+    matrix.setPosition(latLon(point.lat, point.lon, altitude));
+    return matrix;
+  }), [points, altitude, scaleByMag]);
+  useEffect(() => {
+    if (!ref.current) return;
+    matrices.forEach((matrix, index) => ref.current?.setMatrixAt(index, matrix));
+    ref.current.instanceMatrix.needsUpdate = true;
+  }, [matrices]);
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    const material = ref.current.material as THREE.MeshBasicMaterial;
+    material.opacity = opacity - pulse / 2 + Math.sin(clock.elapsedTime * 2.2) * pulse / 2;
+  });
+  if (!points.length) return null;
+  return <instancedMesh key={`pulse-${points.length}`} ref={ref} args={[undefined, undefined, Math.max(1, points.length)]}>
+    <sphereGeometry args={[size, 6, 6]} />
+    <meshBasicMaterial color={color} transparent opacity={opacity} blending={THREE.AdditiveBlending} depthWrite={false} />
+  </instancedMesh>;
+}
+
+function PlanetActivity({ layers }: { layers: PlanetLayers }) {
+  return <>
+    <PulseLayer points={layers.quakes} color="#ff8a5c" size={.012} opacity={.62} pulse={.18} scaleByMag />
+    <PulseLayer points={layers.fires} color="#ff6b35" size={.017} altitude={1.372} opacity={.78} pulse={.34} />
+    <PulseLayer points={layers.storms} color="#8a9dff" size={.026} altitude={1.38} opacity={.34} pulse={.16} />
+    <PulseLayer points={layers.volcanoes} color="#ff4d4d" size={.016} altitude={1.372} opacity={.8} pulse={.3} />
+  </>;
+}
+
+function Earth({ active, discoveries, investigations, cameras, sky, layers, onSelect, onSelectCamera, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; cameras: PublicCamera[]; sky?: { lat: number; lon: number }[]; layers?: PlanetLayers; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectCamera: (camera: PublicCamera) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
   const group = useRef<THREE.Group>(null);
   const pointerDown = useRef<{ x: number; y: number }>();
   const earth = useLoader(THREE.TextureLoader, '/textures/earth-blue-marble.jpg');
@@ -94,6 +131,7 @@ function Earth({ active, discoveries, investigations, cameras, sky, onSelect, on
       <sphereGeometry args={[1.34, 96, 96]} />
       <shaderMaterial transparent blending={THREE.AdditiveBlending} side={THREE.BackSide} vertexShader={`varying vec3 vNormal; void main(){ vNormal=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`} fragmentShader={`varying vec3 vNormal; void main(){ float intensity=pow(.72-dot(vNormal,vec3(0.,0.,1.)),2.1); gl_FragColor=vec4(.18,.55,1.,1.)*intensity;}`} />
     </mesh>
+    {layers && <PlanetActivity layers={layers} />}
     <ConnectionArcs active={active} discoveries={discoveries} />
     <OrbitTracks discoveries={discoveries} active={active} />
     {active && !discoveries.some(d => d.id === active.id) && !investigations.some(i => i.id === active.id) && <FocusMarker active={active} />}
@@ -309,7 +347,7 @@ function InvestigationMarker({ investigation, active, onSelect }: { investigatio
   </group>;
 }
 
-export default function Globe({ active, discoveries, investigations, cameras, sky, onSelect, onSelectCamera, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; cameras: PublicCamera[]; sky?: { lat: number; lon: number }[]; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectCamera: (camera: PublicCamera) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
+export default function Globe({ active, discoveries, investigations, cameras, sky, layers, onSelect, onSelectCamera, onSelectInvestigation }: { active?: FocusTarget; discoveries: Discovery[]; investigations: Investigation[]; cameras: PublicCamera[]; sky?: { lat: number; lon: number }[]; layers?: PlanetLayers; onSelect: (discovery: Discovery, point?: { lat: number; lon: number }) => void; onSelectCamera: (camera: PublicCamera) => void; onSelectInvestigation: (investigation: Investigation) => void }) {
   const sun = useMemo(() => {
     const point = subsolarPoint();
     return latLon(point.lat, point.lon, 5.4);
@@ -321,7 +359,7 @@ export default function Globe({ active, discoveries, investigations, cameras, sk
       <directionalLight position={[sun.x, sun.y, sun.z]} intensity={2.45} />
       <pointLight position={[-3, -2, -2]} intensity={.38} color="#5b7cff" />
       <Stars radius={80} depth={35} count={3600} factor={3.2} saturation={0} fade speed={.45} />
-      <Earth active={active} discoveries={discoveries} investigations={investigations} cameras={cameras} sky={sky} onSelect={onSelect} onSelectCamera={onSelectCamera} onSelectInvestigation={onSelectInvestigation} />
+      <Earth active={active} discoveries={discoveries} investigations={investigations} cameras={cameras} sky={sky} layers={layers} onSelect={onSelect} onSelectCamera={onSelectCamera} onSelectInvestigation={onSelectInvestigation} />
       <OrbitControls enablePan={false} enableZoom minDistance={3.25} maxDistance={5.2} zoomSpeed={.55} rotateSpeed={.42} enableDamping dampingFactor={.08} autoRotate={!active} autoRotateSpeed={.32} makeDefault />
     </Canvas>
     <div className="orbitalVignette" />

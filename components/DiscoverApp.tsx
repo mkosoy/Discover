@@ -71,11 +71,19 @@ export default function DiscoverApp() {
   const [selectedInvestigation, setSelectedInvestigation] = useState<Investigation>();
   const [watching, setWatching] = useState(false);
   const [sky, setSky] = useState<{ lat: number; lon: number }[]>([]);
+  const [layers, setLayers] = useState<any>();
   useEffect(() => {
     let cancelled = false;
     const loadSky = () => fetch('/api/sky').then(r => r.json()).then(data => { if (!cancelled && Array.isArray(data.positions)) setSky(data.positions); }).catch(() => {});
     loadSky();
     const timer = window.setInterval(loadSky, 60000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const loadLayers = () => fetch('/api/layers').then(r => r.json()).then(data => { if (!cancelled && Array.isArray(data.quakes)) setLayers(data); }).catch(() => {});
+    loadLayers();
+    const timer = window.setInterval(loadLayers, 300000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, []);
   const [showInstallHint, setShowInstallHint] = useState(false);
@@ -356,7 +364,7 @@ export default function DiscoverApp() {
   };
 
   return <main className={`mode-${mode} ${panelOpen ? 'panel-open' : 'panel-closed'} ${watching ? 'watching' : ''}`}>
-    <Globe active={globeFocus} discoveries={discoveries} investigations={investigations} cameras={publicCameras} sky={sky} onSelect={selectDiscovery} onSelectCamera={selectCamera} onSelectInvestigation={selectInvestigation} />
+    <Globe active={globeFocus} discoveries={discoveries} investigations={investigations} cameras={publicCameras} sky={sky} layers={layers} onSelect={selectDiscovery} onSelectCamera={selectCamera} onSelectInvestigation={selectInvestigation} />
     <header className="topbar">
       <div className="brand"><Globe2 size={22} /><span>Elsewhere</span></div>
       <nav>

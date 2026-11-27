@@ -155,7 +155,7 @@ function attentionCadence(articles: any[], hours = 24) {
   return counted ? [{ label: `Attention items / ${binHours}h`, values, display: `${counted} sampled` }] : [];
 }
 
-function parseGdacsItems(xml: string | null) {
+export function parseGdacsItems(xml: string | null) {
   if (!xml) return [];
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(match => {
     const block = match[1];
