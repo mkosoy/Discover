@@ -21,3 +21,29 @@
 - Review loop total: 38+ real bugs fixed across 9 rounds. Latest: launch imagery object form, serverless cache freeze, pressure-clock skew from rows missing wave data, SST copy overclaiming.
 - Launch cards carry real mission imagery. All 16 live video feeds verified valid.
 - Dead ends documented: IODA unreachable, DART tsunami buoys form-gated.
+
+## 2026-11-27 00:35–04:15 PT — insights-and-connections era (second overnight run)
+
+User direction: "Teach the app how to make insights and connections. Think of things that feel like they shouldn't be around but are normal public APIs." Plus: clean up the data, audit what exists, 5 hours non-stop local-only.
+
+### New detection engines (the insight layer)
+- **Convergence engine** — when multiple independent instrument types observe the same physical event, cards get score boosts + a "Convergent evidence" fact. Patterns: coastal storm (tide+barometer+forecast), space-weather chain (flare→wind→aurora), volcanic unrest, tsunami chain, human pulse. First activation: the nor'easter — 3 instruments agreeing for 2+ days, ranked #1 correctly.
+- **Earth-delta engine** — feed snapshots persisted every generation; card diffs now vs 1h ago: new events, faded events, fastest-moving instruments. "The planet as a diff."
+- **Meta-scan** — z-score novelty across all instrument series (buoys, DART, Kp, UK grid, X-ray flux log-scale); fires only at ≥2.5σ (correct for multiple comparisons — when it fires it's real). z-baseline excludes the latest point.
+- **Wiki edit-burst detector** — rolling 12-min window across generations; behavioral breaking-news detection.
+
+### New data sources ("shouldn't be public but is")
+- **NASA Deep Space Network XML** — LIVE: which dishes hear which spacecraft + round-trip light time. Voyager 1 at Madrid, 24h one-way light time. Light-time ladder SVG. The poetic centerpiece.
+- **Military aircraft** (adsb.lol /v2/mil) — ~90 broadcasting publicly, tankers/transports, honest boundary framing.
+- **open-notify astros** — 12 named humans off-planet, animated orbital crew viz.
+- **DART seafloor pressure** — tsunami-warning buoys measuring 5,694m of ocean overhead. Same realtime2 channel, `.dart` suffix, 8 columns not 9.
+- **USGS river discharge** — 4 continental rivers, own 10-min cache tier (12s upstream too slow for main batch). Colorado dam-release detection on first contact. Sort newest-first→ascending required for charts.
+- **P2Pquake** — Japan tsunami bulletins, conditional card.
+- **Celestrak: dead** (timeouts). LiveATC: streams block datacenter IPs — card pulled after honest non-verification. sensor.community: dense Europe/empty where it matters. Orcasound: API exists but stream URLs need reverse engineering — parked.
+
+### Generative animated substitutes (SMIL in data-uri SVG animates inside <img>!)
+- Orbital crew visualization, military sky map with real positions, radio waveform, wiki edit rain — all animated, all data-driven, zero client JS.
+
+### Data cleanup (user explicitly asked)
+- Deleted weak/redundant cards: nazare-swell (model-only, redundant with measured buoys), tokyo-air-corridor.
+- met.no fallback pressure mapping, river outlier filtering, time-sort fix, delta window-accurate titles, crew roster honesty labels.
