@@ -2917,6 +2917,42 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     }
   }
 
+  // --- Orbital coincidence: the ISS passing over an active disaster. The crew
+  // is closer to it than anyone on the ground in most directions — and they can
+  // see it with naked eyes.
+  if (iss && Number.isFinite(iss.latitude) && Array.isArray(eonet?.events)) {
+    const severe = eonet.events.filter((e: any) => {
+      const cat = (e.categories?.[0]?.title ?? '').toLowerCase();
+      if (/prescribed|\bRX\b/i.test(e.title ?? '')) return false; // prescribed burns are land management, not disasters
+      return /wildfire|severe storm|volcano|flood/.test(cat) && e.geometry?.length;
+    });
+    let bestFly: any = null; let bestDist = 1e9;
+    for (const e of severe) {
+      const geo = e.geometry[e.geometry.length - 1];
+      const coords = geo?.coordinates;
+      if (!coords) continue;
+      const [elon, elat] = Array.isArray(coords[0]) ? [coords[0][0], coords[0][1]] : [coords[0], coords[1]];
+      const d = kmBetween({ lat: iss.latitude, lon: iss.longitude }, { lat: elat, lon: elon });
+      if (d < bestDist) { bestDist = d; bestFly = { e, elat, elon }; }
+    }
+    if (bestFly && bestDist < 900) {
+      const evName = bestFly.e.title ?? 'an active event';
+      out.push({
+        id: 'iss-over-disaster-now', template: 'orbit', title: `The ISS is passing within ${Math.round(bestDist)} km of ${evName.length > 60 ? evName.slice(0, 57) + '…' : evName} — the crew can see it out the window`, kicker: 'Orbital coincidence, live', visual: 'orbital', score: 82, freshness: 'orbital position seconds old',
+        location: { lat: bestFly.elat, lon: bestFly.elon, label: evName },
+        summary: `Right now the International Space Station is flying within ${Math.round(bestDist)} km of ${evName}. At 420 km altitude, the crew is closer to this event than most humans on the ground — and with their own eyes they can see what satellites measure: smoke columns, storm spirals, eruption plumes. Astronauts routinely photograph disasters from the cupola; some of the best wildfire and hurricane imagery in existence is handheld Nikon shots through that window. A coincidence of orbits and events — but a real one, happening overhead right now.`,
+        facts: [
+          { label: 'Ground distance', value: `${Math.round(bestDist)} km from the ground track — closer than most people on Earth`, kind: 'observed' },
+          { label: 'The event', value: `${evName} — tracked by NASA EONET`, kind: 'observed' },
+          { label: 'Orbital speed', value: '7.66 km/s — the pass lasts minutes, then the geometry is gone', kind: 'observed' },
+          { label: 'Crew visibility', value: 'Naked-eye + handheld cameras — astronaut photography of disasters is a real scientific archive', kind: 'interpretation' }
+        ],
+        sources: [src('NASA EONET event tracking', 'https://eonet.gsfc.nasa.gov/'), src('ISS live position', 'http://open-notify.org/')],
+        related: ['iss-over-earth', 'point-nemo-iss', 'deep-space-network-live']
+      });
+    }
+  }
+
   // --- News-awareness: is each live signal being talked about? Google News
   // top stories, keyless RSS. Cards the news hasn't noticed yet are the
   // underreported gems — the entire point of the product.
@@ -2936,6 +2972,14 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         if (overlap >= 2) { inNews = true; break; }
       }
       (card as any).inNews = inNews;
+    }
+    // The purest version of the product thesis: editors racing to update an
+    // article while no headline mentions it yet — the news before the news.
+    const wikiHot = out.find(d => d.id === 'wiki-hot-article') as any;
+    if (wikiHot && wikiHot.inNews === false) {
+      wikiHot.score = Math.max(wikiHot.score, 95);
+      wikiHot.kicker = 'Breaking before the news — no headlines yet';
+      wikiHot.facts = [{ label: 'News coverage', value: 'None detected yet — the crowd is ahead of the media on this one', kind: 'observed' }, ...wikiHot.facts];
     }
   }
 
