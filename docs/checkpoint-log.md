@@ -47,3 +47,8 @@ User direction: "Teach the app how to make insights and connections. Think of th
 ### Data cleanup (user explicitly asked)
 - Deleted weak/redundant cards: nazare-swell (model-only, redundant with measured buoys), tokyo-air-corridor.
 - met.no fallback pressure mapping, river outlier filtering, time-sort fix, delta window-accurate titles, crew roster honesty labels.
+
+## Review-driven hardening + OSM pulse (Nov 27, ~10:00 UTC)
+- Devin Review round on efe2e2b: 9 findings, all resolved at root in 597589e: astronaut roster removed (open-notify unmaintained — no honest keyless source exists), DART coordinates corrected against NOAA (3 of 5 were wrong ocean basins), tsunami bulletins deduped per-event with JST parsing, tsunami-chain gated to actual advisories, DSN parsing rewritten per-dish requiring active downSignal, space-weather chain requires measured geomagnetic storm, river gauges non-blocking.
+- New source: OpenStreetMap live changeset stream — "G_P_J just redrew the map" with the mapper's own comment. Keyless, public, exactly the unexpected-but-public brief.
+- Prod: 50 cards, all key cards verified, convergence storm card top-ranked.
