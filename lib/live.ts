@@ -1536,7 +1536,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const latest = rows[rows.length - 1];
     if (latest) {
       const co2Series = rows.slice(-730).map(r => ({ t: new Date(r.date + 'T00:00:00Z').getTime(), v: r.ppm }));
-      const co2Chart = buildSeriesChartSvg(`the Keeling Curve — last two years, now ${latest.ppm.toFixed(1)} ppm`, 'CO₂ parts per million, measured daily', co2Series, '#77dd88');
+      const co2Chart = buildSeriesChartSvg(`the Keeling Curve — last two years, now ${latest.ppm.toFixed(1)} ppm`, 'CO₂ parts per million', co2Series, '#77dd88');
       const latestMs = new Date(latest.date + 'T00:00:00Z').getTime();
       const yearAgoTarget = latestMs - 52 * 7 * 86400000;
       const yearAgo = rows.reduce((best, r) => Math.abs(yearAgoTarget - new Date(r.date + 'T00:00:00Z').getTime()) < Math.abs(yearAgoTarget - new Date(best.date + 'T00:00:00Z').getTime()) ? r : best, rows[0]);
