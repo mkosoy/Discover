@@ -308,7 +308,7 @@ function snapshotFeed(cards: Array<{ id: string; title: string; score: number }>
 // Rotating-by-design cards would spam the delta with noise — a new radio
 // station every few minutes is rotation, not planetary change.
 function isRotationalId(id: string): boolean {
-  return /^(radio-|wildlife-pulse-|camera-|atc-|epic-earth-|terminator-|sunset-chase|tokyo-waking|airborne-now|humanity-editing|military-aircraft|uk-grid|keeling|ocean-skin|earth-extremes|humanity-darkness|wildest-water|lightning-space|point-nemo)/.test(id);
+  return /^(radio-|wildlife-pulse-|camera-|atc-|epic-earth-|terminator-|sunset-chase|tokyo-waking|airborne-now|humanity-editing|military-aircraft|uk-grid|keeling|ocean-skin|earth-extremes|humanity-darkness|wildest-water|lightning-space|point-nemo|osm-mapping)/.test(id);
 }
 
 function noveltyZ(series: Array<{ t: number; v: number }> | undefined): number | null {
@@ -1064,7 +1064,7 @@ function detectConvergences(out: Discovery[]): void {
   // human-activity cards coexist: frame as "the planet's species and societies
   // reporting at once." No geo constraint — the connection is simultaneity.
   {
-    const human = out.filter(d => ['humanity-editing-now', 'airborne-now', 'military-aircraft-visible'].includes(d.id) || d.id.startsWith('wildlife-pulse') || d.id.startsWith('radio-'));
+    const human = out.filter(d => ['humanity-editing-now', 'airborne-now', 'military-aircraft-visible'].includes(d.id) || d.id.startsWith('wildlife-pulse') || d.id.startsWith('radio-') || d.id === 'osm-mapping-now');
     if (human.length >= 4) {
       const members = human.slice(0, 4);
       groups.push({
@@ -1146,7 +1146,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1187,7 +1187,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any[]>('https://api.p2pquake.net/v2/history?codes=551&limit=3', undefined, 6000),
     dartObservations(),
     riverNonBlocking(),
-    text('https://eyes.nasa.gov/dsn/data/dsn.xml')
+    text('https://eyes.nasa.gov/dsn/data/dsn.xml'),
+    json<any>('https://api.openstreetmap.org/api/0.6/changesets.json', { headers: { 'User-Agent': 'Elsewhere/1.0 earth discovery' } }, 7000),
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -2459,6 +2460,37 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         ].filter(Boolean) as any,
         sources: [src('adsb.lol public ADS-B network', 'https://adsb.lol')],
         related: ['aircraft-emergency-now', 'Aircraft aloft census', 'sunset']
+      });
+    }
+  }
+
+  // --- Humanity is redrawing the map, literally: OpenStreetMap's public
+  // changeset stream. Volunteers worldwide editing roads, trails, buildings
+  // right now — with their own comments. Unexpected but entirely public.
+  if (osmFeed && Array.isArray(osmFeed.changesets) && osmFeed.changesets.length >= 20) {
+    const recent = osmFeed.changesets.filter((c: any) => Number(c.changes_count) > 0 && Number.isFinite(c.min_lat) && Number.isFinite(c.min_lon));
+    if (recent.length >= 5) {
+      const totalChanges = recent.reduce((s: number, c: any) => s + Number(c.changes_count || 0), 0);
+      const editors = new Set(recent.map((c: any) => c.user)).size;
+      // most interesting: biggest meaningful edit with a comment
+      const pick = [...recent].sort((a: any, b: any) => (Number(b.changes_count) + ((b.tags?.comment ? 200 : 0))) - (Number(a.changes_count) + (a.tags?.comment ? 200 : 0)))[0];
+      const lat = (Number(pick.min_lat) + Number(pick.max_lat)) / 2;
+      const lon = (Number(pick.min_lon) + Number(pick.max_lon)) / 2;
+      const comment = String(pick.tags?.comment ?? '').trim();
+      const mapper = String(pick.user ?? 'a mapper');
+      const spread = recent.map((c: any) => ({ lat: (Number(c.min_lat) + Number(c.max_lat)) / 2, lon: (Number(c.min_lon) + Number(c.max_lon)) / 2 }));
+      out.push({
+        id: 'osm-mapping-now', template: 'city', title: `${mapper} just redrew the map ${comment ? `— "${comment.slice(0, 80)}${comment.length > 80 ? '…' : ''}"` : `near ${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`}`, kicker: 'Humanity, live — the map being rewritten', visual: 'city', score: 74, freshness: 'changeset closed moments ago', mediaImage: buildSkyMapSvg(spread, `${editors} volunteers editing the map right now`, '#7ddb6a'), mediaAlt: 'Live map of where OpenStreetMap is being edited right now',
+        location: { lat, lon, label: `OpenStreetMap changeset #${pick.id}` },
+        summary: `The map of the Earth is not finished — it is being rewritten right now, edit by edit, by volunteers. In the last few minutes ${editors} different mappers published ${totalChanges.toLocaleString()} object changes visible in this sample alone: roads realigned, buildings traced, trails added, junctions fixed. ${mapper}'s latest edit ${comment ? `— described in their own words as "${comment.slice(0, 120)}" — ` : ''}touched ${Number(pick.changes_count).toLocaleString()} map objects. Most of these edits will matter to almost no one — a corrected footpath, a new bench — but together they are the most detailed map humanity has ever had, updating continuously in public.`,
+        facts: [
+          { label: 'Sampled changesets', value: `${recent.length} recent — ${totalChanges.toLocaleString()} object changes`, kind: 'observed' },
+          { label: 'Distinct mappers in sample', value: `${editors} people editing simultaneously`, kind: 'observed' },
+          pick.changes_count >= 500 ? { label: 'Heavy edit in progress', value: `${Number(pick.changes_count).toLocaleString()} objects — usually a systematic import or a whole highway corridor`, kind: 'interpretation' } : null,
+          { label: 'Why it exists', value: 'OpenStreetMap is the Wikipedia of maps — every edit public, immediate, and attributable. This feed is the planet being described by its inhabitants.', kind: 'interpretation' }
+        ].filter(Boolean) as any,
+        sources: [src('OpenStreetMap live changeset stream', 'https://www.openstreetmap.org/history')],
+        related: ['humanity-editing-now', 'airborne-now', 'wildlife-pulse']
       });
     }
   }
