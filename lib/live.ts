@@ -241,6 +241,34 @@ function scheduleHistorySave() {
   }, 30000);
 }
 
+// Rolling 12-minute window of Wikipedia article edits across generations —
+// a single 4-second sample almost never catches a burst, but persistence
+// across feed generations turns scattered samples into a real detector.
+const wikiHotWindow: Array<{ t: number; title: string; wiki: string }> = [];
+
+function recordWikiEdits(edits: Array<{ title: string; wiki: string }>) {
+  const nowT = Date.now();
+  for (const e of edits) wikiHotWindow.push({ t: nowT, title: e.title, wiki: e.wiki });
+  const cutoff = nowT - 12 * 60000;
+  while (wikiHotWindow.length && wikiHotWindow[0].t < cutoff) wikiHotWindow.shift();
+  if (wikiHotWindow.length > 3000) wikiHotWindow.splice(0, wikiHotWindow.length - 3000);
+}
+
+function hottestWikiArticle(): { title: string; wiki: string; count: number; minutes: number } | null {
+  if (wikiHotWindow.length < 20) return null;
+  const counts = new Map<string, { count: number; wiki: string }>();
+  for (const e of wikiHotWindow) {
+    const key = `${e.wiki}::${e.title}`;
+    const cur = counts.get(key) ?? { count: 0, wiki: e.wiki };
+    cur.count++;
+    counts.set(key, cur);
+  }
+  const entries = [...counts.entries()].sort((a, b) => b[1].count - a[1].count);
+  if (!entries.length) return null;
+  const [key, data] = entries[0];
+  return { title: key.split('::')[1], wiki: data.wiki, count: data.count, minutes: 12 };
+}
+
 function recordReading(key: string, v: number, t = Date.now()) {
   if (!Number.isFinite(v)) return;
   const arr = instrumentHistory[key] ?? (instrumentHistory[key] = []);
@@ -624,6 +652,15 @@ async function riverObservations(): Promise<any[]> {
       const ts = data?.value?.timeSeries?.[0];
       const values: Array<{ t: number; v: number }> = (ts?.values?.[0]?.value ?? []).map((r: any) => ({ t: new Date(r.dateTime).getTime(), v: Number(r.value) })).filter((r: any) => Number.isFinite(r.v) && r.v >= 0 && Number.isFinite(r.t));
       if (values.length < 8) return null;
+      // USGS occasionally writes sensor-error artifacts (spikes/dropouts) into
+      // the instant-values feed — drop anything beyond 4x the series median or
+      // below a fifth of it, otherwise the chart and z-scores lie.
+      const sorted = [...values].map(r => r.v).sort((a, b) => a - b);
+      const med = sorted[Math.floor(sorted.length / 2)] || 1;
+      const clean = values.filter(r => r.v <= med * 4 && r.v >= med * 0.2);
+      if (clean.length < 8) return null;
+      values.length = 0; values.push(...clean);
+      values.sort((a, b) => a.t - b.t);
       const latest = values[values.length - 1];
       const ageMin = Math.round((Date.now() - latest.t) / 60000);
       if (ageMin > 240) return null;
@@ -2037,6 +2074,32 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   // --- Humanity editing its collective memory, live. The Wikipedia recent-changes
   // stream is one of the few truly real-time windows into what humans are doing
   // en masse at this exact second.
+  // --- Breaking-news detection through editing behavior: when many humans
+  // suddenly edit the same article, something almost always just happened —
+  // a death, a goal, a verdict, a disaster. The detector is behavioral, not
+  // editorial: it notices attention, not importance.
+  if (wikiPulse && wikiPulse.edits.length) {
+    recordWikiEdits(wikiPulse.edits);
+    const hot = hottestWikiArticle();
+    if (hot && hot.count >= 5) {
+      const perMin = (hot.count / hot.minutes).toFixed(1);
+      const lang = hot.wiki.split('.')[0];
+      out.push({
+        id: 'wiki-hot-article', template: 'city', title: `The article "${hot.title.length > 55 ? hot.title.slice(0, 52) + '…' : hot.title}" is being edited ${perMin}× per minute — something is happening`, kicker: 'Behavioral breaking-news detection, live', visual: 'city', score: hot.count >= 12 ? 93 : 86, freshness: 'edit burst in progress',
+        location: { lat: 0, lon: 0, label: 'The global Wikipedia network' },
+        summary: `In the last ${hot.minutes} minutes, the ${lang}.wikipedia article "${hot.title}" has been edited ${hot.count} times by different humans — far above the background rate for any single article. Edit bursts like this are one of the fastest honest signals of breaking events on the internet: when someone notable dies, when a goal is scored, when a court rules, the first thing that happens is people race to update the record. It can also mean a dispute or a vandalism spree — the detector measures attention, not truth. Either way: a crowd is gathering around this fact right now.`,
+        facts: [
+          { label: 'Edits in window', value: `${hot.count} edits in ${hot.minutes} minutes (${lang}.wikipedia)`, kind: 'observed' },
+          { label: 'Detection method', value: 'Rolling count across the live edit stream — no editorial judgment, pure behavior', kind: 'verified' },
+          { label: 'What it usually means', value: 'Breaking news — a death, a result, a disaster. Sometimes an edit war or coordinated vandalism.', kind: 'interpretation' },
+          { label: 'What it is not', value: 'Verification. The burst tells you the world is suddenly interested in this fact, not what is true about it.', kind: 'question' }
+        ],
+        sources: [src('Wikimedia live edit stream', 'https://stream.wikimedia.org/v2/stream/recentchange'), src(`"${hot.title}"`, `https://${hot.wiki}/wiki/${encodeURIComponent(hot.title.replace(/ /g, '_'))}`)],
+        related: ['humanity-editing-now', 'The attention gap', 'crisis-attention-index']
+      });
+    }
+  }
+
   if (wikiPulse && wikiPulse.edits.length >= 3) {
     const interesting = wikiPulse.edits.filter(e => e.wiki === 'en.wikipedia.org');
     const pool = interesting.length >= 2 ? interesting : wikiPulse.edits;
