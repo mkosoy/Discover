@@ -1109,7 +1109,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, astros, milAircraft, p2pquakeFeed, darts, rivers] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, astros, milAircraft, p2pquakeFeed, darts, rivers, dsnXml] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1150,7 +1150,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://api.adsb.lol/v2/mil', undefined, 7000),
     json<any[]>('https://api.p2pquake.net/v2/history?codes=551&limit=3', undefined, 6000),
     dartObservations(),
-    riverObservations()
+    riverObservations(),
+    text('https://eyes.nasa.gov/dsn/data/dsn.xml')
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -2662,6 +2663,77 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       sources: [src('USGS Water Services', 'https://waterservices.usgs.gov/')],
       related: ['sea-defies-moon', 'dart-seafloor-live', 'ocean-measured-now', 'The measured planet']
     });
+  }
+
+
+  // --- The Deep Space Network, live: which giant antennas are talking to which
+  // spacecraft right now, and how long the light takes. The farthest human
+  // voices, measured. This data should feel classified — it is a public XML file.
+  if (dsnXml && typeof dsnXml === 'string' && dsnXml.includes('<dish')) {
+    const craftNames: Record<string, string> = {
+      VGR1: 'Voyager 1', VGR2: 'Voyager 2', JWST: 'the James Webb Space Telescope', NHPC: 'New Horizons',
+      MRO: 'Mars Reconnaissance Orbiter', MSL: 'the Curiosity rover', MVN: 'MAVEN', TGO: 'the Trace Gas Orbiter',
+      EMM: "the UAE's Hope Mars probe", KPLO: "Korea's Danuri lunar orbiter", LUCY: 'Lucy, outbound to the asteroids',
+      PSYC: 'Psyche', ORX: 'OSIRIS-REx', MMX: "Japan's Martian Moons explorer", JUICE: "ESA's JUICE, en route to Jupiter",
+      PARKER: 'Parker Solar Probe', PSP: 'Parker Solar Probe', ESCG: 'an ESA spacecraft', GAIA: 'Gaia', SOHO: 'SOHO', ACE: 'ACE'
+    };
+    const stations: Record<string, { name: string; lat: number; lon: number }> = {
+      gdscc: { name: 'Goldstone, California', lat: 35.4, lon: -116.9 },
+      mdscc: { name: 'Madrid, Spain', lat: 40.4, lon: -4.2 },
+      cdscc: { name: 'Canberra, Australia', lat: -35.4, lon: 148.98 }
+    };
+    let currentStation = 'dsn';
+    const links: Array<{ dish: string; station: string; craft: string; craftRaw: string; rtlt: number; el: number }> = [];
+    for (const line of dsnXml.split('\n')) {
+      const st = line.match(/<station name="(\w+)"/);
+      if (st) currentStation = st[1];
+      const dishM = line.match(/<dish name="([\w]+)"[^>]*elevationAngle="([\d.-]*)"/);
+      const tgtM = line.match(/<target name="([\w]+)"[^>]*downlegRange="([\d.-]*)"[^>]*rtlt="([\d.-]*)"/) || line.match(/<target name="([\w]+)"[^>]*rtlt="([\d.-]*)"/);
+      if (tgtM) {
+        const craftRaw = tgtM[1];
+        if (craftRaw === 'DSN') continue;
+        const rtlt = Number(tgtM[4] ?? tgtM[3] ?? tgtM[2]);
+        // find the most recent dish line above this target
+        const before = dsnXml.slice(0, dsnXml.indexOf(line));
+        const dishMatches = [...before.matchAll(/<dish name="([\w]+)"[^>]*elevationAngle="([\d.-]*)"/g)];
+        const lastDish = dishMatches[dishMatches.length - 1];
+        if (lastDish && Number.isFinite(rtlt) && rtlt > 0) {
+          links.push({ dish: lastDish[1], station: currentStation, craft: craftNames[craftRaw] ?? craftRaw, craftRaw, rtlt, el: Number(lastDish[2] || 0) });
+        }
+      }
+    }
+    // dedupe: one link per craft
+    const seen = new Set<string>();
+    const uniqueLinks = links.filter(l => { if (seen.has(l.craftRaw)) return false; seen.add(l.craftRaw); return true; });
+    if (uniqueLinks.length >= 3) {
+      const farthest = [...uniqueLinks].sort((a, b) => b.rtlt - a.rtlt)[0];
+      const oneWayHrs = farthest.rtlt / 2 / 3600;
+      const stInfo = stations[farthest.station] ?? { name: 'a DSN complex', lat: 35, lon: -116 };
+      const fmtRtlt = (s: number) => s / 2 < 120 ? `${(s / 2).toFixed(1)} seconds` : s / 2 < 7200 ? `${Math.round(s / 2 / 60)} minutes` : `${(s / 2 / 3600).toFixed(1)} hours`;
+      // light-time ladder SVG — log-scale bars of one-way light time
+      const ladder = [...uniqueLinks].sort((a, b) => a.rtlt - b.rtlt).slice(0, 7);
+      const maxLog = Math.log10(farthest.rtlt / 2);
+      const bars = ladder.map((l, i) => {
+        const w = Math.max(4, (Math.log10(Math.max(1, l.rtlt / 2)) / maxLog) * 430);
+        const y = 62 + i * 34;
+        return `<text x="14" y="${y + 13}" fill="#a8c8e8" font-family="monospace" font-size="11">${l.craft.slice(0, 26).replace(/&/g, '&amp;')}</text><rect x="230" y="${y}" width="${w.toFixed(0)}" height="18" rx="3" fill="#3d8bfd" opacity="${(0.55 + i * 0.06).toFixed(2)}"><animate attributeName="opacity" values="${(0.55 + i * 0.06).toFixed(2)};${(0.35 + i * 0.06).toFixed(2)};${(0.55 + i * 0.06).toFixed(2)}" dur="${(2 + i * 0.5).toFixed(1)}s" repeatCount="indefinite"/></rect><text x="${236 + w}" y="${y + 13}" fill="#ffd166" font-family="monospace" font-size="10.5">${fmtRtlt(l.rtlt)}</text>`;
+      }).join('');
+      const ladderSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#04070f"/>${Array.from({ length: 40 }, (_, i) => `<circle cx="${(i * 149 % 640)}" cy="${(i * 89 % 360)}" r="${(i % 3) * 0.4 + 0.4}" fill="#fff" opacity="0.25"/>`).join('')}<text x="14" y="34" fill="#cfe8ff" font-family="monospace" font-size="15" font-weight="bold">How long light takes to reach each craft — right now</text>${bars}<text x="14" y="348" fill="#4a6a8a" font-family="monospace" font-size="10">live round-trip light time from the Deep Space Network · bar length logarithmic</text></svg>`;
+      out.push({
+        id: 'deep-space-network-live', template: 'orbit', title: `The big dish at ${stInfo.name} is listening to ${farthest.craft} right now — its whisper takes ${fmtRtlt(farthest.rtlt)} to arrive`, kicker: 'The farthest human voices, live', visual: 'orbital', score: 88, freshness: 'antenna telemetry live',
+        location: { lat: stInfo.lat, lon: stInfo.lon, label: `${farthest.dish} — ${stInfo.name}` },
+        mediaImage: svgUri(ladderSvg), mediaAlt: 'Light-time ladder — how long signals take to reach each spacecraft being tracked right now',
+        summary: `Right now, across three giant antenna complexes — Goldstone in California, Madrid, and Canberra — the Deep Space Network is in contact with ${uniqueLinks.length} spacecraft. Antenna ${farthest.dish} at ${stInfo.name} is pointed at elevation ${Math.round(farthest.el)}°, listening to ${farthest.craft}. The signal arriving at this moment left the spacecraft ${fmtRtlt(farthest.rtlt)} ago — even at light speed. ${farthest.craftRaw.startsWith('VGR') ? 'Voyager is so far away that the conversation is not a conversation: every answer arrives a day late, carrying a whisper measured in billionths of a watt — the signal power of a refrigerator light bulb spread across the entire solar system.' : 'Each of these links is a thread of radio waves thinner than a whisper, decoded from noise itself.'} Also being heard right now: ${uniqueLinks.filter(l => l.craftRaw !== farthest.craftRaw).slice(0, 3).map(l => l.craft).join(', ')}.`,
+        facts: [
+          { label: 'Now hearing', value: uniqueLinks.slice(0, 5).map(l => `${l.craft} (${fmtRtlt(l.rtlt)} one-way)`).join(' · '), kind: 'observed' },
+          { label: 'Antenna pointing', value: `${farthest.dish} at ${Math.round(farthest.el)}° elevation — physically aimed at the craft right now`, kind: 'observed' },
+          { label: 'One-way light time', value: fmtRtlt(farthest.rtlt) + ` to ${farthest.craft}`, kind: 'observed' },
+          { label: 'Why this is public', value: 'NASA publishes live DSN link status openly — the most distant infrastructure humanity operates, readable by anyone', kind: 'verified' }
+        ],
+        sources: [src('NASA DSN Now', 'https://eyes.nasa.gov/dsn/dsn.html')],
+        related: ['humans-in-space', 'iss-over-earth', 'point-nemo-iss']
+      });
+    }
   }
 
   return connectDiscoveries(out.sort((a, b) => b.score - a.score)).map(d => ({ ...d, retrieved } as Discovery));
