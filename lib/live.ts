@@ -2937,7 +2937,10 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         if (!Number.isFinite(Number(c.min_lat))) return false;
         const clat = (Number(c.min_lat) + Number(c.max_lat)) / 2;
         const clon = (Number(c.min_lon) + Number(c.max_lon)) / 2;
-        return Math.abs(clat - d.lat) < 1 && Math.abs(clon - d.lon) < 1 && Number(c.changes_count) > 0;
+        if (Number(c.changes_count) <= 0) return false;
+        const dlat = (clat - d.lat) * 111;
+        const dlon = (clon - d.lon) * 111 * Math.cos((d.lat * Math.PI) / 180);
+        return Math.hypot(dlat, dlon) <= 110;
       });
       const users = new Set(hits.map((c: any) => c.user));
       if (hits.length >= 4 && users.size >= 3 && (!best || hits.length > best.hits.length)) best = { d, hits, users };
