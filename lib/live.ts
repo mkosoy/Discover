@@ -584,7 +584,14 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       { label: 'Magnitude', value: q.properties.mag.toFixed(1), kind: 'observed' }, { label: 'Depth', value: `${Math.round(depth)} km`, kind: 'observed' }, { label: 'Reports', value: `${q.properties.felt ?? 0} felt reports`, kind: 'verified' }, { label: 'Impact', value: 'Still unknown', kind: 'question' }
     ], sources: [src(imagery.sourceLabel, imagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/'), src('USGS earthquake feed', q.properties.url)], related: ['Aftershock pattern', 'Tsunami bulletins', 'Regional recovery'] });
   }
-  const evt = eonet?.events?.find((e: any) => e.geometry?.length);
+  const eonetRank = (e: any) => {
+    const c = (e.categories?.[0]?.title ?? '').toLowerCase();
+    if (c.includes('fire')) return 0;
+    if (c.includes('severe') || c.includes('storm') || c.includes('cyclone')) return 1;
+    if (c.includes('volcano') || c.includes('earthquake') || c.includes('flood')) return 2;
+    return 3;
+  };
+  const evt = eonet?.events?.filter((e: any) => e.geometry?.length).sort((a: any, b: any) => eonetRank(a) - eonetRank(b))[0];
   if (evt) {
     const geom = evt.geometry.at(-1);
     const [lon, lat] = geom.coordinates;
