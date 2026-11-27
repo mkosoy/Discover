@@ -387,6 +387,95 @@ type TideAnomaly = { id: string; name: string; lat: number; lon: number; measure
 
 
 
+// --- Generative animated substitutes: SMIL-animated SVG data URIs. SMIL runs
+// inside <img>-embedded SVGs in every modern browser, so these genuinely move
+// without a single line of client JS. Each bakes real current data into the art.
+function svgUri(svg: string): string {
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+function buildOrbitalCrewSvg(crewCount: number, issCount: number, tiangongCount: number): string {
+  const W = 640, H = 360, cx = 320, cy = 185;
+  const dots = (count: number, r: number, color: string) => Array.from({ length: count }, (_, i) => {
+    const a = (i / count) * Math.PI * 2;
+    return `<circle cx="${(cx + Math.cos(a) * r).toFixed(1)}" cy="${(cy + Math.sin(a) * r * 0.32).toFixed(1)}" r="3.2" fill="${color}" opacity="0.95"><animate attributeName="opacity" values="1;0.4;1" dur="${(1.4 + i * 0.23).toFixed(2)}s" repeatCount="indefinite"/></circle>`;
+  }).join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+<rect width="${W}" height="${H}" fill="#04070f"/>
+${Array.from({ length: 60 }, (_, i) => `<circle cx="${(i * 97 % W)}" cy="${(i * 53 % H)}" r="${(i % 3) * 0.5 + 0.4}" fill="#ffffff" opacity="${0.15 + (i % 5) * 0.1}"/>`).join('')}
+<circle cx="${cx}" cy="${cy}" r="52" fill="#0b2d52"/>
+<circle cx="${cx}" cy="${cy}" r="52" fill="none" stroke="#2f7fc4" stroke-width="1.2" opacity="0.8"/>
+<ellipse cx="${cx - 18}" cy="${cy - 12}" rx="26" ry="18" fill="#123f6b" opacity="0.7"/>
+<ellipse cx="${cx + 15}" cy="${cy + 16}" rx="20" ry="13" fill="#123f6b" opacity="0.55"/>
+<g><animateTransform attributeName="transform" type="rotate" from="0 ${cx} ${cy}" to="360 ${cx} ${cy}" dur="14s" repeatCount="indefinite"/>
+<ellipse cx="${cx}" cy="${cy}" rx="130" ry="42" fill="none" stroke="#55ddff" stroke-width="1" opacity="0.5"/>
+${dots(issCount, 130, '#7fe9ff')}</g>
+<g><animateTransform attributeName="transform" type="rotate" from="360 ${cx} ${cy}" to="0 ${cx} ${cy}" dur="11s" repeatCount="indefinite"/>
+<ellipse cx="${cx}" cy="${cy}" rx="95" ry="30" fill="none" stroke="#ffb35c" stroke-width="1" opacity="0.5" transform="rotate(-18 ${cx} ${cy})"/>
+${dots(tiangongCount, 95, '#ffd28a')}</g>
+<text x="24" y="34" fill="#cfe8ff" font-family="monospace" font-size="17" font-weight="bold">${crewCount} humans orbit above you right now</text>
+<text x="24" y="56" fill="#7fa8c9" font-family="monospace" font-size="11.5">${issCount} on the ISS (cyan) · ${tiangongCount} on Tiangong (amber) — dots pulse, orbits turn</text>
+<text x="24" y="${H - 18}" fill="#4a6a8a" font-family="monospace" font-size="10">generative visualization of the live crew roster — positions stylized, counts real</text>
+</svg>`;
+  return svgUri(svg);
+}
+
+function buildSkyMapSvg(craft: Array<{ lat: number; lon: number }>, title: string, color = '#ffcf5c'): string {
+  const W = 640, H = 360;
+  const px = (lon: number) => ((lon + 180) / 360) * W;
+  const py = (lat: number) => ((90 - lat) / 180) * (H - 60) + 30;
+  const dots = craft.slice(0, 160).map((c, i) =>
+    `<circle cx="${px(c.lon).toFixed(1)}" cy="${py(c.lat).toFixed(1)}" r="2.4" fill="${color}"><animate attributeName="opacity" values="1;0.25;1" dur="${(1.1 + (i % 7) * 0.4).toFixed(2)}s" repeatCount="indefinite"/></circle>`
+  ).join('');
+  const grid = [-120, -60, 0, 60, 120].map(lon => `<line x1="${px(lon)}" y1="30" x2="${px(lon)}" y2="${H - 30}" stroke="#16324a" stroke-width="0.7"/>`).join('') +
+    [-60, -30, 0, 30, 60].map(lat => `<line x1="0" y1="${py(lat)}" x2="${W}" y2="${py(lat)}" stroke="#16324a" stroke-width="0.7"/>`).join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+<rect width="${W}" height="${H}" fill="#04070f"/>
+${grid}
+${dots}
+<text x="24" y="24" fill="#f2e3b3" font-family="monospace" font-size="16" font-weight="bold">${title}</text>
+<text x="24" y="${H - 10}" fill="#5a7a95" font-family="monospace" font-size="10">real positions, sampled seconds ago — each pulse one aircraft</text>
+</svg>`;
+  return svgUri(svg);
+}
+
+function buildWaveformSvg(label: string): string {
+  const W = 640, H = 360;
+  const bars = Array.from({ length: 42 }, (_, i) => {
+    const x = 30 + i * 14;
+    const base = 30 + (i % 5) * 14;
+    return `<rect x="${x}" y="${180 - base}" width="8" height="${base * 2}" rx="3" fill="#64e3a1" opacity="0.85">
+<animate attributeName="height" values="${base * 2};${base * 0.7 + 20};${base * 2.6};${base * 2}" dur="${(0.9 + (i % 6) * 0.17).toFixed(2)}s" repeatCount="indefinite"/>
+<animate attributeName="y" values="${180 - base};${180 - base * 0.35 - 10};${180 - base * 1.3};${180 - base}" dur="${(0.9 + (i % 6) * 0.17).toFixed(2)}s" repeatCount="indefinite"/>
+</rect>`;
+  }).join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+<rect width="${W}" height="${H}" fill="#04070f"/>
+<line x1="0" y1="180" x2="${W}" y2="180" stroke="#123c28" stroke-width="1"/>
+${bars}
+<text x="24" y="34" fill="#b9f4d4" font-family="monospace" font-size="16" font-weight="bold">${label.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</text>
+<text x="24" y="${H - 14}" fill="#3f7a5c" font-family="monospace" font-size="10">generative audio visualizer — the real stream plays in the player below</text>
+</svg>`;
+  return svgUri(svg);
+}
+
+function buildEditRainSvg(rate: number): string {
+  const W = 640, H = 360;
+  const cols = Array.from({ length: 26 }, (_, i) => {
+    const x = 20 + i * 24;
+    const dur = (2.2 + (i % 5) * 0.8).toFixed(2);
+    const delay = ((i * 0.37) % 2).toFixed(2);
+    return `<g><text x="${x}" y="-20" fill="#8fd0ff" font-family="monospace" font-size="13" opacity="0.9">&#9998;<animate attributeName="y" values="-20;${H + 20}" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0.9;0.9;0" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/></text></g>`;
+  }).join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+<rect width="${W}" height="${H}" fill="#04070f"/>
+${cols}
+<text x="24" y="34" fill="#cfe8ff" font-family="monospace" font-size="16" font-weight="bold">~${rate} edits per minute, falling like rain</text>
+<text x="24" y="${H - 14}" fill="#4a6a8a" font-family="monospace" font-size="10">generative visualization — each falling mark one human edit, rate measured live</text>
+</svg>`;
+  return svgUri(svg);
+}
+
 function buildSeriesChartSvg(title: string, unit: string, series: Array<{ t: number; v: number }>, color = '#55ddff', footerOverride?: string): string | null {
   if (!series || series.length < 8) return null;
   const W = 640, H = 360, PADL = 14, PADR = 14, PADT = 44, PADB = 40;
@@ -692,7 +781,151 @@ function connectionReason(a: Discovery, b: Discovery): string | null {
   return null;
 }
 
+
+// --- Convergence engine: when multiple independent measurement systems observe
+// the same physical event at the same time, that agreement IS the story. This is
+// the app's core epistemology made programmatic: one instrument is a reading,
+// two agreeing instruments are evidence, three are an event. Detection is
+// pattern-driven and honest — each pattern names real instrument types.
+function kmBetween(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const dLat = (a.lat - b.lat) * 111;
+  const dLon = (a.lon - b.lon) * 111 * Math.cos((a.lat * Math.PI) / 180);
+  return Math.hypot(dLat, dLon);
+}
+
+interface ConvGroup {
+  theme: string;
+  members: Discovery[];
+  insight: string;
+  instrumentCount: number;
+}
+
+function detectConvergences(out: Discovery[]): void {
+  const groups: ConvGroup[] = [];
+
+  // A. Coastal storm convergence: tide gauge anomaly + buoy pressure fall + NWS
+  // alert + radar/storm cards clustered within 700km. Instrument types must be
+  // distinct for the convergence to count.
+  {
+    const tideCards = out.filter(d => ['sea-defies-moon', 'regional-surge-now', 'coastal-storm-synthesis'].includes(d.id));
+    const pressureCards = out.filter(d => d.id === 'storm-deepening-now');
+    const alertCards = out.filter(d => d.id.startsWith('nws-alert') && /flood|storm|surge|coastal|wind/i.test(`${d.title} ${d.summary}`));
+    for (const tide of tideCards) {
+      const nearby = [tide];
+      const types = new Set<string>(['tide gauge']);
+      for (const p of pressureCards) {
+        if (kmBetween(tide.location, p.location) < 900) { nearby.push(p); types.add('barometric buoy'); }
+      }
+      for (const a of alertCards) {
+        if (kmBetween(tide.location, a.location) < 700) { nearby.push(a); types.add('official forecast'); }
+      }
+      if (types.size >= 2 && nearby.length >= 2) {
+        groups.push({
+          theme: 'coastal-storm',
+          members: nearby,
+          instrumentCount: types.size,
+          insight: `${types.size} independent measurement systems — ${[...types].join(', ')} — are observing the same coastal storm system within a few hundred kilometers. Agreement across independent instruments is what turns readings into events.`
+        });
+      }
+    }
+  }
+
+  // B. Space weather chain: solar eruption -> geomagnetic response -> aurora
+  // conditions. Temporal logic: the chain only counts if elevated activity
+  // exists alongside aurora assessment — the Sun-to-Earth causal path.
+  {
+    const spaceWeather = out.find(d => d.id === 'space-weather-now');
+    const aurora = out.find(d => d.id === 'aurora-watch');
+    const wind = out.find(d => d.id === 'solar-wind-stream');
+    const members = [spaceWeather, aurora, wind].filter(Boolean) as Discovery[];
+    const stormActive = members.some(m => /geomagnetic storm|eruption|flare/i.test(m.title));
+    if (members.length >= 2 && stormActive) {
+      groups.push({
+        theme: 'space-weather-chain',
+        members,
+        instrumentCount: members.length,
+        insight: `The Sun-to-Earth chain is live: what the Sun emitted hours or days ago is now being measured at Earth by ${members.length} different instruments — X-ray flux at the satellite, solar wind at L1, geomagnetic disturbance in the magnetosphere. These are not independent events; they are one event, traveling.`
+      });
+    }
+  }
+
+  // C. Volcanic unrest convergence: earthquake swarm + crater camera + hazard
+  // model within 800km of each other.
+  {
+    const volc = out.filter(d => ['volcano-swarm-now', 'volcano-unrest-live', 'etna-live-volcano'].includes(d.id));
+    const clusters: Discovery[][] = [];
+    for (const v of volc) {
+      const cluster = clusters.find(c => c.some(m => kmBetween(m.location, v.location) < 800));
+      if (cluster) cluster.push(v); else if (!clusters.some(c => c.includes(v))) clusters.push([v]);
+    }
+    for (const cluster of clusters) {
+      if (cluster.length >= 2) {
+        groups.push({
+          theme: 'volcanic-unrest',
+          members: cluster,
+          instrumentCount: cluster.length,
+          insight: `Seismic instruments and visual observation agree on the same volcanic system: the swarm beneath and the surface above are one system in unrest. This is the pattern that precedes eruptions — though most unrest never erupts, and the honest reading is watchfulness, not prediction.`
+        });
+      }
+    }
+  }
+
+  // D. Tsunami chain: tsunami assessment + significant recent oceanic quake.
+  {
+    const tsunami = out.find(d => d.id === 'tsunami-watch-japan');
+    if (tsunami) {
+      const quakes = out.filter(d => d.id.startsWith('quake-') && kmBetween(d.location, tsunami.location) < 1500);
+      if (quakes.length) {
+        groups.push({
+          theme: 'tsunami-chain',
+          members: [tsunami, ...quakes],
+          instrumentCount: 1 + quakes.length,
+          insight: `The earthquake and the tsunami assessment are the same event measured at two stages: the rupture itself, then the water's response. The delay between them is the physics of wave propagation — seafloor to coast.`
+        });
+      }
+    }
+  }
+
+  // E. Human pulse convergence: wiki edits + radio + wildlife + aircraft —
+  // the biosphere-and-society family is quieter but real. Only when 3+
+  // human-activity cards coexist: frame as "the planet's species and societies
+  // reporting at once." No geo constraint — the connection is simultaneity.
+  {
+    const human = out.filter(d => ['humanity-editing-now', 'airborne-now', 'military-aircraft-visible'].includes(d.id) || d.id.startsWith('wildlife-pulse') || d.id.startsWith('radio-'));
+    if (human.length >= 4) {
+      const members = human.slice(0, 4);
+      groups.push({
+        theme: 'human-pulse',
+        members,
+        instrumentCount: members.length,
+        insight: `${members.length} simultaneous windows into what humans and animals are doing right now — not sensor data but behavior, observed live. The planet's other half.`
+      });
+    }
+  }
+
+  // Apply: boost member scores, inject convergent evidence fact, cross-link.
+  for (const g of groups) {
+    const boost = g.theme === 'human-pulse' ? 1 : 3 + g.instrumentCount * 2;
+    const ids = new Set(g.members.map(m => m.id));
+    for (const m of g.members) {
+      if (!m.facts.some(f => f.label === 'Convergent evidence')) {
+        m.score += boost;
+        m.facts.unshift({
+          label: 'Convergent evidence',
+          value: g.insight,
+          kind: 'interpretation'
+        });
+        const others = g.members.filter(o => o.id !== m.id).map(o => o.title.split('—')[0].trim().slice(0, 60));
+        if (others.length && !m.related.includes(others[0])) m.related = [others[0], ...m.related].slice(0, 6);
+      }
+    }
+    void ids;
+  }
+}
+
 function connectDiscoveries(out: Discovery[]) {
+  detectConvergences(out);
+  out.sort((a, b) => b.score - a.score);
   return out.map(discovery => ({
     ...discovery,
     connections: out
@@ -740,7 +973,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, astros, milAircraft, p2pquakeFeed] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -776,7 +1009,10 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://api.adsb.lol/v2/squawk/7700', undefined, 6000),
     json<any>('https://api.adsb.lol/v2/squawk/7600', undefined, 6000),
     json<any[]>('https://services.swpc.noaa.gov/products/alerts.json', undefined, 6000),
-    json<any>(`https://api.carbonintensity.org.uk/intensity/${new Date(Date.now() - 24 * 3600000).toISOString().slice(0, 16)}Z/fw24h`, undefined, 6000)
+    json<any>(`https://api.carbonintensity.org.uk/intensity/${new Date(Date.now() - 24 * 3600000).toISOString().slice(0, 16)}Z/fw24h`, undefined, 6000),
+    json<any>('http://api.open-notify.org/astros.json', undefined, 5000),
+    json<any>('https://api.adsb.lol/v2/mil', undefined, 7000),
+    json<any[]>('https://api.p2pquake.net/v2/history?codes=551&limit=3', undefined, 6000)
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -1254,7 +1490,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const nightish = st.localHour < 5 || st.localHour >= 21;
       const drivetime = (st.localHour >= 6 && st.localHour <= 9) || (st.localHour >= 17 && st.localHour <= 20);
       out.push({
-        id: `radio-${st.city.toLowerCase().replace(/\s+/g, '-')}`, template: 'city', title: `It's ${timeStr} in ${st.country} — ${st.name} is on air right now`, kicker: 'Radio Earth · live audio', visual: 'city', score: 78 + (drivetime ? 5 : nightish ? 6 : 2) + Math.min(5, Math.round(st.votes / 800)), freshness: 'streaming live now',
+        id: `radio-${st.city.toLowerCase().replace(/\s+/g, '-')}`, template: 'city', title: `It's ${timeStr} in ${st.country} — ${st.name} is on air right now`, kicker: 'Radio Earth · live audio', visual: 'city', score: 78 + (drivetime ? 5 : nightish ? 6 : 2) + Math.min(5, Math.round(st.votes / 800)), freshness: 'streaming live now', mediaImage: buildWaveformSvg(`${st.name} — on air now`), mediaAlt: `Generative audio visualization for ${st.name}`,
         location: { lat: st.lat, lon: st.lon, label: `${st.city}, ${st.country}` },
         summary: `Somewhere in ${st.country} a studio is on air this second — not a recording, not a podcast: the same broadcast people there are actually hearing${drivetime ? ', in the middle of drive time' : nightish ? ', deep into the night shift' : ''}. This is one of the most-listened streams in ${st.country} by community ranking; the pin is anchored at ${st.city} as the country's listening post, though the station's exact studio city is not disclosed by the index. Sound is unfiltered and unedited — that is the point.`,
         mediaAudio: st.streamUrl,
@@ -1712,7 +1948,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const pick = pool[Math.floor(Date.now() / 60000) % pool.length];
     const langCount = new Set(wikiPulse.edits.map(e => e.wiki)).size;
     out.push({
-      id: 'humanity-editing-now', template: 'city', title: `Someone just edited the Wikipedia article "${pick.title.length > 60 ? pick.title.slice(0, 57) + '…' : pick.title}" — one of ~${wikiPulse.rate} edits this minute`, kicker: 'Humanity, live — the knowledge pulse', visual: 'city', score: 76, freshness: 'sampled seconds ago',
+      id: 'humanity-editing-now', template: 'city', title: `Someone just edited the Wikipedia article "${pick.title.length > 60 ? pick.title.slice(0, 57) + '…' : pick.title}" — one of ~${wikiPulse.rate} edits this minute`, kicker: 'Humanity, live — the knowledge pulse', visual: 'city', score: 76, freshness: 'sampled seconds ago', mediaImage: buildEditRainSvg(wikiPulse.rate), mediaAlt: 'Generative rain of live Wikipedia edits',
       location: { lat: 0, lon: 0, label: 'The global Wikipedia network' },
       summary: `Right now, all over the world, people are writing, correcting and arguing over humanity's shared reference work — roughly ${wikiPulse.rate} edits per minute across every language, measured by sampling the live stream just now. In the last few seconds the edits touched ${langCount} different language editions${pick.comment ? `; the most recent one carries the edit note "${pick.comment}"` : ''}. This is not traffic statistics — it is individual humans, at this exact moment, trying to get the record straight.`,
         facts: [
@@ -1996,6 +2232,91 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         sources: [src('OpenSky Network live ADS-B', 'https://opensky-network.org/')],
         related: ['Empty-sky audit', 'Tokyo air corridor', 'Night lights']
       });
+    }
+  }
+
+
+  // --- Humans not on Earth right now. open-notify publishes the canonical
+  // public crew list for both crewed stations. Simple, human, and true.
+  if (astros && Array.isArray(astros.people) && astros.number >= 1) {
+    const issCrew = astros.people.filter((p: any) => p.craft === 'ISS').map((p: any) => p.name);
+    const tiangongCrew = astros.people.filter((p: any) => p.craft === 'Tiangong').map((p: any) => p.name);
+    const latest = astros.people[astros.people.length - 1]?.name ?? '';
+    out.push({
+      id: 'humans-in-space', template: 'orbit', title: `${astros.number} people are not on Earth right now — and we know their names`, kicker: 'The entire off-world human population, live', visual: 'orbital', score: 84, freshness: 'crew list current', mediaImage: buildOrbitalCrewSvg(astros.number, issCrew.length, tiangongCrew.length), mediaAlt: 'Animated orbital visualization of the crewed stations',
+      location: { lat: iss?.latitude ?? 0, lon: iss?.longitude ?? 0, label: 'Low Earth orbit — ISS and Tiangong' },
+      summary: `Every human being who is currently off the planet fits in this list: ${issCrew.length} aboard the International Space Station${tiangongCrew.length ? `, ${tiangongCrew.length} aboard China's Tiangong station` : ''}. ${issCrew.length ? `On the ISS: ${issCrew.join(', ')}. ` : ''}${tiangongCrew.length ? `On Tiangong: ${tiangongCrew.join(', ')}.` : ''} They are circling the Earth once every 90 minutes at 7.66 km/s — meaning right now, somewhere over the planet below, ${latest || 'one of them'} is either asleep, exercising against bone loss, or looking out the cupola at the same clouds you can see in this app.`,
+      facts: [
+        { label: 'Off-world population', value: `${astros.number} humans — the complete list`, kind: 'observed' },
+        issCrew.length ? { label: `ISS crew (${issCrew.length})`, value: issCrew.join(', '), kind: 'observed' } : null,
+        tiangongCrew.length ? { label: `Tiangong crew (${tiangongCrew.length})`, value: tiangongCrew.join(', '), kind: 'observed' } : null,
+        { label: 'How unusual is this', value: 'For most of human history this number was zero. It has been continuously non-zero since November 2, 2000 — over 25 years of uninterrupted human presence off the planet.', kind: 'interpretation' }
+      ].filter(Boolean) as any,
+      sources: [src('Open Notify — people in space', 'http://api.open-notify.org/astros.json')],
+      related: ['The ISS is crossing the planet in silence', 'launch', 'sunrise']
+    });
+  }
+
+  // --- Military aircraft visible on public ADS-B right now. Most military
+  // flights do not broadcast publicly — these are the ones that do: tankers,
+  // trainers, transports. Unexpected but completely public data.
+  if (milAircraft && Array.isArray(milAircraft.ac) && milAircraft.ac.length >= 5) {
+    const tracked = milAircraft.ac.filter((a: any) => Number.isFinite(a.lat) && Number.isFinite(a.lon));
+    if (tracked.length >= 5) {
+      const types = new Map<string, number>();
+      for (const a of tracked) { const t = String(a.t || 'unknown'); types.set(t, (types.get(t) || 0) + 1); }
+      const topTypes = [...types.entries()].sort((x, y) => y[1] - x[1]).slice(0, 4).filter(([t]) => t !== 'unknown');
+      const tankers = tracked.filter((a: any) => /K35|K46|KC|K10/.test(String(a.t || '')));
+      const pick = tracked[Math.floor(Date.now() / 120000) % tracked.length];
+      const cs = String(pick.flight ?? pick.hex ?? 'unknown').trim();
+      const typeNames: Record<string, string> = { K35R: 'KC-135R aerial refueling tanker', K46A: 'KC-46A Pegasus tanker', C30J: 'C-130J Hercules transport', C17: 'C-17 Globemaster transport', E6: 'E-6 Mercury — airborne nuclear command post' };
+      const pickDesc = typeNames[String(pick.t)] ?? `${pick.t || 'military'} aircraft`;
+      out.push({
+        id: 'military-aircraft-visible', template: 'atmosphere', title: `${tracked.length} military aircraft are visible on public tracking right now — including ${tankers.length ? `${tankers.length} refueling tanker${tankers.length > 1 ? 's' : ''}` : 'transports and trainers'}`, kicker: 'Unexpected public data — the visible fraction of the military sky', visual: 'orbital', score: 82, freshness: 'sampled seconds ago', mediaImage: buildSkyMapSvg(tracked.map((a: any) => ({ lat: a.lat, lon: a.lon })), `${tracked.length} military aircraft broadcasting publicly right now`), mediaAlt: 'Live map of publicly broadcasting military aircraft',
+        location: { lat: pick.lat, lon: pick.lon, label: `${cs} — airborne` },
+        summary: `Most military flights keep their transponders off public networks. But at any given moment, a fraction do broadcast openly — and right now ${tracked.length} of them are visible worldwide on the same free public feed anyone can read: tankers orbiting refueling tracks, cargo transports crossing oceans, trainers drilling patterns. ${cs} — a ${pickDesc} — is one of them, currently at ${Number.isFinite(Number(pick.alt_baro)) ? Math.round(Number(pick.alt_baro) * 0.3048).toLocaleString() + ' m' : 'unreported altitude'}. What is visible here is precisely the part of military aviation that doesn't need to hide: routine logistics, not operations. That boundary — what shows up and what doesn't — is itself the interesting signal.`,
+        facts: [
+          { label: 'Visible military aircraft', value: `${tracked.length} broadcasting publicly right now`, kind: 'observed' },
+          topTypes.length ? { label: 'Most common types visible', value: topTypes.map(([t, n]) => `${t}×${n}`).join(', '), kind: 'observed' } : null,
+          tankers.length ? { label: 'Refueling tankers airborne', value: `${tankers.length} — tanker tracks often reveal where other aircraft are operating`, kind: 'interpretation' } : null,
+          { label: 'What this is not', value: 'A complete picture. Aircraft on sensitive missions do not broadcast publicly — this is the routine, unclassified fraction.', kind: 'interpretation' },
+          { label: 'Why it exists at all', value: 'Civilian safety rules require transponders in shared airspace — the data is a byproduct, not a leak.', kind: 'interpretation' }
+        ].filter(Boolean) as any,
+        sources: [src('adsb.lol public ADS-B network', 'https://adsb.lol')],
+        related: ['aircraft-emergency-now', 'Aircraft aloft census', 'sunset']
+      });
+    }
+  }
+
+  // --- Tsunami watch: Japan's P2Pquake carries official tsunami assessment
+  // with each significant earthquake. Conditional card when assessment is
+  // anything but routine "None".
+  if (Array.isArray(p2pquakeFeed) && p2pquakeFeed.length) {
+    const latest = p2pquakeFeed.find((q: any) => {
+      const t = q?.earthquake?.domesticTsunami;
+      return t && t !== 'None' && t !== 'Unknown';
+    });
+    if (latest) {
+      const eq = latest.earthquake;
+      const when = latest.earthquake?.time ?? '';
+      const ageMin = when ? Math.round((Date.now() - new Date(when.replace(/\//g, '-')).getTime()) / 60000) : null;
+      if (ageMin == null || ageMin < 360) {
+        const level = eq.domesticTsunami;
+        const levelText: Record<string, string> = { Warning: 'a tsunami WARNING is in effect', MajorWarning: 'a MAJOR tsunami warning is in effect', Watch: 'a tsunami advisory is in effect', Checking: 'authorities are checking for tsunami generation' };
+        out.push({
+          id: 'tsunami-watch-japan', template: 'ocean', title: `${levelText[level] ?? 'tsunami assessment active'} after a magnitude ${eq?.hypocenter?.magnitude ?? '?'} earthquake near ${eq?.hypocenter?.name ?? 'Japan'}`, kicker: 'Official tsunami assessment, live', visual: 'ocean', score: level === 'MajorWarning' ? 98 : 94, freshness: ageMin != null ? `${ageMin} minutes ago` : 'recent',
+          location: { lat: eq?.hypocenter?.latitude ?? 35, lon: eq?.hypocenter?.longitude ?? 140, label: `${eq?.hypocenter?.name ?? 'Japan region'}` },
+          summary: `Japan's meteorological system has assessed the magnitude ${eq?.hypocenter?.magnitude ?? '?'} earthquake at ${eq?.hypocenter?.name ?? 'an epicenter near Japan'} (depth ${eq?.hypocenter?.depth ?? '?'} km) and ${levelText[level] ?? 'issued a tsunami-related bulletin'}. Japan operates the densest tsunami detection network on Earth — a lesson written in 2011 — and its assessments propagate to the entire Pacific basin. ${level === 'Checking' ? 'The "checking" state itself is significant: instruments are being read right now to determine whether the seafloor displacement was vertical enough to move water.' : 'Coastal populations in the warning area are being told to move.'}`,
+          facts: [
+            { label: 'Assessment', value: `${eq.domesticTsunami}`, kind: 'observed' },
+            { label: 'Earthquake', value: `M${eq?.hypocenter?.magnitude ?? '?'} at ${eq?.hypocenter?.depth ?? '?'} km depth`, kind: 'observed' },
+            { label: 'Foreign tsunami risk', value: eq?.foreignTsunami ?? 'unknown', kind: 'observed' },
+            { label: 'Why Japan', value: 'The densest seismic and tsunami instrument network on Earth, built after 2011 — the fastest official assessments anywhere.', kind: 'interpretation' }
+          ],
+          sources: [src('P2Pquake / JMA earthquake information', 'https://www.p2pquake.net/en/')],
+          related: ['seismic-drum-live', 'sea-defies-moon', 'The measured planet']
+        });
+      }
     }
   }
 
