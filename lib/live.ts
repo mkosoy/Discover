@@ -1179,7 +1179,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml, orcaFeeds] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1223,6 +1223,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     text('https://eyes.nasa.gov/dsn/data/dsn.xml'),
     json<any>('https://api.openstreetmap.org/api/0.6/changesets.json', { headers: { 'User-Agent': 'Elsewhere/1.0 earth discovery' } }, 7000),
     text('https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en'),
+    json<any>('https://beta.orcasound.net/api/json/feeds', { headers: { 'User-Agent': 'Elsewhere/1.0 earth discovery' } }, 7000),
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -2914,6 +2915,41 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         sources: [src('Open-Meteo global weather model', 'https://open-meteo.com/')],
         related: ['storm-deepening-now', 'wildest-water-live', 'earth-extremes-now']
       });
+    }
+  }
+
+  // --- The ocean, audible: live hydrophones in the Salish Sea. A public
+  // network of underwater microphones exists so anyone can listen for orca
+  // calls — ships, currents, rain on the surface, sometimes whales.
+  if (orcaFeeds && Array.isArray(orcaFeeds.data) && orcaFeeds.data.length >= 3) {
+    const nodes = orcaFeeds.data.filter((f: any) => f?.attributes?.node_name && f?.attributes?.location_point?.coordinates);
+    if (nodes.length >= 3) {
+      const pickIdx = Math.floor(Date.now() / 300000) % nodes.length;
+      const node = nodes[pickIdx];
+      const an = node.attributes;
+      const nodeName = String(an.node_name);
+      try {
+        const latestTxt = await text(`https://s3-us-west-2.amazonaws.com/audio-orcasound-net/${nodeName}/latest.txt`);
+        const tsDir = (latestTxt ?? '').trim();
+        if (tsDir && /^\d{6,}$/.test(tsDir)) {
+          const streamUrl = `https://s3-us-west-2.amazonaws.com/audio-orcasound-net/${nodeName}/hls/${tsDir}/live.m3u8`;
+          const [lon, lat] = an.location_point.coordinates;
+          const displayName = String(an.name ?? nodeName).replace(/^Beach Camp at /, '');
+          out.push({
+            id: 'ocean-listening-live', template: 'ocean', title: `A hydrophone in the Salish Sea is streaming the underwater world right now — ships, currents, maybe orcas`, kicker: 'The ocean, audible — live hydrophone', visual: 'ocean', score: 82, freshness: 'audio segments seconds old', mediaAudio: streamUrl,
+            location: { lat, lon, label: `${displayName} hydrophone — Salish Sea` },
+            summary: `Under the water off ${displayName}, a microphone is listening to everything the ocean does: the low drone of ship propellers, rain hitting the surface, currents moving over rock — and sometimes the clicks and calls of orcas, which is why this network exists at all. The Salish Sea is home to the endangered Southern Resident killer whales — fewer than 75 remain — and researchers, volunteers and machines listen for their calls here around the clock. Right now, this audio is seconds old. Most of the time it is the weather and the ships; occasionally it is the whales themselves. Either way it is the actual sound of the ocean, live, in a way almost nobody realizes is publicly available.`,
+            facts: [
+              { label: 'What you are hearing', value: `Live underwater audio at ${displayName} — segments recorded seconds ago`, kind: 'observed' },
+              { label: 'Why it exists', value: 'Early detection of Southern Resident orca calls — fewer than 75 of these whales remain; the network listens so response can be fast', kind: 'verified' },
+              { label: 'The network', value: `${nodes.length} hydrophone nodes across the Salish Sea, all public`, kind: 'observed' },
+              { label: 'What ships sound like', value: 'A low diesel drone that can dominate for hours — ocean noise pollution is itself one of the things being studied', kind: 'interpretation' }
+            ],
+            sources: [src('Orcasound live hydrophone network', 'https://live.orcasound.net')],
+            related: ['radio-', 'Wildest water', 'ocean-measured-now']
+          });
+        }
+      } catch { /* node offline — absence is fine */ }
     }
   }
 

@@ -72,18 +72,30 @@ function LiveAudio({ src, station, place, autoPlay = false }: { src: string; sta
     setPlaying(false);
     setFailed(false);
     audioRef.current?.pause();
-    if (audioRef.current) audioRef.current.src = src;
+    const el = audioRef.current;
+    if (!el) return;
+    // HLS streams (live hydrophones etc): native in Safari, hls.js elsewhere.
+    let hls: any = null;
+    if (/\.m3u8/.test(src) && !el.canPlayType('application/vnd.apple.mpegurl')) {
+      import('hls.js').then(({ default: Hls }) => {
+        if (Hls.isSupported()) {
+          hls = new Hls({ maxBufferLength: 20 });
+          hls.loadSource(src);
+          hls.attachMedia(el);
+        } else setFailed(true);
+      }).catch(() => setFailed(true));
+    } else {
+      el.src = src;
+    }
     // During the Tour, the user's button press is a page interaction — live
     // radio joins the tour audibly. If the browser still refuses, the big
     // play button remains as the honest fallback.
-    if (autoPlay) {
-      const timer = window.setTimeout(() => {
-        const el = audioRef.current;
-        if (!el) return;
-        el.play().then(() => setPlaying(true)).catch(() => {});
-      }, 650);
-      return () => window.clearTimeout(timer);
-    }
+    const autoTimer = autoPlay ? window.setTimeout(() => {
+      const el2 = audioRef.current;
+      if (!el2) return;
+      el2.play().then(() => setPlaying(true)).catch(() => {});
+    }, 650) : null;
+    return () => { if (autoTimer) window.clearTimeout(autoTimer); if (hls) hls.destroy(); };
   }, [src, autoPlay]);
   const toggle = () => {
     const el = audioRef.current;
