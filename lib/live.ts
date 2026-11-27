@@ -1540,7 +1540,72 @@ export async function getInvestigations(): Promise<Investigation[]> {
     });
   }
 
-  const investigationPriority = ['crisis-attention-index', 'empty-sky-audit', 'planet-emergency-board', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
+  // --- The sunset chase: which aircraft are flying through twilight right now ---
+  try {
+    const aircraft = await getGlobalAircraft();
+    if (aircraft.length > 1500) {
+      const nowDate = new Date();
+      const yearStart = Date.UTC(nowDate.getUTCFullYear(), 0, 0);
+      const dayOfYear = Math.floor((nowDate.getTime() - yearStart) / 86400000);
+      const decl = -23.44 * Math.cos((360 / 365) * (dayOfYear + 10) * Math.PI / 180) * Math.PI / 180;
+      const utcHours = nowDate.getUTCHours() + nowDate.getUTCMinutes() / 60;
+      let subsolarLon = -15 * (utcHours - 12);
+      if (subsolarLon < -180) subsolarLon += 360;
+      if (subsolarLon > 180) subsolarLon -= 360;
+      const elevationFor = (lat: number, lon: number) => {
+        const latR = lat * Math.PI / 180;
+        const hourAngle = (lon - subsolarLon) * Math.PI / 180;
+        return Math.asin(Math.sin(latR) * Math.sin(decl) + Math.cos(latR) * Math.cos(decl) * Math.cos(hourAngle)) * 180 / Math.PI;
+      };
+      let night = 0, twilight = 0, day = 0;
+      for (const plane of aircraft) {
+        const elev = elevationFor(plane.lat, plane.lon);
+        if (elev < -6) night++;
+        else if (elev < 3) twilight++;
+        else day++;
+      }
+      const total = aircraft.length;
+      const twilightShare = Math.round(twilight / total * 1000) / 10;
+      // The band is a ring, so averaging positions is meaningless — anchor on the dusk
+      // terminator midpoint instead, which is where most of the visual drama is.
+      const centerLat = 0;
+      const centerLon = ((subsolarLon + 90 + 540) % 360) - 180;
+      out.push({
+        id: 'sunset-chase-live',
+        title: `${twilight.toLocaleString()} aircraft are flying through Earth's sunset line right now`,
+        dek: 'At cruise altitude the sun sets later and rises earlier — passengers in the twilight band are watching a sunset that people on the ground below them can no longer see. Counted live from the global ADS-B snapshot, classified against the real-time solar geometry.',
+        status: 'corroborated',
+        location: { lat: Math.round(centerLat * 10) / 10, lon: Math.round(((centerLon + 540) % 360) - 180), label: 'The global twilight band' },
+        updatedAt: now(),
+        confidence: .9,
+        evidence: [
+          { kind: 'observed', text: `The current global snapshot holds ${total.toLocaleString()} airborne aircraft. Classified by solar elevation at each position: ${day.toLocaleString()} in daylight, ${twilight.toLocaleString()} in the twilight band (sun within 6° below to 3° above the horizon), ${night.toLocaleString()} in darkness.`, source: 'https://opensky-network.org/' },
+          { kind: 'interpretation', text: 'At 11 km altitude the horizon dips about 3.6°, so high-altitude travelers keep the sun roughly half an hour longer than the ground directly below. The twilight band in the sky is wider than the one on the surface — aviation literally lives inside sunsets.' },
+          { kind: 'interpretation', text: `Twilight aircraft are ${twilightShare}% of everything airborne — a slice that sweeps around the planet once per day, westward at about 1,670 km/h at the equator, slower near the poles. No scheduling system plans for it; it is pure geometry.` },
+          { kind: 'question', text: 'Which passengers actually see it? Window side, direction of travel and cloud decks decide — the geometry only says who has the chance.' }
+        ],
+        metrics: [
+          { label: 'Aircraft in daylight', value: day.toLocaleString() },
+          { label: 'In the sunset band', value: twilight.toLocaleString(), delta: `${twilightShare}% of traffic` },
+          { label: 'In darkness', value: night.toLocaleString() }
+        ],
+        visuals: [
+          { label: 'Daylight', value: day, display: day.toLocaleString() },
+          { label: 'Twilight band', value: twilight, display: twilight.toLocaleString(), highlight: true },
+          { label: 'Darkness', value: night, display: night.toLocaleString() }
+        ],
+        visualTitle: 'Everything airborne right now, classified by sunlight at its position',
+        visualCaption: 'global ADS-B census · solar geometry recomputed each minute',
+        liveLinks: [{ label: 'See the airborne census on the globe', discoveryId: 'airborne-now' }],
+        sources: [
+          { label: 'OpenSky Network live states', url: 'https://opensky-network.org/' },
+          { label: 'NOAA solar position math', url: 'https://gml.noaa.gov/grad/solcalc/' }
+        ]
+      });
+    }
+  } catch { /* aircraft feed unavailable */ }
+
+  const investigationPriority = ['crisis-attention-index', 'empty-sky-audit', 'sunset-chase-live', 'planet-emergency-board', 'air-divide-now', 'volcano-unrest-live', 'seismic-pulse-week', 'space-weather-now', 'orbital-cadence', 'ukraine-live-signal', 'sudan-attention-gap', 'seismic-ripple', 'event-attention-gap'];
   const sorted = out.sort((a, b) => investigationPriority.indexOf(a.id) - investigationPriority.indexOf(b.id) || 0);
   // Editorial robustness: transient upstream failures (RSS rate limits, UNHCR timeouts) should never
   // silently empty the investigation rail. If this run produced unusually few investigations, merge in
