@@ -751,7 +751,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const medianAlt = withAlt.length ? withAlt[Math.floor(withAlt.length / 2)] : 0;
       const centroidLat = aircraft.reduce((sum, a) => sum + a.lat, 0) / aircraft.length;
       const centroidLon = aircraft.reduce((sum, a) => sum + a.lon, 0) / aircraft.length;
-      const soulsEstimate = Math.round(aircraft.length * 95 / 1000) / 10;
+      const soulsEstimate = Math.round(aircraft.length * 95 / 100000) / 10;
       out.push({
         id: 'airborne-now', template: 'atmosphere', title: `${aircraft.length.toLocaleString()} aircraft are airborne over Earth right now`, kicker: 'Live global ADS-B census',
         visual: 'orbital', score: 78, freshness: 'positions seconds old',
@@ -759,7 +759,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         summary: `Every golden point on the globe is a real aircraft, measured by crowdsourced ground receivers within the last few seconds. At typical occupancy that is roughly ${soulsEstimate} million people currently off the ground — a city the size of a megacity, floating. The shimmer updates every minute.`,
         facts: [
           { label: 'Aircraft airborne', value: aircraft.length.toLocaleString(), kind: 'observed' },
-          { label: 'Median altitude', value: `${Math.round(medianAlt / 100) / 10}k ft`, kind: 'observed' },
+          { label: 'Median altitude', value: `${Math.round(medianAlt * 3.28084 / 100) / 10}k ft`, kind: 'observed' },
           { label: 'Estimated people aloft', value: `~${soulsEstimate} million`, kind: 'interpretation' },
           { label: 'Coverage', value: 'Crowdsourced receivers — oceans and poles thin', kind: 'interpretation' }
         ],
