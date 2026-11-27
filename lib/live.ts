@@ -1179,7 +1179,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml, orcaFeeds] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml, orcaFeeds, orcaDetections] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1224,6 +1224,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://api.openstreetmap.org/api/0.6/changesets.json', { headers: { 'User-Agent': 'Elsewhere/1.0 earth discovery' } }, 7000),
     text('https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en'),
     json<any>('https://beta.orcasound.net/api/json/feeds', { headers: { 'User-Agent': 'Elsewhere/1.0 earth discovery' } }, 7000),
+    json<any>('https://beta.orcasound.net/api/json/detections?limit=25', { headers: { 'User-Agent': 'Elsewhere/1.0 earth discovery' } }, 7000),
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -2935,11 +2936,24 @@ export async function getDiscoveries(): Promise<Discovery[]> {
           const streamUrl = `https://s3-us-west-2.amazonaws.com/audio-orcasound-net/${nodeName}/hls/${tsDir}/live.m3u8`;
           const [lon, lat] = an.location_point.coordinates;
           const displayName = String(an.name ?? nodeName).replace(/^Beach Camp at /, '');
+          // Whale detection within 6h transforms the card: it becomes a whale alert.
+          const whaleRecent = Array.isArray((orcaDetections as any)?.data) && (orcaDetections as any).data.some((d: any) => /whale|orca|srkw|killer/i.test(String(d?.attributes?.category ?? '') + String(d?.attributes?.description ?? '')) && Date.now() - new Date(d?.attributes?.timestamp ?? 0).getTime() < 6 * 3600000);
           out.push({
-            id: 'ocean-listening-live', template: 'ocean', title: `A hydrophone in the Salish Sea is streaming the underwater world right now — ships, currents, maybe orcas`, kicker: 'The ocean, audible — live hydrophone', visual: 'ocean', score: 82, freshness: 'audio segments seconds old', mediaAudio: streamUrl,
+            id: 'ocean-listening-live', template: 'ocean', title: whaleRecent ? `Orcas were heard in the Salish Sea in the last few hours — the hydrophones are live right now` : `A hydrophone in the Salish Sea is streaming the underwater world right now — ships, currents, maybe orcas`, kicker: whaleRecent ? 'Whale alert — live hydrophone network' : 'The ocean, audible — live hydrophone', visual: 'ocean', score: whaleRecent ? 91 : 82, freshness: 'audio segments seconds old', mediaAudio: streamUrl,
             location: { lat, lon, label: `${displayName} hydrophone — Salish Sea` },
             summary: `Under the water off ${displayName}, a microphone is listening to everything the ocean does: the low drone of ship propellers, rain hitting the surface, currents moving over rock — and sometimes the clicks and calls of orcas, which is why this network exists at all. The Salish Sea is home to the endangered Southern Resident killer whales — fewer than 75 remain — and researchers, volunteers and machines listen for their calls here around the clock. Right now, this audio is seconds old. Most of the time it is the weather and the ships; occasionally it is the whales themselves. Either way it is the actual sound of the ocean, live, in a way almost nobody realizes is publicly available.`,
             facts: [
+              ...((() => {
+                const dets = Array.isArray((orcaDetections as any)?.data) ? (orcaDetections as any).data : [];
+                const recent = dets.filter((d: any) => Date.now() - new Date(d?.attributes?.timestamp ?? 0).getTime() < 6 * 3600000);
+                const whale = recent.find((d: any) => /whale|orca|srkw|killer/i.test(String(d?.attributes?.category ?? '') + String(d?.attributes?.description ?? '')));
+                const latest = recent[0];
+                const rows: any[] = [];
+                if (whale) rows.push({ label: 'Whales heard recently', value: `"${String(whale.attributes.description ?? 'cetacean detection').slice(0, 90)}" — tagged ${ago(new Date(whale.attributes.timestamp).getTime())}`, kind: 'observed' });
+                if (latest) rows.push({ label: 'Listeners just tagged', value: `"${String(latest.attributes.description ?? latest.attributes.category).slice(0, 90)}" — ${ago(new Date(latest.attributes.timestamp).getTime())}, ${latest.attributes.listener_count ?? 0} listening then`, kind: 'observed' });
+                if (recent.length) rows.push({ label: 'Human ears on the water', value: `${recent.length} acoustic events tagged by listeners in the last 6 hours — a crowdsourced acoustic watch of the sea`, kind: 'verified' });
+                return rows;
+              })()),
               { label: 'What you are hearing', value: `Live underwater audio at ${displayName} — segments recorded seconds ago`, kind: 'observed' },
               { label: 'Why it exists', value: 'Early detection of Southern Resident orca calls — fewer than 75 of these whales remain; the network listens so response can be fast', kind: 'verified' },
               { label: 'The network', value: `${nodes.length} hydrophone nodes across the Salish Sea, all public`, kind: 'observed' },
