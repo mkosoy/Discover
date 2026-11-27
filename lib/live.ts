@@ -1041,6 +1041,24 @@ export async function getDiscoveries(): Promise<Discovery[]> {
 
 
 
+  // --- The ocean's skin temperature, imaged daily from orbit. Buoys measure
+  // the body of the sea at points; this is the whole skin at once — the Gulf
+  // Stream, El Niño's tongue, upwelling cold fingers, all visible in one frame.
+  out.push({
+    id: 'ocean-skin-temp', template: 'ocean', title: 'The ocean\u2019s skin temperature, photographed from orbit today', kicker: 'Global sea surface — measured by satellite radiometers', visual: 'ocean', score: 71, freshness: 'daily composite, updated this UTC day',
+    mediaImage: 'https://www.ospo.noaa.gov/data/sst/contour/global_small.cf.gif', mediaAlt: 'Global sea surface temperature measured today — the Gulf Stream and equatorial Pacific clearly visible',
+    location: { lat: 25, lon: -75, label: 'The Gulf Stream — visible as the warm river in the image' },
+    summary: `Every day, satellite radiometers measure the infrared glow of the ocean's skin and assemble this map — no model, thermal emission measured from orbit. Look for the Gulf Stream: a river of warm water visibly tearing away from the US coast toward Europe, carrying heat that decides the weather of a continent. The cold tongue along the equatorial Pacific is the breathing of El Niño and La Niña. Buoys measure the ocean at single points in meters; this is the whole skin of it in one frame.`,
+    facts: [
+      { label: 'Measurement', value: 'Infrared radiometry from polar-orbiting satellites — thermal emission, not modeling', kind: 'verified' },
+      { label: 'Update cadence', value: 'Daily composite — clouds block infrared, so the map blends recent clear-sky passes', kind: 'verified' },
+      { label: 'What to look for', value: 'The Gulf Stream off the US east coast; cold upwelling fingers off Peru and west Africa; the equatorial Pacific tongue', kind: 'interpretation' },
+      { label: 'Complementary instrument', value: 'Buoys measure the body of the sea at points — see "the ocean, measured" for what the buoys feel right now', kind: 'interpretation' }
+    ],
+    sources: [src('NOAA OSPO sea surface temperature', 'https://www.ospo.noaa.gov/Products/ocean/sst/contour/index.html')],
+    related: ['The ocean, measured', 'Wildest water', 'The measured planet']
+  });
+
   // --- A storm organizing itself, caught in the act: rapidly falling pressure
   // at a buoy is the atmosphere deepening overhead — measured directly, hours
   // before any forecast updates. Conditional: only while physics is loud.
