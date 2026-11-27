@@ -34,7 +34,7 @@ function subsolarPoint(date = new Date()) {
 
 type FocusTarget = { id: string; location: { lat: number; lon: number }; connections?: { id: string }[] };
 type LayerPoint = { lat: number; lon: number; mag?: number; kind?: string; ageMinutes?: number };
-type PlanetLayers = { quakes: LayerPoint[]; fires: LayerPoint[]; storms: LayerPoint[]; volcanoes: LayerPoint[] };
+type PlanetLayers = { quakes: LayerPoint[]; fires: LayerPoint[]; storms: LayerPoint[]; volcanoes: LayerPoint[]; aurora?: LayerPoint[] };
 
 function PulseLayer({ points, color, colorFor, size, altitude = 1.368, opacity = .8, pulse = .3, scaleByMag }: { points: LayerPoint[]; color: string; colorFor?: (point: LayerPoint) => string; size: number; altitude?: number; opacity?: number; pulse?: number; scaleByMag?: boolean }) {
   const ref = useRef<THREE.InstancedMesh>(null);
@@ -84,6 +84,7 @@ function PlanetActivity({ layers }: { layers: PlanetLayers }) {
     <PulseLayer points={layers.fires} color="#ff6b35" size={.017} altitude={1.372} opacity={.78} pulse={.34} />
     <PulseLayer points={layers.storms} color="#8a9dff" size={.026} altitude={1.38} opacity={.34} pulse={.16} />
     <PulseLayer points={layers.volcanoes} color="#ff4d4d" size={.016} altitude={1.372} opacity={.8} pulse={.3} />
+    {layers.aurora?.length ? <PulseLayer points={layers.aurora} color="#5cf2a8" size={.011} altitude={1.42} opacity={.3} pulse={.14} scaleByMag /> : null}
   </>;
 }
 

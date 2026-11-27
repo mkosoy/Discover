@@ -34,11 +34,18 @@ async function fetchText(url: string, timeoutMs = 6000): Promise<string | null> 
 let cache: { at: number; data: any } = { at: 0, data: null };
 
 async function buildLayers() {
-  const [quakes, eonet, gdacsXml] = await Promise.all([
+  const [quakes, eonet, gdacsXml, ovation] = await Promise.all([
     fetchJson<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson'),
     fetchJson<any>('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=40'),
     fetchText('https://www.gdacs.org/xml/rss.xml'),
+    fetchJson<any>('https://services.swpc.noaa.gov/json/ovation_aurora_latest.json', 8000),
   ]);
+
+  const auroraCoords: number[][] = ovation?.coordinates ?? [];
+  const auroraStride = Math.max(1, Math.ceil(auroraCoords.length / 2600));
+  const aurora: LayerPoint[] = auroraCoords
+    .filter((row, index) => index % auroraStride === 0 && row[2] >= 6)
+    .map(row => ({ lon: row[0] > 180 ? row[0] - 360 : row[0], lat: row[1], mag: 2.4 + row[2] / 100 * 3.4, prob: row[2] }));
 
   const quakePoints: LayerPoint[] = (quakes?.features ?? [])
     .map((feature: any) => ({
@@ -78,6 +85,8 @@ async function buildLayers() {
     fires: fires.slice(0, 60),
     storms: storms.slice(0, 40),
     volcanoes: volcanoes.slice(0, 20),
+    aurora,
+    auroraForecastTime: ovation?.['Forecast Time'],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -90,7 +99,7 @@ export async function GET() {
       cache = { at: now, data };
     }
   }
-  return NextResponse.json(cache.data ?? { quakes: [], fires: [], storms: [], volcanoes: [] }, {
+  return NextResponse.json(cache.data ?? { quakes: [], fires: [], storms: [], volcanoes: [], aurora: [] }, {
     headers: { 'Cache-Control': 'public, max-age=240' },
   });
 }

@@ -478,6 +478,7 @@ export default function DiscoverApp() {
       <span><i className="dotQuake" />earthquakes this week — brighter is fresher</span>
       {layers.fires.length > 0 && <span><i className="dotFire" />active fires</span>}
       {layers.storms.length > 0 && <span><i className="dotStorm" />storms / floods</span>}
+      {layers.aurora?.length > 0 && <span><i className="dotAurora" />aurora oval forecast</span>}
       <span><i className="dotSky" />aircraft now</span>
     </div>}
 
