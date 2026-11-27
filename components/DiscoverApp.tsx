@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowRight, Check, Compass, Eye, Globe2, Loader2, Newspaper, Play, Radio, Satellite, Share2, Shuffle, Sparkles, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowRight, Check, Compass, Eye, Globe2, Loader2, LocateFixed, Newspaper, Play, Radio, Satellite, Share2, Shuffle, Sparkles, Volume2, VolumeX, X } from 'lucide-react';
 import Globe from './Globe';
 import type { Discovery, Investigation } from '@/lib/types';
 import { cameraCoverage, cameraEmbed, publicCameras, type PublicCamera } from '@/lib/cameras';
@@ -206,12 +206,12 @@ export default function DiscoverApp() {
       const rediscovered = currentActive ? nextDiscoveries.find((item: Discovery) => item.id === currentActive.id) : undefined;
       // Client-synthesized cards (place probes, registry camera pins, investigation link lenses)
       // never appear in the feed — preserve them across refreshes instead of yanking the reader away.
-      const clientSynthesized = currentActive && /^(place-|camera-pin-|sky-audit-|wildest-water-|quake-largest|investigate-link-|wildlife-pulse-)/.test(currentActive.id);
+      const preservable = currentActive && /^(place-|camera-pin-|camera-|sky-audit-|wildest-water-|quake-largest|investigate-link-|wildlife-pulse-)/.test(currentActive.id);
+      // Fresh feed data wins when the same card is still in the feed; when it has rotated out
+      // (camera rotation, wildlife turnover, synthesized lenses), the reader keeps their card.
       const nextActive = !currentActive
         ? nextDiscoveries[0]
-        : clientSynthesized
-          ? currentActive
-          : rediscovered ?? (currentActive.unavailable ? currentActive : nextDiscoveries[0] ?? currentActive);
+        : rediscovered ?? (preservable || currentActive.unavailable ? currentActive : nextDiscoveries[0] ?? currentActive);
       const activeMoved = Boolean(nextActive && currentActive && nextActive.id === currentActive.id && (
         Math.abs(nextActive.location.lat - currentActive.location.lat) > 0.5 ||
         Math.abs(nextActive.location.lon - currentActive.location.lon) > 0.5
@@ -532,6 +532,13 @@ export default function DiscoverApp() {
     <div className="actionDock">
       <button className="surprise" onClick={() => surprise()} disabled={loading}><Shuffle size={20} />{loading ? 'Listening…' : 'Surprise Me'}</button>
       {showInstallHint && <button className="installHint" onClick={() => { setShowInstallHint(false); window.localStorage.setItem('elsewhere-install-hint-dismissed', '1'); }}>Add Elsewhere to your Home Screen — Share <span aria-hidden>⎋</span> then “Add to Home Screen” · tap to dismiss</button>}
+      <button className="watch" aria-label="Read the sky above you" onClick={() => {
+        if (!navigator.geolocation) return;
+        navigator.geolocation.getCurrentPosition(
+          pos => void probePlace({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+          () => {}, { timeout: 8000, maximumAge: 300000 }
+        );
+      }}><LocateFixed size={17} />My sky</button>
       <button className={watching ? 'watch active' : 'watch'} onClick={() => setWatching(!watching)}><Play size={17} />{watching ? 'Watching' : 'Watch'}</button>
       <button className={ambient ? 'ambient active' : 'ambient'} onClick={() => setAmbient(!ambient)} aria-label="Toggle ambient sound">{ambient ? <Volume2 size={17} /> : <VolumeX size={17} />}{ambient ? 'Sound on' : 'Sound'}</button>
       <button className="share" onClick={shareCurrent} aria-label="Copy link to this view">{copied ? <Check size={17} /> : <Share2 size={17} />}{copied ? 'Copied' : 'Share'}</button>

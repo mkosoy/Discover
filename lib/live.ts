@@ -9,12 +9,14 @@ const src = (label: string, url: string) => ({ label, url, retrievedAt: now() })
 const featuredCameraIds = ['times-square', 'abbey-road', 'venice-guglie', 'niagara-falls', 'mount-fuji-shizuoka', 'ol-donyo-wildlife', 'etosha-waterhole', 'utsjoki-aurora', 'washington-monument', 'kilauea-crater', 'iceland-volcano-watch', 'sydney-harbour', 'vancouver-harbour', 'table-mountain'];
 // Rotation: a handful of curated anchors plus rotating quality picks from the whole registry,
 // so the Surprise loop keeps surfacing fresh look-ins instead of the same 14 cameras forever.
-const anchorCameraIds = ['kilauea-crater', 'mount-etna', 'iceland-volcano-watch', 'utsjoki-aurora', 'ol-donyo-wildlife', 'niagara-falls'];
+const anchorCameraIds = ['kilauea-crater', 'iceland-volcano-watch', 'utsjoki-aurora', 'ol-donyo-wildlife', 'niagara-falls'];
+// Cameras with their own dedicated location cards must never also rotate in as generic camera cards.
+const dedicatedCardCameraIds = ['mount-etna', 'namib-desert'];
 function featuredCamerasNow() {
   const anchors = anchorCameraIds.map(id => publicCameras.find(c => c.id === id)).filter((c): c is NonNullable<typeof c> => Boolean(c));
   const kindBonus = (kind: string) => kind === 'volcano' || kind === 'aurora' ? 15 : kind === 'water' || kind === 'nature' || kind === 'wildlife' ? 10 : 0;
   const ranked = publicCameras
-    .filter(c => c.youtubeId && !c.approximate && c.quality >= 68 && !anchorCameraIds.includes(c.id))
+    .filter(c => c.youtubeId && !c.approximate && c.quality >= 68 && !anchorCameraIds.includes(c.id) && !dedicatedCardCameraIds.includes(c.id))
     .sort((a, b) => (b.quality + kindBonus(b.kind)) - (a.quality + kindBonus(a.kind)));
   const windowIndex = Math.floor(Date.now() / 1800000);
   const picks: typeof ranked = [];
@@ -302,6 +304,7 @@ function connectDiscoveries(out: Discovery[]) {
 
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
+  const featuredNow = featuredCamerasNow();
   const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
@@ -324,7 +327,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     head('https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg'),
 
     nwsAlertsJson(),
-    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${featuredCamerasNow().map(camera => camera.lat).join(',')}&longitude=${featuredCamerasNow().map(camera => camera.lon).join(',')}&current=temperature_2m,wind_speed_10m,is_day,cloud_cover&timezone=auto`),
+    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${featuredNow.map(camera => camera.lat).join(',')}&longitude=${featuredNow.map(camera => camera.lon).join(',')}&current=temperature_2m,wind_speed_10m,is_day,cloud_cover&timezone=auto`),
     json<any[]>('https://epic.gsfc.nasa.gov/api/natural', undefined, 6000),
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=36.5,29.3,14.24,63.46,-78.46,-89.99,71.29,72.58,-66.9,-41.29,-53.16,27.99,-23.5,23.0,1.35,55.75&longitude=-116.9,47.9,40.3,142.79,106.83,15,-156.79,-38.46,142.67,174.78,-70.91,86.93,-68.5,5.0,103.82,37.62&current=temperature_2m,wind_speed_10m,wind_gusts_10m&timezone=auto`),
     json<any>(`https://api.inaturalist.org/v1/observations?order=desc&order_by=created_at&per_page=14&photos=true&taxon_id=3&verifiable=true`, undefined, 6000)
@@ -692,7 +695,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
 
   const latestKp = Array.isArray(kp?.[0]) ? kp.filter(Array.isArray).slice(1).at(-1) : kp?.at(-1);
   const kpValue = Number(latestKp?.Kp ?? latestKp?.[1] ?? 0);
-  const utsjokiIndex = featuredCameraIds.indexOf('utsjoki-aurora');
+  const utsjokiIndex = featuredNow.findIndex(c => c.id === 'utsjoki-aurora');
   const utsjokiSky = utsjokiIndex >= 0 && Array.isArray(cameraWeather) ? cameraWeather[utsjokiIndex]?.current : null;
   const skyDark = utsjokiSky ? !utsjokiSky.is_day : null;
   const skyCloud = utsjokiSky ? Number(utsjokiSky.cloud_cover) : null;
@@ -815,7 +818,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     title: `${camera.title} — live now`,
     summary: `An authorized public live video camera at ${camera.place}, paired with current conditions in the same minute.`
   });
-  featuredCamerasNow().forEach((camera, index) => {
+  featuredNow.forEach((camera, index) => {
     const copy = cameraCopy[camera.id] ?? generatedCopy(camera);
     const current = Array.isArray(cameraWeather) ? cameraWeather[index]?.current : null;
     const night = current ? !current.is_day : false;
