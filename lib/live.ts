@@ -707,6 +707,10 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   const skyDark = utsjokiSky ? !utsjokiSky.is_day : null;
   const skyCloud = utsjokiSky ? Number(utsjokiSky.cloud_cover) : null;
   const auroraAligned = skyDark === true && skyCloud != null && skyCloud < 45 && kpValue >= 3;
+  // Lunar illumination from the synodic cycle — bright moonlight is a real aurora-visibility competitor.
+  const synodic = 29.530588853;
+  const moonAge = ((Date.now() / 86400000 - 10957.5) % synodic + synodic) % synodic;
+  const moonIllum = Math.round((1 - Math.cos(2 * Math.PI * moonAge / synodic)) / 2 * 100);
   if (latestKp) out.push({ id: 'aurora-watch', template: 'atmosphere',
     title: auroraAligned ? 'Aurora conditions are aligned over Lapland right now — the camera is the check' : 'Aurora conditions are being measured above the polar night',
     kicker: auroraAligned ? 'Live composite: space weather + darkness + sky clarity' : 'NOAA space weather', visual: 'aurora',
@@ -718,6 +722,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     { label: 'Kp index', value: String(latestKp?.Kp ?? latestKp?.[1] ?? "—"), kind: 'observed' },
     { label: 'Darkness at the camera', value: skyDark == null ? 'Unavailable' : skyDark ? 'Yes — polar night' : 'No — daylight', kind: skyDark == null ? 'question' : 'observed' },
     { label: 'Cloud cover at the camera', value: skyCloud == null ? 'Unavailable' : `${Math.round(skyCloud)}%`, kind: skyCloud == null ? 'question' : 'observed' },
+    { label: 'Moonlight competition', value: moonIllum > 60 ? `${moonIllum}% illuminated — bright moon competes with faint aurora` : moonIllum > 25 ? `${moonIllum}% illuminated — manageable` : `${moonIllum}% illuminated — dark skies help faint aurora`, kind: 'interpretation' },
     { label: 'Composite verdict', value: auroraAligned ? 'Conditions aligned — check the live sky' : skyDark === false ? 'Blocked by daylight' : skyCloud != null && skyCloud >= 45 ? 'Blocked by cloud' : kpValue < 3 ? 'Geomagnetic activity too quiet' : 'Conditional', kind: 'interpretation' }
   ], sources: [src('NOAA SWPC K-index', 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'), src('NOAA aurora forecast', 'https://www.swpc.noaa.gov/products/aurora-30-minute-forecast'), src('Open-Meteo sky conditions at Utsjoki', 'https://open-meteo.com/')], related: ['Cloud cover', 'Northern webcams', 'Solar wind speed'] });
 
