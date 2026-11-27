@@ -510,7 +510,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         { label: 'Latest sighting', value: `${pick.name} — ${pick.place}`, kind: 'verified' },
         { label: 'Observer', value: pick.observer ?? 'anonymous naturalist', kind: 'verified' },
         { label: 'Network total', value: `${inatTotal.toLocaleString()} verifiable observations`, kind: 'observed' },
-        { label: 'Also just logged', value: spotted.slice(1, 4).map((s: any) => s.name).join(' · '), kind: 'verified' },
+        { label: 'Also just logged', value: spotted.filter((s: any) => s !== pick).slice(0, 3).map((s: any) => s.name).join(' · '), kind: 'verified' },
         { label: 'Verification', value: gradeCopy, kind: pick.grade === 'research' ? 'verified' : 'interpretation' }
       ],
       sources: [src('iNaturalist observations API', pick.uri ?? 'https://www.inaturalist.org/')],

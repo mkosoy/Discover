@@ -17,4 +17,8 @@ export const metadata: Metadata = {
   twitter: { card: 'summary_large_image', title: 'Elsewhere — Discover what\'s happening', description: 'Live cameras, satellites and investigations across the whole planet, right now.', images: ['/og-image.png'] }
 };
 export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#02040c' };
-export default function RootLayout({ children }: { children: React.ReactNode }) { return <html lang="en"><body>{children}</body></html>; }
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return <html lang="en"><head>
+    <script dangerouslySetInnerHTML={{ __html: `window.addEventListener('error',function(e){var m=String((e.error&&e.error.message)||e.message||'');if(/ChunkLoadError|Loading chunk \\d+ failed/.test(m)&&!sessionStorage.getItem('chunk-reload')){sessionStorage.setItem('chunk-reload','1');location.reload();}},true);` }} />
+  </head><body>{children}</body></html>;
+}

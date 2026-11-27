@@ -206,7 +206,7 @@ export default function DiscoverApp() {
       const rediscovered = currentActive ? nextDiscoveries.find((item: Discovery) => item.id === currentActive.id) : undefined;
       // Client-synthesized cards (place probes, registry camera pins, investigation link lenses)
       // never appear in the feed — preserve them across refreshes instead of yanking the reader away.
-      const clientSynthesized = currentActive && /^(place-|camera-pin-|sky-audit-|wildest-water-|quake-largest|investigate-link-)/.test(currentActive.id);
+      const clientSynthesized = currentActive && /^(place-|camera-pin-|sky-audit-|wildest-water-|quake-largest|investigate-link-|wildlife-pulse-)/.test(currentActive.id);
       const nextActive = !currentActive
         ? nextDiscoveries[0]
         : clientSynthesized
