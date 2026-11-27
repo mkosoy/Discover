@@ -174,6 +174,41 @@ async function wikiEditsSample(): Promise<{ rate: number; edits: WikiEdit[] } | 
 }
 
 
+
+// --- Measured-vs-predicted tide chart: render the gauge's own data as a small
+// SVG — the visual proof of divergence. Cached briefly; this is the closest
+// the product gets to showing its work.
+const tideChartCache: Record<string, { at: number; uri: string }> = {};
+
+async function tideChartDataUri(stationId: string, stationName: string): Promise<string | null> {
+  const cached = tideChartCache[stationId];
+  if (cached && Date.now() - cached.at < 10 * 60000) return cached.uri;
+  try {
+    const base = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter';
+    const [wl, pred] = await Promise.all([
+      json<any>(`${base}?product=water_level&application=elsewhere-discovery&date=today&station=${stationId}&time_zone=gmt&units=metric&datum=MSL&format=json`, undefined, 6000),
+      json<any>(`${base}?product=predictions&application=elsewhere-discovery&date=today&range=24&station=${stationId}&time_zone=gmt&units=metric&datum=MSL&interval=h&format=json`, undefined, 6000)
+    ]);
+    const measured: Array<{ t: number; v: number }> = (wl?.data ?? []).map((r: any) => ({ t: new Date(String(r.t).replace(' ', 'T') + 'Z').getTime(), v: Number(r.v) })).filter((r: any) => Number.isFinite(r.v));
+    const predicted: Array<{ t: number; v: number }> = (pred?.predictions ?? []).map((r: any) => ({ t: new Date(String(r.t).replace(' ', 'T') + 'Z').getTime(), v: Number(r.v) })).filter((r: any) => Number.isFinite(r.v));
+    if (measured.length < 8 || predicted.length < 4) return null;
+    const W = 320, H = 120, PAD = 6;
+    const all = [...measured.map(r => r.v), ...predicted.map(r => r.v)];
+    const lo = Math.min(...all), hi = Math.max(...all);
+    const span = Math.max(0.05, hi - lo);
+    const t0 = Math.min(...predicted.map(r => r.t));
+    const t1 = Math.max(...measured.map(r => r.t));
+    const tspan = Math.max(1, t1 - t0);
+    const x = (t: number) => PAD + (t - t0) / tspan * (W - PAD * 2);
+    const y = (v: number) => H - PAD - (v - lo) / span * (H - PAD * 2);
+    const line = (rows: Array<{ t: number; v: number }>) => rows.map(r => `${x(r.t).toFixed(1)},${y(r.v).toFixed(1)}`).join(' ');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#0a1520"/><polyline points="${line(predicted)}" fill="none" stroke="%23ffffff" stroke-opacity="0.45" stroke-width="1.5" stroke-dasharray="4 3"/><polyline points="${line(measured)}" fill="none" stroke="#55ddff" stroke-width="2"/><text x="${PAD + 2}" y="${PAD + 11}" fill="#55ddff" font-size="10" font-family="system-ui">measured</text><text x="${PAD + 62}" y="${PAD + 11}" fill="#ffffff" fill-opacity="0.55" font-size="10" font-family="system-ui">predicted (moon)</text><text x="${PAD + 2}" y="${H - PAD - 2}" fill="#ffffff" fill-opacity="0.4" font-size="9" font-family="system-ui">${stationName} — last ${Math.round(tspan / 3600000)}h, meters above MSL</text></svg>`;
+    const uri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    tideChartCache[stationId] = { at: Date.now(), uri };
+    return uri;
+  } catch { return null; }
+}
+
 // --- Instrument memory: readings persist across feed generations in process
 // memory, turning snapshots into narratives. A buoy reading 5m means more
 // when we can also say "it was 2m three hours ago — the sea is building."
@@ -275,14 +310,33 @@ const TIDE_STATIONS: Array<[string, string, number, number]> = [
   ['1612340', 'Honolulu', 21.3, -157.87]
 ];
 
-type TideAnomaly = { id: string; name: string; lat: number; lon: number; measured: number; predicted: number; anomaly: number; time: string };
+type TideAnomaly = { id: string; name: string; lat: number; lon: number; measured: number; predicted: number; anomaly: number; time: string; measuredSeries?: Array<{ t: number; v: number }>; predictedSeries?: Array<{ t: number; v: number }> };
+
+
+function buildTideChartSvg(stationName: string, measured: Array<{ t: number; v: number }>, predicted: Array<{ t: number; v: number }>): string | null {
+  if (!measured || !predicted || measured.length < 8 || predicted.length < 4) return null;
+  const W = 320, H = 120, PAD = 6;
+  const all = [...measured.map(r => r.v), ...predicted.map(r => r.v)];
+  const lo = Math.min(...all), hi = Math.max(...all);
+  const span = Math.max(0.05, hi - lo);
+  const inWindow = predicted.filter(r => r.t <= measured[measured.length - 1].t + 3600000);
+  const t0 = Math.min(...inWindow.map(r => r.t));
+  const t1 = Math.max(...measured.map(r => r.t));
+  const tspan = Math.max(1, t1 - t0);
+  const x = (t: number) => PAD + (t - t0) / tspan * (W - PAD * 2);
+  const y = (v: number) => H - PAD - (v - lo) / span * (H - PAD * 2);
+  const line = (rows: Array<{ t: number; v: number }>) => rows.filter(r => r.t >= t0 && r.t <= t1).map(r => `${x(r.t).toFixed(1)},${y(r.v).toFixed(1)}`).join(' ');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#0a1520"/><polyline points="${line(inWindow)}" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.5" stroke-dasharray="4 3"/><polyline points="${line(measured)}" fill="none" stroke="#55ddff" stroke-width="2"/><text x="${PAD + 2}" y="${PAD + 11}" fill="#55ddff" font-size="10" font-family="system-ui">measured</text><text x="${PAD + 62}" y="${PAD + 11}" fill="#ffffff" fill-opacity="0.55" font-size="10" font-family="system-ui">predicted (moon)</text><text x="${PAD + 2}" y="${H - PAD - 2}" fill="#ffffff" fill-opacity="0.4" font-size="9" font-family="system-ui">${stationName} — last ${Math.round(tspan / 3600000)}h, meters above MSL</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
 
 export async function tideAnomalies(): Promise<TideAnomaly[]> {
   const base = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter';
   const rows = await Promise.all(TIDE_STATIONS.map(async ([id, name, lat, lon]) => {
     try {
-      const [wl, pred] = await Promise.all([
+      const [wl, wlSeries, pred] = await Promise.all([
         json<any>(`${base}?product=water_level&application=elsewhere-discovery&date=latest&station=${id}&time_zone=gmt&units=metric&datum=MSL&format=json`, undefined, 6000),
+        json<any>(`${base}?product=water_level&application=elsewhere-discovery&date=today&station=${id}&time_zone=gmt&units=metric&datum=MSL&format=json`, undefined, 6000),
         json<any>(`${base}?product=predictions&application=elsewhere-discovery&begin_date=${(() => { const d = new Date(Date.now() - 86400000); return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`; })()}&end_date=${(() => { const d = new Date(Date.now() + 86400000); return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`; })()}&station=${id}&time_zone=gmt&units=metric&datum=MSL&interval=h&format=json`, undefined, 6000)
       ]);
       const measured = Number(wl?.data?.[0]?.v);
@@ -307,10 +361,12 @@ export async function tideAnomalies(): Promise<TideAnomaly[]> {
         if (!nearest || Math.abs(nearest.t - measuredTime) > 30 * 60000) return null;
         predicted = nearest.v;
       }
-      return { id, name, lat, lon, measured, predicted, anomaly: measured - predicted, time: wl.data[0].t };
+      const measuredSeries: Array<{ t: number; v: number }> = (wlSeries?.data ?? []).map((r: any) => ({ t: new Date(String(r.t).replace(' ', 'T') + 'Z').getTime(), v: Number(r.v) })).filter((r: any) => Number.isFinite(r.v));
+      const predictedSeries = timed;
+      return { id, name, lat, lon, measured, predicted, anomaly: measured - predicted, time: wl.data[0].t, measuredSeries, predictedSeries };
     } catch { return null; }
   }));
-  return rows.filter((row): row is TideAnomaly => Boolean(row));
+  return rows.filter(Boolean) as TideAnomaly[];
 }
 
 // Live radio Earth — the planet is broadcasting right now, in every language.
@@ -966,6 +1022,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const cm = Math.round(Math.abs(loudest.anomaly) * 100);
       out.push({
         id: 'sea-defies-moon', template: 'ocean', title: `The sea at ${loudest.name.split(',')[0]} is ${cm} cm ${direction} than the moon says it should be`, kicker: 'Measured tide anomaly — live', visual: 'ocean', score: 84 + Math.min(8, Math.round(Math.abs(loudest.anomaly) * 10)), freshness: 'gauged minutes ago',
+        mediaImage: buildTideChartSvg(loudest.name, loudest.measuredSeries ?? [], loudest.predictedSeries ?? []) ?? undefined, mediaAlt: 'Measured vs predicted water level — the divergence chart',
         location: { lat: loudest.lat, lon: loudest.lon, label: loudest.name },
         summary: `Astronomical tides are among the most predictable phenomena on Earth — the moon's pull, computed decades ahead. So when a NOAA tide gauge reads ${cm} cm ${direction} than that prediction right now, something physical is overriding the moon: wind piling water against the coast, pressure lifting or pressing the surface, or surge. Across ${tides.length} US coastal gauges, this is the loudest current anomaly. The measurement is direct; the cause is the open question.`,
         facts: [
