@@ -1654,6 +1654,40 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     }
   }
 
+  // --- The unexplained sea: the inverse of convergence. The tide gauge shows
+  // water piling up, but no alert, no wind, no low pressure explains it. The
+  // absence of the expected explanation IS the story — meteotsunamis, seiches
+  // and distant-storm surges are real phenomena that arrive unannounced.
+  if (tides?.length && buoys?.length) {
+    const surge2 = tides.filter(t => t.anomaly >= 0.35).sort((a, b) => b.anomaly - a.anomaly)[0];
+    if (surge2) {
+      const features2 = Array.isArray((nwsAlerts as any)?.features) ? (nwsAlerts as any).features : [];
+      const state2 = surge2.name.split(',').pop()?.trim() ?? '';
+      const hasAlert = features2.some((f: any) => {
+        const pr = f?.properties ?? {};
+        return /coastal flood|storm surge|high surf/i.test(`${pr.event ?? ''} ${pr.headline ?? ''}`) && (!state2 || String(pr.areaDesc ?? '').includes(state2));
+      });
+      const nb = buoys.map(b => ({ ...b, dist: Math.hypot(b.lat - surge2.lat, b.lon - surge2.lon) })).sort((a, b) => a.dist - b.dist)[0];
+      const windExplains = nb && nb.dist < 5 && (nb.windSpeed ?? 0) >= 8;
+      const pressureExplains = nb && nb.dist < 8 && (nb.pressure ?? 1100) <= 1008;
+      if (!hasAlert && !windExplains && !pressureExplains) {
+        out.push({
+          id: 'unexplained-sea-now', template: 'ocean', title: `The sea at ${surge2.name.split(',')[0]} is ${Math.round(surge2.anomaly * 100)} cm higher than the moon says it should be — and nothing obvious explains it`, kicker: 'Unexplained signal — the mystery card', visual: 'ocean', score: 87, freshness: 'measured within the hour',
+          location: { lat: surge2.lat, lon: surge2.lon, label: surge2.name },
+          summary: `The astronomical tide is one of the most precise predictions in science — the moon's pull, computed decades ahead. Right now the water at ${surge2.name} is ${Math.round(surge2.anomaly * 100)} cm above that prediction. Normally the explanation is a storm: wind pushing water ashore, low pressure lifting the surface. But the nearest buoy shows no strong wind${nb ? ` (just ${Math.round((nb.windSpeed ?? 0) * 3.6)} km/h)` : ''}, no deep low pressure, and the Weather Service has issued no alert for this coast. What remains is stranger and more interesting: a meteotsunami — a pressure-jump wave traveling along the coast — a seiche sloshing in a distant basin, or the delayed surge of a storm that already passed. Events like this are real, measured, and almost never make the news. Whatever it is, the water is genuinely there.`,
+          facts: [
+            { label: 'Unexplained rise', value: `+${Math.round(surge2.anomaly * 100)} cm above prediction — measured, not modeled`, kind: 'observed' },
+            { label: 'Storm evidence', value: 'None — no advisory, no strong offshore wind, no deep low', kind: 'observed' },
+            { label: 'Possible causes', value: 'Meteotsunami (pressure-jump wave), basin seiche, or a distant storm’s leftover surge traveling the coast', kind: 'interpretation' },
+            { label: 'What we cannot know', value: 'Which one it is — the public instrument network can see the water but not always the cause. The mystery is honest.', kind: 'question' }
+          ],
+          sources: [src('NOAA CO-OPS tide gauges', 'https://tidesandcurrents.noaa.gov/'), src('NOAA NDBC buoys', 'https://www.ndbc.noaa.gov/')],
+          related: ['The sea vs the moon', 'The measured planet', 'coastal-storm-synthesis']
+        });
+      }
+    }
+  }
+
   // --- The sea vs the moon: measured water level minus astronomical prediction.
   // A big anomaly is the ocean literally defying the moon — wind or pressure
   // piling water against a coast. Conditional: only while physics is loud.
