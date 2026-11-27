@@ -3007,7 +3007,15 @@ export async function getDiscoveries(): Promise<Discovery[]> {
               { label: 'What you are hearing', value: `Live underwater audio at ${displayName} — segments recorded seconds ago`, kind: 'observed' },
               { label: 'Why it exists', value: 'Early detection of Southern Resident orca calls — fewer than 75 of these whales remain; the network listens so response can be fast', kind: 'verified' },
               { label: 'The network', value: `${nodes.length} hydrophone nodes across the Salish Sea, all public`, kind: 'observed' },
-              { label: 'What ships sound like', value: 'A low diesel drone that can dominate for hours — ocean noise pollution is itself one of the things being studied', kind: 'interpretation' }
+              { label: 'What ships sound like', value: 'A low diesel drone that can dominate for hours — ocean noise pollution is itself one of the things being studied', kind: 'interpretation' },
+              ...((() => {
+                // Cross-instrument: if a nearby buoy is measuring storm seas, the
+                // hydrophone is literally recording the same storm — sound and measurement.
+                if (!Array.isArray(buoys)) return [];
+                const near = buoys.filter((b: any) => b?.waveHeight != null && Math.hypot((b.lat - lat) * 111, (b.lon - lon) * 88) < 600).sort((a: any, b2: any) => (b2.waveHeight ?? 0) - (a.waveHeight ?? 0))[0];
+                if (near && near.waveHeight >= 2.8) return [{ label: 'The storm in the sound', value: `The ${near.name} buoy is measuring ${Number(near.waveHeight).toFixed(1)} m seas nearby right now — the hiss and rumble in this audio is partly that storm. Two independent instruments, one event.`, kind: 'interpretation' as const }];
+                return [];
+              })())
             ],
             sources: [src('Orcasound live hydrophone network', 'https://live.orcasound.net')],
             related: ['radio-', 'Wildest water', 'ocean-measured-now']
