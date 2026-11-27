@@ -756,7 +756,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         id: 'airborne-now', template: 'atmosphere', title: `${aircraft.length.toLocaleString()} aircraft are airborne over Earth right now`, kicker: 'Live global ADS-B census',
         visual: 'orbital', score: 78, freshness: 'positions seconds old',
         location: { lat: centroidLat, lon: centroidLon, label: 'Centroid of global air traffic' },
-        summary: `Every golden point on the globe is a real aircraft, measured by crowdsourced ground receivers within the last few seconds. At typical occupancy that is roughly ${soulsEstimate} million people currently off the ground — a city the size of a megacity, floating. The shimmer updates every minute.`,
+        summary: `Every golden point on the globe is a real aircraft, measured by crowdsourced ground receivers within the last few seconds. At typical occupancy that is roughly ${soulsEstimate} million people currently off the ground — a floating city that assembles and dissolves every single day. The shimmer updates every minute.`,
         facts: [
           { label: 'Aircraft airborne', value: aircraft.length.toLocaleString(), kind: 'observed' },
           { label: 'Median altitude', value: `${Math.round(medianAlt * 3.28084 / 100) / 10}k ft`, kind: 'observed' },
