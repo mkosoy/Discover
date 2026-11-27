@@ -58,3 +58,6 @@ main.watching .heroCopy{opacity:0;transform:translateY(-8px);pointer-events:none
 .radioMeta span{font-size:12px;color:#7d8ea8}
 .radioLiveTag{position:absolute;top:14px;right:16px;font-size:10px;letter-spacing:2px;color:#fca5a5;border:1px solid rgba(252,165,165,.5);padding:3px 8px;border-radius:999px;animation:radioPulse 1.6s ease-in-out infinite}
 @keyframes radioPulse{0%,100%{opacity:1}50%{opacity:.45}}
+
+.watch.pulseHint{animation:tourPulse 1.8s ease-in-out infinite}
+@keyframes tourPulse{0%,100%{box-shadow:0 0 0 0 rgba(125,211,252,.55)}50%{box-shadow:0 0 0 10px rgba(125,211,252,0)}}

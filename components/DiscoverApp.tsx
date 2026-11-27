@@ -158,6 +158,13 @@ export default function DiscoverApp() {
   const [watching, setWatching] = useState(false);
   const tourRef = useRef<{ order: string[]; idx: number }>({ order: [], idx: -1 });
   const [tourProgress, setTourProgress] = useState<{ idx: number; total: number }>();
+  const [tourHint, setTourHint] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.localStorage.getItem('elsewhere-toured')) return;
+    const timer = window.setTimeout(() => setTourHint(true), 9000);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [sky, setSky] = useState<{ lat: number; lon: number }[]>([]);
   const [layers, setLayers] = useState<any>();
   useEffect(() => {
@@ -534,7 +541,7 @@ export default function DiscoverApp() {
 
   useEffect(() => {
     if (!watching || discoveries.length < 2) return;
-    const dwell = active?.mediaVideo || active?.visual === 'nasa-live' ? 26000 : 12000;
+    const dwell = active?.mediaVideo || active?.mediaAudio || active?.visual === 'nasa-live' ? 26000 : 12000;
     const timer = window.setTimeout(() => advanceTour(), dwell);
     return () => window.clearTimeout(timer);
   });
@@ -612,8 +619,10 @@ export default function DiscoverApp() {
           { timeout: 8000, maximumAge: 300000 }
         );
       }}><LocateFixed size={17} />My sky</button>
-      <button className={watching ? 'watch active' : 'watch'} onClick={() => {
+      <button className={`${watching ? 'watch active' : 'watch'}${tourHint && !watching ? ' pulseHint' : ''}`} onClick={() => {
         if (!watching) {
+          window.localStorage.setItem('elsewhere-toured', '1');
+          setTourHint(false);
           // Tour mode: rank everything happening right now — live video and imagery first —
           // then walk the planet best-first instead of randomly.
           const ranked = [...discoveries].sort((a, b) => {

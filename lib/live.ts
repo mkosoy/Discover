@@ -161,6 +161,57 @@ async function buoyObservations(): Promise<BuoyObs[]> {
 }
 
 
+
+// The sea vs the moon: NOAA tide gauges measure actual water level every 6
+// minutes; the astronomical tide is precisely predictable. The difference —
+// the anomaly — is wind, pressure and surge. Real measured physics.
+const TIDE_STATIONS: Array<[string, string, number, number]> = [
+  ['8518750', 'The Battery, New York', 40.7, -74.01],
+  ['9414290', 'San Francisco', 37.81, -122.47],
+  ['8723214', 'Virginia Key, Miami', 25.73, -80.16],
+  ['9447130', 'Seattle', 47.6, -122.34],
+  ['8771450', 'Galveston, Texas', 29.31, -94.79],
+  ['1612340', 'Honolulu', 21.3, -157.87]
+];
+
+type TideAnomaly = { id: string; name: string; lat: number; lon: number; measured: number; predicted: number; anomaly: number; time: string };
+
+async function tideAnomalies(): Promise<TideAnomaly[]> {
+  const base = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter';
+  const rows = await Promise.all(TIDE_STATIONS.map(async ([id, name, lat, lon]) => {
+    try {
+      const [wl, pred] = await Promise.all([
+        json<any>(`${base}?product=water_level&application=elsewhere-discovery&date=latest&station=${id}&time_zone=gmt&units=metric&datum=MSL&format=json`, undefined, 6000),
+        json<any>(`${base}?product=predictions&application=elsewhere-discovery&date=today&range=30&station=${id}&time_zone=gmt&units=metric&datum=MSL&interval=h&format=json`, undefined, 6000)
+      ]);
+      const measured = Number(wl?.data?.[0]?.v);
+      const predictions: any[] = pred?.predictions ?? [];
+      if (!Number.isFinite(measured) || !predictions.length) return null;
+      const measuredTime = new Date(String(wl.data[0].t).replace(' ', 'T') + 'Z').getTime();
+      // Linear interpolation between the bracketing hourly predictions —
+      // tidal slope near mid-tide can exceed 0.5 m/hour, so nearest-hour
+      // sampling alone would manufacture false anomalies of ~25 cm.
+      const timed = predictions.map(pr => ({ t: new Date(String(pr.t).replace(' ', 'T') + 'Z').getTime(), v: Number(pr.v) })).filter(pr => Number.isFinite(pr.v)).sort((a, b) => a.t - b.t);
+      let predicted = NaN;
+      for (let i = 0; i < timed.length - 1; i++) {
+        const a = timed[i], b = timed[i + 1];
+        if (measuredTime >= a.t && measuredTime <= b.t && b.t > a.t) {
+          const f = (measuredTime - a.t) / (b.t - a.t);
+          predicted = a.v + f * (b.v - a.v);
+          break;
+        }
+      }
+      if (!Number.isFinite(predicted)) {
+        const nearest = timed.reduce((best, pr) => Math.abs(pr.t - measuredTime) < Math.abs(best.t - measuredTime) ? pr : best, timed[0]);
+        if (!nearest || Math.abs(nearest.t - measuredTime) > 30 * 60000) return null;
+        predicted = nearest.v;
+      }
+      return { id, name, lat, lon, measured, predicted, anomaly: measured - predicted, time: wl.data[0].t };
+    } catch { return null; }
+  }));
+  return rows.filter((row): row is TideAnomaly => Boolean(row));
+}
+
 // Live radio Earth — the planet is broadcasting right now, in every language.
 // radio-browser.info is a keyless community index of ~50k public streams.
 const RADIO_CITIES: Array<[string, string, string, number, number]> = [
@@ -385,7 +436,7 @@ function connectDiscoveries(out: Discovery[]) {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, swpcAlerts] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -413,7 +464,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>(`https://api.inaturalist.org/v1/observations?order=desc&order_by=created_at&per_page=14&photos=true&taxon_id=3&verifiable=true`, undefined, 6000),
     buoyObservations(),
     json<any>('https://www.nhc.noaa.gov/CurrentStorms.json', undefined, 6000),
-    radioEarth()
+    radioEarth(),
+    tideAnomalies(),
+    json<any[]>('https://services.swpc.noaa.gov/products/alerts.json', undefined, 6000)
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -680,6 +733,26 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   // ringing louder than usual — worth saying, honestly framed as a rate anomaly.
   const seismicSurge = quakeCount24h >= 60;
   const q = quakes?.features?.sort((a: any, b: any) => (b.properties?.mag ?? 0) - (a.properties?.mag ?? 0))[0];
+
+  // --- Every lightning flash over the Americas, measured from space.
+  // GOES GLM optical sensors count near-instantaneous flashes continuously;
+  // the map updates every few minutes. Zero modeling — direct detection.
+  out.push({
+    id: 'lightning-space-now', template: 'atmosphere', title: 'Every lightning flash over America right now, seen from 36,000 km up', kicker: 'GOES lightning mapper — optical detection', visual: 'storm', score: 82, freshness: 'updated every few minutes',
+    mediaImage: 'https://cdn.star.nesdis.noaa.gov/GOES16/GLM/CONUS/EXTENT3/latest.jpg', mediaAlt: 'GOES-East Geostationary Lightning Mapper flash extent density over North America',
+    location: { lat: 38, lon: -97, label: 'GOES-East view of North America' },
+    summary: 'A camera in geostationary orbit watches for the microsecond optical pulse of every lightning flash across the Americas — day and night, cloud-top or inside the storm. What you are looking at is flash density measured in the last few minutes: the atmosphere\u2019s electrical activity as a live map. Thunderstorms are not modeled here; they are detected.',
+    facts: [
+      { label: 'Sensor', value: 'GOES-East GLM — optical transient detector in orbit', kind: 'verified' },
+      { label: 'Coverage', value: 'North and South America + adjacent oceans', kind: 'verified' },
+      { label: 'Detection', value: 'Optical pulse per flash — no radar, no model', kind: 'verified' },
+      { label: 'Latency', value: 'Typically a few minutes behind real time', kind: 'observed' },
+      { label: 'What to look for', value: 'Bright clusters are active storm cells — their motion shows where convection is intensifying', kind: 'interpretation' }
+    ],
+    sources: [src('NOAA GOES GLM near-real-time imagery', 'https://www.star.nesdis.noaa.gov/GOES/')],
+    related: ['Storm surge', 'Coastal cameras', 'Wildest water']
+  });
+
   // --- The ocean, measured: real buoys reporting actual wave heights right now.
   // Unlike the model-based wildest-water investigation, these are physical
   // instruments riding the sea surface — the highest reading wins the story.
@@ -707,6 +780,32 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     });
   }
 
+
+
+  // --- The sea vs the moon: measured water level minus astronomical prediction.
+  // A big anomaly is the ocean literally defying the moon — wind or pressure
+  // piling water against a coast. Conditional: only while physics is loud.
+  if (tides?.length >= 3) {
+    const loudest = [...tides].sort((a, b) => Math.abs(b.anomaly) - Math.abs(a.anomaly))[0];
+    if (Math.abs(loudest.anomaly) >= 0.2) {
+      const direction = loudest.anomaly > 0 ? 'higher' : 'lower';
+      const cm = Math.round(Math.abs(loudest.anomaly) * 100);
+      out.push({
+        id: 'sea-defies-moon', template: 'ocean', title: `The sea at ${loudest.name.split(',')[0]} is ${cm} cm ${direction} than the moon says it should be`, kicker: 'Measured tide anomaly — live', visual: 'ocean', score: 84 + Math.min(8, Math.round(Math.abs(loudest.anomaly) * 10)), freshness: 'gauged minutes ago',
+        location: { lat: loudest.lat, lon: loudest.lon, label: loudest.name },
+        summary: `Astronomical tides are among the most predictable phenomena on Earth — the moon's pull, computed decades ahead. So when a NOAA tide gauge reads ${cm} cm ${direction} than that prediction right now, something physical is overriding the moon: wind piling water against the coast, pressure lifting or pressing the surface, or surge. Across ${tides.length} US coastal gauges, this is the loudest current anomaly. The measurement is direct; the cause is the open question.`,
+        facts: [
+          { label: 'Measured water level', value: `${loudest.measured.toFixed(2)} m above MSL`, kind: 'observed' },
+          { label: 'Astronomical prediction', value: `${loudest.predicted.toFixed(2)} m`, kind: 'verified' },
+          { label: 'Anomaly', value: `${loudest.anomaly > 0 ? '+' : ''}${cm} cm`, kind: 'interpretation' },
+          { label: 'Network context', value: tides.map(t => `${t.name.split(',')[0]}: ${t.anomaly >= 0 ? '+' : ''}${Math.round(t.anomaly * 100)} cm`).join(' · '), kind: 'observed' },
+          { label: 'Attribution', value: 'Wind stress, pressure and surge compete — the gauge alone cannot separate them', kind: 'question' }
+        ],
+        sources: [src('NOAA CO-OPS real-time tide gauges', 'https://tidesandcurrents.noaa.gov/')],
+        related: ['Storm surge', 'Coastal cameras', 'Wildest water']
+      });
+    }
+  }
 
   // --- Radio Earth: the planet is broadcasting right now. Selection favors
   // stations currently in drive-time or evening hours — when radio is alive.
@@ -945,6 +1044,13 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       : 'The planetary K index is a real-time geomagnetic measurement. Aurora visibility still depends on darkness and cloud cover, so Elsewhere labels the opportunity as conditional rather than a promise.',
     facts: [
     { label: 'Kp index', value: String(latestKp?.Kp ?? latestKp?.[1] ?? "—"), kind: 'observed' },
+    ...((() => {
+      const alertText = (swpcAlerts ?? []).filter((a: any) => a?.message && Date.now() - new Date(String(a.issue_datetime ?? '').replace(' ', 'T') + 'Z').getTime() < 48 * 3600000)
+        .map((a: any) => String(a.message)).find((m: string) => /WARNING|WATCH/i.test(m) && /geomagnetic|storm/i.test(m));
+      if (!alertText) return [];
+      const match = alertText.match(/(G[1-5])[^\n]*/);
+      return [{ label: 'NOAA alert', value: match ? `${match[1]} storm watch/warning issued within 48h` : 'Geomagnetic storm watch/warning issued within 48h', kind: 'verified' as const }];
+    })()),
     { label: 'Darkness at the camera', value: skyDark == null ? 'Unavailable' : skyDark ? 'Yes — polar night' : 'No — daylight', kind: skyDark == null ? 'question' : 'observed' },
     { label: 'Cloud cover at the camera', value: skyCloud == null ? 'Unavailable' : `${Math.round(skyCloud)}%`, kind: skyCloud == null ? 'question' : 'observed' },
     { label: 'Moon phase', value: moonIllum > 60 ? `${moonIllum}% illuminated — if the moon is up, bright moonlight competes with faint aurora` : moonIllum > 25 ? `${moonIllum}% illuminated — modest interference when above the horizon` : `${moonIllum}% illuminated — dark skies help faint aurora`, kind: 'interpretation' },
