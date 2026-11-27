@@ -64,7 +64,7 @@ function discoveryForCamera(camera: PublicCamera): Discovery {
 }
 
 
-function LiveAudio({ src, station, place }: { src: string; station: string; place: string }) {
+function LiveAudio({ src, station, place, autoPlay = false }: { src: string; station: string; place: string; autoPlay?: boolean }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -73,7 +73,18 @@ function LiveAudio({ src, station, place }: { src: string; station: string; plac
     setFailed(false);
     audioRef.current?.pause();
     if (audioRef.current) audioRef.current.src = src;
-  }, [src]);
+    // During the Tour, the user's button press is a page interaction — live
+    // radio joins the tour audibly. If the browser still refuses, the big
+    // play button remains as the honest fallback.
+    if (autoPlay) {
+      const timer = window.setTimeout(() => {
+        const el = audioRef.current;
+        if (!el) return;
+        el.play().then(() => setPlaying(true)).catch(() => {});
+      }, 650);
+      return () => window.clearTimeout(timer);
+    }
+  }, [src, autoPlay]);
   const toggle = () => {
     const el = audioRef.current;
     if (!el) return;
@@ -628,7 +639,7 @@ export default function DiscoverApp() {
         <div className="panelMedia">{active.visual === 'nasa-live' ?
           <LiveVideo title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0&autoplay=1&mute=1&playsinline=1" /> : active.mediaVideo ?
           <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} autoPlay /> : active.mediaAudio ?
-          <LiveAudio src={active.mediaAudio} station={active.title.split('—')[0].trim()} place={active.location.label} /> :
+          <LiveAudio src={active.mediaAudio} station={active.title.split('—')[0].trim()} place={active.location.label} autoPlay={watching} /> :
           <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
           {active.visual !== 'nasa-live' && !active.mediaVideo && !active.mediaAudio && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? (active.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : active.mediaImage.includes('embed.skylinewebcams.com') ? 'Live camera image · refreshing' : 'Latest public Earth imagery') : 'Animated evidence visualization'}</div>}
         </div>
