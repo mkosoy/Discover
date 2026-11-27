@@ -495,7 +495,7 @@ function connectDiscoveries(out: Discovery[]) {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, swpcAlerts] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, squawk7700, squawk7600, swpcAlerts] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -527,6 +527,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     tideAnomalies(),
     text('https://gml.noaa.gov/webdata/ccgg/trends/co2_mlo_weekly.csv'),
     wikiEditsSample(),
+    json<any>('https://api.adsb.lol/v2/squawk/7700', undefined, 6000),
+    json<any>('https://api.adsb.lol/v2/squawk/7600', undefined, 6000),
     json<any[]>('https://services.swpc.noaa.gov/products/alerts.json', undefined, 6000)
   ]);
   const out: Discovery[] = [];
@@ -1404,6 +1406,33 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       sources: [src('Wikimedia recent changes stream', 'https://stream.wikimedia.org/v2/stream/recentchange'), ...(pick.url ? [src(`"${pick.title}"`, pick.url)] : [])],
       related: ['Radio Earth', 'The measured planet', 'Humanity day/night split']
     });
+  }
+
+  // --- An aircraft declaring an emergency, live. Squawk 7700 is the transponder
+  // code a crew dials when something has gone seriously wrong — the most urgent
+  // routine signal in the sky. Conditional: appears only while one is active.
+  {
+    const emergency = (squawk7700?.ac ?? []).filter((a: any) => Number.isFinite(a.lat) && Number.isFinite(a.lon));
+    const radioOut = (squawk7600?.ac ?? []).filter((a: any) => Number.isFinite(a.lat) && Number.isFinite(a.lon));
+    const shown = emergency[0] ?? radioOut[0];
+    if (shown) {
+      const is7700 = emergency.includes(shown);
+      const callsign = String(shown.flight ?? shown.hex ?? 'unknown').trim();
+      out.push({
+        id: 'aircraft-emergency-now', template: 'atmosphere', title: is7700 ? `Aircraft ${callsign} is squawking 7700 — a general emergency — right now` : `Aircraft ${callsign} has lost radio contact — squawking 7600 right now`, kicker: 'Live transponder distress signal', visual: 'orbital', score: 91, freshness: 'transponder active now',
+        location: { lat: shown.lat, lon: shown.lon, label: `${callsign} — airborne` },
+        summary: `Somewhere above this point, a flight crew has just turned their transponder to ${is7700 ? '7700 — the international code for a general emergency' : '7600 — the code for radio failure'}. Every air traffic controller watching this airspace sees it highlighted instantly. The code itself does not say what is wrong — mechanical, medical, or otherwise — and most such events end in safe landings. What the public data honestly shows: a crew asking for priority, right now${shown.alt_baro != null ? `, at ${Math.round(Number(shown.alt_baro) * 0.3048)} m` : ''}${shown.gs != null ? `, moving at ${Math.round(Number(shown.gs) * 1.852)} km/h` : ''}.`,
+        facts: [
+          { label: 'Squawk code', value: is7700 ? '7700 — general emergency' : '7600 — radio failure', kind: 'observed' },
+          { label: 'Aircraft', value: `${callsign}${shown.t ? ` — type ${shown.t}` : ''}`, kind: 'observed' },
+          shown.alt_baro != null ? { label: 'Altitude', value: `${Math.round(Number(shown.alt_baro) * 0.3048)} m`, kind: 'observed' } : null,
+          { label: 'What this does not tell us', value: 'The nature of the emergency — the code is a request for priority, not a diagnosis. Most end safely.', kind: 'interpretation' },
+          { label: 'Network', value: `${(squawk7700?.total ?? 0) + (squawk7600?.total ?? 0)} aircraft currently squawking distress codes worldwide`, kind: 'observed' }
+        ].filter(Boolean) as any,
+        sources: [src('adsb.lol live transponder network', 'https://api.adsb.lol/')],
+        related: ['Aircraft census', 'Empty-sky audit', 'The measured planet']
+      });
+    }
   }
 
   // --- The terminator: where dawn and dusk are happening right now (pure astronomy, always live) ---
