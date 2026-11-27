@@ -1682,7 +1682,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
             { label: 'What we cannot know', value: 'Which one it is — the public instrument network can see the water but not always the cause. The mystery is honest.', kind: 'question' }
           ],
           sources: [src('NOAA CO-OPS tide gauges', 'https://tidesandcurrents.noaa.gov/'), src('NOAA NDBC buoys', 'https://www.ndbc.noaa.gov/')],
-          related: ['The sea vs the moon', 'The measured planet', 'coastal-storm-synthesis']
+          related: ['sea-defies-moon', 'measured-planet-live', 'ocean-measured-now']
         });
       }
     }
