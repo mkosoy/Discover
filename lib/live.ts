@@ -1006,6 +1006,22 @@ function detectConvergences(out: Discovery[]): void {
     }
   }
 
+  // C2. Cyclone convergence: a deep synoptic low in the pressure scan plus a
+  // falling buoy barometer in the same broad ocean — the atmosphere's skeleton
+  // and the ocean's skin agreeing on a cyclone.
+  {
+    const skel = out.find(d => d.id === 'pressure-skeleton-now' && /deep low/i.test(d.title));
+    const buoy = out.find(d => d.id === 'storm-deepening-now');
+    if (skel && buoy && kmBetween(skel.location, buoy.location) < 1500) {
+      groups.push({
+        theme: 'cyclone-convergence',
+        members: [skel, buoy],
+        instrumentCount: 2,
+        insight: 'The synoptic pressure scan and a physical buoy barometer agree: a cyclone system is not just modeled but mechanically measured — air pressure falling at the ocean surface inside the broader low.'
+      });
+    }
+  }
+
   // D. Tsunami chain: tsunami assessment + significant recent oceanic quake.
   {
     const tsunami = out.find(d => d.id === 'tsunami-watch-japan');

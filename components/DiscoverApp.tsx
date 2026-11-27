@@ -680,6 +680,7 @@ export default function DiscoverApp() {
           <div className="factGrid">{active.facts.map(f => <div key={f.label} className={`fact ${f.kind}`}><span>{f.label}</span><strong>{f.value}</strong><em>{kindLabel[f.kind]}</em></div>)}</div>
           {path.length > 1 && <div className="evidencePath"><span>Evidence path</span><div>{path.map((d, i) => <button key={`${d.id}-${i}`} onClick={() => selectDiscovery(d, undefined, true)} className={d.id === active.id ? 'active' : ''}>{d.title}</button>)}</div></div>}
           {Boolean(active.connections?.length) && <div className="connections"><span>Connected signals</span>{active.connections?.map(c => <button key={c.id} onClick={() => followConnection(c.id)}><b>{c.title}</b><small>{c.reason}</small></button>)}</div>}
+          {Boolean((active as any).unavailable) && discoveries.length > 0 && <div className="connections"><span>Meanwhile — live right now</span>{[...discoveries].sort((a, b) => b.score - a.score).slice(0, 3).map(d => <button key={d.id} onClick={() => selectDiscovery(d, undefined, true)}><b>{d.title}</b><small>live in the current feed</small></button>)}</div>}
           {(() => {
             const parents = investigations.filter(i => i.liveLinks?.some(l => l.discoveryId === active.id));
             return parents.length ? <div className="rabbit"><span>Part of the investigation</span>{parents.map(i => <button key={i.id} onClick={() => selectInvestigation(i)}>{i.title}<ArrowRight size={13} /></button>)}</div> : null;
