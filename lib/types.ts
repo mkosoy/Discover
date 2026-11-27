@@ -14,6 +14,7 @@ export type Discovery = {
   entityId?: string;
   occurredAt?: string;
   mediaVideo?: string;
+  mediaAudio?: string;
   mediaImage?: string;
   mediaAlt?: string;
   liveLinks?: { label: string; discoveryId: string; lat?: number; lon?: number; placeLabel?: string }[];

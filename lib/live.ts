@@ -157,6 +157,42 @@ async function buoyObservations(): Promise<BuoyObs[]> {
   return rows.filter((row): row is NonNullable<typeof row> => Boolean(row)) as BuoyObs[];
 }
 
+
+// Live radio Earth — the planet is broadcasting right now, in every language.
+// radio-browser.info is a keyless community index of ~50k public streams.
+const RADIO_CITIES: Array<[string, string, string, number, number]> = [
+  // [city, countryName, countryCode, lat, lon]
+  ['Tokyo', 'Japan', 'JP', 35.68, 139.69],
+  ['Nairobi', 'Kenya', 'KE', -1.29, 36.82],
+  ['Rio de Janeiro', 'Brazil', 'BR', -22.91, -43.17],
+  ['Reykjavík', 'Iceland', 'IS', 64.15, -21.94],
+  ['Mumbai', 'India', 'IN', 19.08, 72.88],
+  ['Sydney', 'Australia', 'AU', -33.87, 151.21],
+  ['Mexico City', 'Mexico', 'MX', 19.43, -99.13],
+  ['Cairo', 'Egypt', 'EG', 30.04, 31.24]
+];
+
+type RadioStation = { city: string; country: string; lat: number; lon: number; name: string; streamUrl: string; votes: number; clicks: number; tags: string; codec: string; localHour: number };
+
+async function radioEarth(): Promise<RadioStation[]> {
+  const hosts = ['https://de1.api.radio-browser.info', 'https://nl1.api.radio-browser.info'];
+  const utcHour = new Date().getUTCHours() + new Date().getUTCMinutes() / 60;
+  const rows = await Promise.all(RADIO_CITIES.map(async ([city, country, code, lat, lon]) => {
+    for (const host of hosts) {
+      try {
+        const data = await json<any[]>(`${host}/json/stations/search?countrycode=${code}&limit=12&order=votes&reverse=true&hidebroken=true`, { headers: { 'User-Agent': 'Elsewhere/1.0 earth discovery' } }, 6000);
+        const station = (data ?? []).find(st => st?.url_resolved && st.name && String(st.url_resolved).startsWith('https'));
+        if (station) {
+          const localHour = ((utcHour + Math.round(lon / 15)) % 24 + 24) % 24;
+          return { city, country, lat, lon, name: String(station.name).trim(), streamUrl: station.url_resolved, votes: station.votes ?? 0, clicks: station.clickcount ?? 0, tags: String(station.tags ?? '').split(',').slice(0, 3).join(', '), codec: station.codec ?? '', localHour };
+        }
+      } catch { /* try next host */ }
+    }
+    return null;
+  }));
+  return rows.filter((row): row is RadioStation => Boolean(row));
+}
+
 function xmlValue(block: string, tag: string) {
   const match = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`));
   return match?.[1]?.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim() ?? '';
@@ -346,7 +382,7 @@ function connectDiscoveries(out: Discovery[]) {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -373,7 +409,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     currentWeatherBatch([[36.5,-116.9],[29.3,47.9],[14.24,40.3],[63.46,142.79],[-78.46,106.83],[-89.99,15],[71.29,-156.79],[72.58,-38.46],[-66.9,142.67],[-41.29,174.78],[-53.16,-70.91],[27.99,86.93],[-23.5,-68.5],[23.0,5.0],[1.35,103.82],[55.75,37.62]]),
     json<any>(`https://api.inaturalist.org/v1/observations?order=desc&order_by=created_at&per_page=14&photos=true&taxon_id=3&verifiable=true`, undefined, 6000),
     buoyObservations(),
-    json<any>('https://www.nhc.noaa.gov/CurrentStorms.json', undefined, 6000)
+    json<any>('https://www.nhc.noaa.gov/CurrentStorms.json', undefined, 6000),
+    radioEarth()
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -656,6 +693,39 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       sources: [src('NOAA NDBC real-time buoy observations', 'https://www.ndbc.noaa.gov/')],
       related: ['Wildest water', 'Portugal coastal currents', 'Terminator']
     });
+  }
+
+
+  // --- Radio Earth: the planet is broadcasting right now. Selection favors
+  // stations currently in drive-time or evening hours — when radio is alive.
+  if (radio?.length) {
+    const scored = [...radio].sort((a, b) => {
+      const drive = (h: number) => (h >= 6 && h <= 9) || (h >= 17 && h <= 23) ? 2 : (h >= 0 && h <= 4) ? 1.2 : 1;
+      return drive(b.localHour) * (1 + Math.min(b.votes, 3000) / 3000) - drive(a.localHour) * (1 + Math.min(a.votes, 3000) / 3000);
+    });
+    for (const st of scored.slice(0, 3)) {
+      const hh = Math.floor(st.localHour);
+      const mm = Math.round((st.localHour - hh) * 60);
+      const timeStr = `${hh}:${String(mm).padStart(2, '0')}`;
+      const nightish = st.localHour < 5 || st.localHour >= 21;
+      const drivetime = (st.localHour >= 6 && st.localHour <= 9) || (st.localHour >= 17 && st.localHour <= 20);
+      out.push({
+        id: `radio-${st.city.toLowerCase().replace(/\s+/g, '-')}`, template: 'city', title: `It's ${timeStr} in ${st.city} — ${st.name} is broadcasting live right now`, kicker: 'Radio Earth · live audio', visual: 'city', score: 78 + (drivetime ? 5 : nightish ? 6 : 2) + Math.min(5, Math.round(st.votes / 800)), freshness: 'streaming live now',
+        location: { lat: st.lat, lon: st.lon, label: `${st.city}, ${st.country}` },
+        summary: `Somewhere in ${st.city} a studio is on air this second — not a recording, not a podcast: the same broadcast people there are actually hearing${drivetime ? ', in the middle of drive time' : nightish ? ', deep into the night shift' : ''}. This is one of the most-listened streams in ${st.country} by community ranking. Sound is unfiltered and unedited — that is the point.`,
+        mediaAudio: st.streamUrl,
+        facts: [
+          { label: 'Local time there', value: `${timeStr} (longitude-approximate)`, kind: 'interpretation' },
+          { label: 'Station', value: st.name.slice(0, 60), kind: 'verified' },
+          st.tags ? { label: 'Format', value: st.tags, kind: 'verified' } : null,
+          { label: 'Community ranking', value: `${st.votes.toLocaleString()} votes in the open radio index`, kind: 'observed' },
+          { label: 'Stream format', value: st.codec || 'live audio', kind: 'verified' },
+          { label: 'What you hear', value: 'Unfiltered live broadcast — language and content are whatever the city is hearing', kind: 'question' }
+        ].filter(Boolean) as any,
+        sources: [src('radio-browser.info open community index', 'https://www.radio-browser.info/')],
+        related: ['Night lights', 'City cameras', 'Terminator']
+      });
+    }
   }
 
   // --- Named tropical cyclones, when they exist: NHC's active-storm ledger.

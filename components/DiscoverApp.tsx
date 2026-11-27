@@ -63,6 +63,32 @@ function discoveryForCamera(camera: PublicCamera): Discovery {
   };
 }
 
+
+function LiveAudio({ src, station, place }: { src: string; station: string; place: string }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setPlaying(false);
+    setFailed(false);
+    audioRef.current?.pause();
+    if (audioRef.current) audioRef.current.src = src;
+  }, [src]);
+  const toggle = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (playing) { el.pause(); setPlaying(false); return; }
+    el.play().then(() => setPlaying(true)).catch(() => setFailed(true));
+  };
+  return <div className="radioPlayer" onClick={toggle}>
+    <div className={`radioEq ${playing ? 'on' : ''}`}>{Array.from({ length: 18 }).map((_, i) => <i key={i} style={{ animationDelay: `${(i % 7) * 0.13}s`, animationDuration: `${0.7 + (i % 5) * 0.11}s` }} />)}</div>
+    <button className="radioPlay" aria-label={playing ? 'Pause live radio' : 'Play live radio'}>{playing ? <span className="pauseIcon">❚❚</span> : <Play size={26} />}</button>
+    <div className="radioMeta"><b>{station}</b><span>{failed ? 'This stream did not answer — stations rotate; try another card' : playing ? `live now · ${place}` : `tap anywhere to listen live · ${place}`}</span></div>
+    {playing && <span className="radioLiveTag">LIVE</span>}
+    <audio ref={audioRef} preload="none" src={src} />
+  </div>;
+}
+
 function useAmbientAudio(enabled: boolean, visual?: Discovery['visual']) {
   useEffect(() => {
     if (!enabled) return;
@@ -601,9 +627,10 @@ export default function DiscoverApp() {
         <button className="panelClose" aria-label="Hide discovery" onClick={() => setPanelOpen(false)}><X size={17} /></button>
         <div className="panelMedia">{active.visual === 'nasa-live' ?
           <LiveVideo title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0&autoplay=1&mute=1&playsinline=1" /> : active.mediaVideo ?
-          <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} autoPlay /> :
+          <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} autoPlay /> : active.mediaAudio ?
+          <LiveAudio src={active.mediaAudio} station={active.title.split('—')[0].trim()} place={active.location.label} /> :
           <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
-          {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? (active.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : active.mediaImage.includes('embed.skylinewebcams.com') ? 'Live camera image · refreshing' : 'Latest public Earth imagery') : 'Animated evidence visualization'}</div>}
+          {active.visual !== 'nasa-live' && !active.mediaVideo && !active.mediaAudio && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? (active.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : active.mediaImage.includes('embed.skylinewebcams.com') ? 'Live camera image · refreshing' : 'Latest public Earth imagery') : 'Animated evidence visualization'}</div>}
         </div>
         <div className="panelBody">
           <div className="eyebrow"><Sparkles size={14} />{active.kicker}</div>
