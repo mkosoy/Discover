@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowRight, Check, Compass, Eye, Globe2, Loader2, Newspaper, Play, Radio, Satellite, Share2, Shuffle, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Check, Compass, Eye, Globe2, Loader2, Newspaper, Play, Radio, Satellite, Share2, Shuffle, Sparkles, Volume2, VolumeX, X } from 'lucide-react';
 import Globe from './Globe';
 import type { Discovery, Investigation } from '@/lib/types';
 import { cameraCoverage, cameraEmbed, publicCameras, type PublicCamera } from '@/lib/cameras';
@@ -63,6 +63,55 @@ function discoveryForCamera(camera: PublicCamera): Discovery {
   };
 }
 
+function useAmbientAudio(enabled: boolean, visual?: Discovery['visual']) {
+  useEffect(() => {
+    if (!enabled) return;
+    const ctx = new AudioContext();
+    const master = ctx.createGain();
+    master.gain.value = 0;
+    master.connect(ctx.destination);
+    master.gain.linearRampToValueAtTime(.055, ctx.currentTime + 4);
+    const roots: Record<string, number> = { fire: 49, ocean: 65.4, seismic: 43.7, aurora: 82.4, storm: 55, orbital: 73.4, 'nasa-live': 73.4, city: 61.7, launch: 55 };
+    const root = roots[visual ?? ''] ?? 55;
+    const oscs = [root, root * 1.5, root * 2.02].map((freq, index) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      gain.gain.value = index === 2 ? .1 : .38;
+      osc.connect(gain).connect(master);
+      osc.start();
+      return osc;
+    });
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = .07;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = .018;
+    lfo.connect(lfoGain).connect(master.gain);
+    lfo.start();
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.value = visual === 'ocean' ? 480 : 240;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.value = visual === 'ocean' ? .3 : .12;
+    noise.connect(noiseFilter).connect(noiseGain).connect(master);
+    noise.start();
+    return () => {
+      try {
+        master.gain.cancelScheduledValues(ctx.currentTime);
+        master.gain.linearRampToValueAtTime(0, ctx.currentTime + .4);
+        window.setTimeout(() => ctx.close(), 500);
+      } catch {}
+    };
+  }, [enabled, visual]);
+}
+
 export default function DiscoverApp() {
   const [discoveries, setDiscoveries] = useState<Discovery[]>([]);
   const [investigations, setInvestigations] = useState<Investigation[]>([]);
@@ -106,8 +155,29 @@ export default function DiscoverApp() {
   const [initialHash] = useState(() => typeof window === 'undefined' ? '' : decodeURIComponent(new URLSearchParams(window.location.search).get('d') || window.location.hash.replace(/^#/, '')));
   const activeRef = useRef<Discovery>();
   const recentSurprisesRef = useRef<string[]>([]);
+  const [memoryNote, setMemoryNote] = useState<{ count: number; highlight: string; since: string }>();
+  const [ambient, setAmbient] = useState(false);
+  useAmbientAudio(ambient, active?.visual);
 
   useEffect(() => { activeRef.current = active; }, [active]);
+
+  useEffect(() => {
+    if (!discoveries.length) return;
+    try {
+      const raw = window.localStorage.getItem('elsewhere-memory');
+      const previous = raw ? JSON.parse(raw) : null;
+      if (previous?.ids?.length && previous.at) {
+        const elapsed = Date.now() - new Date(previous.at).getTime();
+        const fresh = discoveries.filter((item: Discovery) => !previous.ids.includes(item.id) && !item.unavailable);
+        if (elapsed > 3600000 && fresh.length >= 2) {
+          const seismic = fresh.find((item: Discovery) => item.visual === 'seismic');
+          const video = fresh.find((item: Discovery) => item.mediaVideo);
+          setMemoryNote({ count: fresh.length, highlight: (seismic ?? video ?? fresh[0]).title, since: previous.at });
+        }
+      }
+      window.localStorage.setItem('elsewhere-memory', JSON.stringify({ at: new Date().toISOString(), ids: discoveries.map((item: Discovery) => item.id) }));
+    } catch {}
+  }, [discoveries.length > 0]);
 
   useEffect(() => {
     let cancelled = false;
@@ -374,15 +444,19 @@ export default function DiscoverApp() {
     </header>
 
     <section className="heroCopy">
-      <motion.p>Live Earth intelligence</motion.p>
-      <motion.h1>Discover what’s happening.<br /><span>Understand what it means.</span></motion.h1>
-      <motion.p className="interactionHint">Drag Earth · tap anywhere · {cameraCoverage().total} look-ins · teal video · gold imagery</motion.p>
+      <motion.p initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .9, delay: .3 }}>Live Earth intelligence</motion.p>
+      <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 1.1, delay: .55 }}>Discover what’s happening.<br /><span>Understand what it means.</span></motion.h1>
+      <motion.p className="interactionHint" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1, delay: 1.15 }}>Drag Earth · tap anywhere · {cameraCoverage().total} look-ins · teal video · gold imagery</motion.p>
+      {memoryNote && <motion.button className="memoryNote" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .8, delay: 1.4 }} onClick={() => setMemoryNote(undefined)}>
+        {memoryNote.count} new live moments since {new Date(memoryNote.since).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} — including “{memoryNote.highlight}”
+      </motion.button>}
     </section>
 
     <div className="actionDock">
       <button className="surprise" onClick={() => surprise()} disabled={loading}><Shuffle size={20} />{loading ? 'Listening…' : 'Surprise Me'}</button>
       {showInstallHint && <button className="installHint" onClick={() => { setShowInstallHint(false); window.localStorage.setItem('elsewhere-install-hint-dismissed', '1'); }}>Add Elsewhere to your Home Screen — Share <span aria-hidden>⎋</span> then “Add to Home Screen” · tap to dismiss</button>}
       <button className={watching ? 'watch active' : 'watch'} onClick={() => setWatching(!watching)}><Play size={17} />{watching ? 'Watching' : 'Watch'}</button>
+      <button className={ambient ? 'ambient active' : 'ambient'} onClick={() => setAmbient(!ambient)} aria-label="Toggle ambient sound">{ambient ? <Volume2 size={17} /> : <VolumeX size={17} />}{ambient ? 'Sound on' : 'Sound'}</button>
       <button className="share" onClick={shareCurrent} aria-label="Copy link to this view">{copied ? <Check size={17} /> : <Share2 size={17} />}{copied ? 'Copied' : 'Share'}</button>
     </div>
 
