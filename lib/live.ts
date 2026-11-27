@@ -157,19 +157,21 @@ async function wikiEditsSample(): Promise<{ rate: number; edits: WikiEdit[] } | 
     try { reader.cancel(); } catch { /* ignore */ }
     const edits: WikiEdit[] = [];
     let total = 0;
+    let humanEdits = 0;
     for (const line of buf.split('\n')) {
       if (!line.startsWith('data: {')) continue;
       total++;
       try {
         const row = JSON.parse(line.slice(5));
-        if (row.type === 'edit' && row.namespace === 0 && !row.bot && typeof row.title === 'string' && row.meta?.domain && edits.length < 30) {
-          edits.push({ title: row.title, wiki: String(row.meta.domain), user: String(row.user ?? '').replace(/\s*\(talk\)\s*/g, ''), comment: typeof row.comment === 'string' ? row.comment.slice(0, 90) : undefined, url: String(row.meta.uri ?? '') });
+        if (row.type === 'edit' && row.namespace === 0 && !row.bot && typeof row.title === 'string' && row.meta?.domain && String(row.meta.domain).endsWith('wikipedia.org')) {
+          humanEdits++;
+          if (edits.length < 30) edits.push({ title: row.title, wiki: String(row.meta.domain), user: String(row.user ?? '').replace(/\s*\(talk\)\s*/g, ''), comment: typeof row.comment === 'string' ? row.comment.slice(0, 90) : undefined, url: String(row.meta.uri ?? '') });
         }
       } catch { /* partial line */ }
     }
-    if (!total) return null;
+    if (!total || !humanEdits) return null;
     const secs = Math.max(1, (Date.now() - started) / 1000);
-    return { rate: Math.round(total / secs * 60), edits };
+    return { rate: Math.round(humanEdits / secs * 60), edits };
   } catch { return null; }
 }
 
@@ -345,7 +347,7 @@ function buildSeriesChartSvg(title: string, unit: string, series: Array<{ t: num
 }
 
 function buildTideChartSvg(stationName: string, measured: Array<{ t: number; v: number }>, predicted: Array<{ t: number; v: number }>): string | null {
-  if (!measured || !predicted || measured.length < 8 || predicted.length < 4) return null;
+  if (!measured || !predicted || measured.length < 2 || predicted.length < 4) return null;
   // Sized to the media area's wide aspect so cover-fit doesn't crop; SVG scales crisply.
   const W = 640, H = 360, PADL = 14, PADR = 14, PADT = 44, PADB = 40;
   const all = [...measured.map(r => r.v), ...predicted.map(r => r.v)];
@@ -741,6 +743,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       temp: row?.current?.temperature_2m, wind: row?.current?.wind_speed_10m, gusts: row?.current?.wind_gusts_10m
     })).filter(r => Number.isFinite(r.temp));
     if (readings.length > 4) {
+      const extremesChart = buildSeriesChartSvg('The planet\'s thermometer — 16 extreme sites, sorted coldest to hottest', '°C', [...readings].sort((a, b) => a.temp - b.temp).map((r, idx) => ({ t: idx, v: r.temp })), '#ff9955');
       const hottest = [...readings].sort((a, b) => b.temp - a.temp)[0];
       const coldest = [...readings].sort((a, b) => a.temp - b.temp)[0];
       const windiest = [...readings].sort((a, b) => (b.gusts ?? b.wind ?? 0) - (a.gusts ?? a.wind ?? 0))[0];
@@ -748,6 +751,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       out.push({
         id: 'earth-extremes-now', template: 'atmosphere', title: `${Math.round(hottest.temp)}°C in ${hottest.name.split(',')[0]} — ${Math.round(coldest.temp)}°C in ${coldest.name.split(',')[0]}, at the same minute`, kicker: 'The planet’s live extremes', visual: 'storm', score: 71, freshness: 'current model hour',
         location: { lat: coldest.lat, lon: coldest.lon, label: `${coldest.name} — coldest sampled` },
+        mediaImage: extremesChart ?? undefined,
         summary: `At this minute, across ${readings.length} of Earth's most extreme inhabited and uninhabited places, the modeled temperature spread is ${Math.round(spread)}°C — ${hottest.name} at ${Math.round(hottest.temp)}°C while ${coldest.name} reads ${Math.round(coldest.temp)}°C. The strongest wind in the sample is at ${windiest.name}: ${Math.round(windiest.gusts ?? windiest.wind ?? 0)} km/h${windiest.gusts != null ? ' gusts' : ' sustained'}. One atmosphere, all of it at once.`,
         facts: [
           { label: 'Hottest sampled', value: `${hottest.name} · ${hottest.temp.toFixed(1)}°C`, kind: 'interpretation' },
@@ -1043,10 +1047,11 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const nearBuoy = buoys.map(b => ({ ...b, dist: Math.hypot(b.lat - surge.lat, b.lon - surge.lon) })).sort((a, b) => a.dist - b.dist)[0];
       const buoyWindy = nearBuoy && nearBuoy.dist < 5 && (nearBuoy.windSpeed ?? 0) >= 8;
       const buoyLow = nearBuoy && nearBuoy.dist < 8 && (nearBuoy.pressure ?? 1100) <= 1008;
-      const confirmations = [true, Boolean(alert), Boolean(buoyWindy), Boolean(buoyLow)].filter(Boolean).length;
+      const buoyEvidence = Boolean(buoyWindy || buoyLow); // wind and pressure at one buoy are a single instrument's corroboration
+      const confirmations = [true, Boolean(alert), buoyEvidence].filter(Boolean).length;
       if (confirmations >= 2) {
         out.push({
-          id: 'coastal-storm-synthesis', template: 'ocean', title: `${confirmations >= 3 ? 'Four' : 'Two'} independent instruments agree: a coastal storm is pushing the sea into ${surge.name.split(',')[0]} right now`, kicker: 'Event detected by instrument convergence', visual: 'storm', score: 90 + confirmations, freshness: 'instruments reporting within the hour',
+          id: 'coastal-storm-synthesis', template: 'ocean', title: `${confirmations >= 3 ? 'Three' : 'Two'} independent instruments agree: a coastal storm is pushing the sea into ${surge.name.split(',')[0]} right now`, kicker: 'Event detected by instrument convergence', visual: 'storm', score: 90 + confirmations, freshness: 'instruments reporting within the hour',
           mediaImage: earthImagery(surge.lat, surge.lon).url, mediaAlt: 'Live satellite view of the storm region — the clouds overhead right now',
           location: { lat: surge.lat, lon: surge.lon, label: surge.name },
           summary: `No single reading makes a storm — but independent instruments agreeing is as close to ground truth as public data gets. Right now: a tide gauge at ${surge.name} reads ${Math.round(surge.anomaly * 100)} cm above the moon's prediction${alert ? `; the National Weather Service has an active ${alert.properties.event} for this coast` : ''}${buoyWindy ? `; the nearest buoy measures ${Math.round((nearBuoy.windSpeed ?? 0) * 3.6)} km/h winds` : ''}${buoyLow ? ` with pressure down at ${nearBuoy.pressure?.toFixed(0)} mb` : ''}. Onshore wind piles water against the coast, low pressure lifts the sea surface itself, and the gauge measures the result. This card exists only while the instruments agree.`,
@@ -1501,17 +1506,17 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const yearAgo = rows.reduce((best, r) => Math.abs(yearAgoTarget - new Date(r.date + 'T00:00:00Z').getTime()) < Math.abs(yearAgoTarget - new Date(best.date + 'T00:00:00Z').getTime()) ? r : best, rows[0]);
       const rise = yearAgo && yearAgo !== latest ? latest.ppm - yearAgo.ppm : null;
       out.push({
-        id: 'keeling-curve-live', template: 'atmosphere', title: `The atmosphere just measured ${latest.ppm.toFixed(2)} parts per million of CO₂ — the highest in millions of years`, kicker: 'Mauna Loa observatory — the longest measurement on Earth', visual: 'orbital', score: 74, freshness: `measured week of ${latest.date}`,
+        id: 'keeling-curve-live', template: 'atmosphere', title: `The atmosphere just measured ${latest.ppm.toFixed(2)} parts per million of CO₂ — the highest in millions of years`, kicker: 'Mauna Loa observatory — the longest measurement on Earth', visual: 'orbital', score: 74, freshness: `measured ${latest.date}`,
         location: { lat: 19.54, lon: -155.58, label: 'Mauna Loa Observatory, Hawaii' },
         summary: `On a Hawaiian volcano, far from any city's exhaust, an instrument has sampled the same air since 1958. It reads ${latest.ppm.toFixed(2)} ppm CO₂ right now${rise != null ? ` — up ${rise.toFixed(2)} ppm from one year ago, a rate of change far faster than anything in the ice-core record` : ''}. Pre-industrial air was 280 ppm. This is not a model or an estimate: it is the most continuous direct measurement of what humanity is doing to the atmosphere, and it has never once gone down.`,
         facts: [
-          { label: 'Latest reading', value: `${latest.ppm.toFixed(2)} ppm — week of ${latest.date}`, kind: 'observed' },
+          { label: 'Latest reading', value: `${latest.ppm.toFixed(2)} ppm — daily, ${latest.date}`, kind: 'observed' },
           ...(rise != null ? [{ label: 'One-year change', value: `+${rise.toFixed(2)} ppm`, kind: 'observed' as const }] : []),
           { label: 'Pre-industrial baseline', value: '280 ppm — measured from trapped ice-core air', kind: 'verified' },
           { label: 'Record length', value: 'Continuous since 1958 — the Keeling Curve', kind: 'verified' },
           { label: 'Why Mauna Loa', value: 'High altitude, mid-ocean — well-mixed air away from local sources, so the reading represents the global atmosphere', kind: 'interpretation' }
         ],
-        sources: [src('NOAA GML Mauna Loa weekly data', 'https://gml.noaa.gov/ccgg/trends/')],
+        sources: [src('NOAA GML Mauna Loa daily data', 'https://gml.noaa.gov/ccgg/trends/')],
         related: ['Carbon intensity', 'The measured planet', 'Extremes right now']
       });
     }
@@ -1532,12 +1537,16 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const fmtD = (ms: number) => new Date(ms).toISOString().slice(0, 19);
     const drumUrl = `https://service.iris.edu/irisws/timeseriesplot/1/query?net=IU&sta=${sta}&loc=00&cha=BHZ&starttime=${fmtD(Date.now() - 86400000)}&endtime=${fmtD(Date.now())}&format=png&width=800`;
     const recentMag = q?.properties?.mag;
-    const quakeVisible = recentMag != null && recentMag >= 5.5 && q.properties.time && (Date.now() - q.properties.time) < 24 * 3600000;
+    const qLon = q?.geometry?.coordinates?.[0], qLat = q?.geometry?.coordinates?.[1];
+    const distKm = Number.isFinite(qLat) ? Math.hypot((qLat - staLat) * 111, (qLon - staLon) * 111 * Math.cos(staLat * Math.PI / 180)) : 0;
+    const travelMs = distKm / 3.7 * 1000 + 10 * 60000; // surface waves ~3.7 km/s + margin
+    const ageMs = q?.properties?.time ? Date.now() - q.properties.time : Infinity;
+    const quakeVisible = recentMag != null && recentMag >= 5.5 && ageMs < 24 * 3600000 && ageMs > travelMs;
     out.push({
       id: 'earth-humming-live', template: 'geology', title: quakeVisible ? `The M${recentMag.toFixed(1)} earthquake is literally visible in this seismometer trace from ${staName.split(',')[0]}` : `The ground at ${staName.split(',')[0]} is humming right now — read the last 24 hours of a seismometer`, kicker: 'IRIS seismic station — the Earth, drawn live', visual: 'seismic', score: quakeVisible ? 84 : 73, freshness: 'trace updating continuously',
       mediaImage: drumUrl, mediaAlt: `Live seismic drumplot from station ${sta}`,
       location: { lat: staLat, lon: staLon, label: `${staName} — IRIS station ${sta}` },
-      summary: `A seismometer at ${staName} records the ground's vertical motion continuously, 40 times per second, and this image is its last 24 hours — each horizontal line is 30 minutes of the planet's vibration.${quakeVisible ? ` The sharp spike you can pick out is the M${recentMag.toFixed(1)} earthquake's waves passing under this station: energy that traveled through the body of the Earth itself to get here.` : ' The background weave is the microseism — the constant hum of ocean waves beating on distant coastlines — and any sharp vertical spike is seismic waves arriving through the body of the planet.'} Nothing here is modeled.`,
+      summary: `A seismometer at ${staName} records the ground's vertical motion continuously, 40 times per second, and this image is its last 24 hours, stacked line by line.${quakeVisible ? ` The sharp spike you can pick out is the M${recentMag.toFixed(1)} earthquake's waves passing under this station: energy that traveled through the body of the Earth itself to get here.` : ' The background weave is the microseism — the constant hum of ocean waves beating on distant coastlines — and any sharp vertical spike is seismic waves arriving through the body of the planet.'} Nothing here is modeled.`,
       facts: [
         { label: 'Instrument', value: `Broadband seismometer ${sta} — part of the Global Seismographic Network`, kind: 'verified' },
         { label: 'Sampling', value: '40 measurements per second, 24/7/365', kind: 'verified' },
@@ -1611,11 +1620,13 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     ];
     const rows = (Array.isArray(cityAirNow) ? cityAirNow : [cityAirNow]).filter(Boolean).map((r: any, idx: number) => {
       const pm = r?.current?.pm2_5;
-      return Number.isFinite(pm) ? { city: airCities[idx]?.[0] ?? 'unknown', lat: airCities[idx]?.[1] ?? 0, lon: airCities[idx]?.[2] ?? 0, pm } : null;
-    }).filter(Boolean) as Array<{ city: string; lat: number; lon: number; pm: number }>;
+      return Number.isFinite(pm) ? { city: airCities[idx]?.[0] ?? 'unknown', lat: airCities[idx]?.[1] ?? 0, lon: airCities[idx]?.[2] ?? 0, pm, aqi: Number.isFinite(r?.current?.us_aqi) ? r.current.us_aqi : null } : null;
+    }).filter(Boolean) as Array<{ city: string; lat: number; lon: number; pm: number; aqi: number | null }>;
     const worst = [...rows].sort((a, b) => b.pm - a.pm)[0];
     if (worst && worst.pm >= 75) {
-      const severity = worst.pm >= 250 ? 'hazardous — emergency conditions' : worst.pm >= 150 ? 'very unhealthy' : worst.pm >= 100 ? 'unhealthy' : 'unhealthy for sensitive groups';
+      const severity = worst.aqi != null
+        ? worst.aqi > 300 ? 'hazardous — emergency conditions' : worst.aqi > 200 ? 'very unhealthy' : worst.aqi > 150 ? 'unhealthy' : worst.aqi > 100 ? 'unhealthy for sensitive groups' : 'moderate'
+        : worst.pm >= 250 ? 'hazardous — emergency conditions' : worst.pm >= 150 ? 'very unhealthy' : worst.pm >= 100 ? 'unhealthy' : 'unhealthy for sensitive groups';
       const cleanest = [...rows].sort((a, b) => a.pm - b.pm)[0];
       out.push({
         id: 'air-emergency-now', template: 'city', title: `The air in ${worst.city} is ${severity} right now — ${Math.round(worst.pm)} μg/m³ of fine particulate`, kicker: 'Air emergency, measured live', visual: 'city', score: worst.pm >= 150 ? 90 : 82, freshness: 'measured this hour',

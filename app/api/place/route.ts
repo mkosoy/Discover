@@ -178,12 +178,21 @@ export async function GET(request: Request) {
     const xt = Math.floor((lon + 180) / 360 * Math.pow(2, z));
     const latRad = lat * Math.PI / 180;
     const yt = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, z));
-    imagery = {
-      url: `${radarMeta.host}${latestRadar.path}/256/${z}/${xt}/${yt}/4/1_1.png`,
-      sourceLabel: 'RainViewer global weather radar composite — measured precipitation, ~10 min update',
-      altPrefix: 'Live weather radar centered near this point',
-      nearRealtime: true
-    };
+    const tileUrl = `${radarMeta.host}${latestRadar.path}/256/${z}/${xt}/${yt}/4/1_1.png`;
+    // Outside radar coverage the tile is a near-empty transparent PNG — detect by size
+    // and keep the satellite imagery instead of showing a blank square.
+    try {
+      const probe = await fetch(tileUrl, { signal: AbortSignal.timeout(4000) });
+      const bytes = probe.ok ? (await probe.arrayBuffer()).byteLength : 0;
+      if (bytes > 3000) {
+        imagery = {
+          url: tileUrl,
+          sourceLabel: 'RainViewer global weather radar composite — measured precipitation, ~10 min update',
+          altPrefix: 'Live weather radar centered near this point',
+          nearRealtime: true
+        };
+      }
+    } catch { /* keep satellite imagery */ }
   }
   const notable = (wiki?.query?.geosearch ?? []).filter((n: any) => n?.title && !(/^(canton|arrondissement|province|prefecture|county|district|municipality|department|oblast|region|state) of /i.test(n.title) || /^(county|province|district|prefecture|oblast|region) \w+$/i.test(n.title) || /\b(county|prefecture|oblast|municipality|arrondissement)$/i.test(n.title)) && !/\((department|province|county|district|municipality|state|region|oblast|prefecture)\)/i.test(n.title));
   const facts = [
