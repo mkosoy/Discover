@@ -289,7 +289,7 @@ function connectDiscoveries(out: Discovery[]) {
 
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -312,7 +312,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
 
     nwsAlertsJson(),
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${featuredCameras.map(camera => camera.lat).join(',')}&longitude=${featuredCameras.map(camera => camera.lon).join(',')}&current=temperature_2m,wind_speed_10m,is_day,cloud_cover&timezone=auto`),
-    json<any[]>('https://epic.gsfc.nasa.gov/api/natural', undefined, 6000)
+    json<any[]>('https://epic.gsfc.nasa.gov/api/natural', undefined, 6000),
+    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=36.5,29.3,14.24,63.46,-78.46,-89.99,71.29,72.58,-66.9,-41.29,-53.16,27.99,-23.5,23.0,1.35,55.75&longitude=-116.9,47.9,40.3,142.79,106.83,15,-156.79,-38.46,142.67,174.78,-70.91,86.93,-68.5,5.0,103.82,37.62&current=temperature_2m,wind_speed_10m,wind_gusts_10m&timezone=auto`),
+    json<any>(`https://api.inaturalist.org/v1/observations?order=desc&order_by=created_at&per_page=14&photos=true&taxon_id=3&verifiable=true`, undefined, 6000)
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -356,6 +358,105 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     sources: [src('Open Notify / Where the ISS at?', 'https://wheretheiss.at/'), src('NASA Live', 'https://www.nasa.gov/live/')],
     related: ['Next visible pass', 'Aurora watch', 'Upcoming launches']
   });
+
+
+
+  // --- Earth's live extremes: hottest, coldest, windiest, measured in one batched model pass ---
+  const extremeRows: any[] = Array.isArray(extremesRaw) ? extremesRaw : extremesRaw ? [extremesRaw] : [];
+  const extremeSites: Array<[string, number, number]> = [
+    ['Death Valley, USA', 36.5, -116.9], ['Kuwait City, Kuwait', 29.3, 47.9], ['Dallol region, Ethiopia', 14.24, 40.3],
+    ['Oymyakon, Siberia', 63.46, 142.79], ['Vostok Station, Antarctica', -78.46, 106.83], ['South Pole Station', -89.99, 15],
+    ['Utqiagvik, Alaska', 71.29, -156.79], ['Summit Station, Greenland', 72.58, -38.46],
+    ['Commonwealth Bay, Antarctica', -66.9, 142.67], ['Wellington, New Zealand', -41.29, 174.78], ['Punta Arenas, Chile', -53.16, -70.91],
+    ['Mount Everest summit', 27.99, 86.93], ['Atacama Desert, Chile', -23.5, -68.5], ['Sahara, Algeria', 23.0, 5.0],
+    ['Singapore', 1.35, 103.82], ['Moscow', 55.75, 37.62]
+  ];
+  if (extremeRows.length > 4) {
+    const readings = extremeRows.map((row, i) => ({
+      name: extremeSites[i]?.[0] ?? `site ${i}`, lat: extremeSites[i]?.[1] ?? 0, lon: extremeSites[i]?.[2] ?? 0,
+      temp: row?.current?.temperature_2m, wind: row?.current?.wind_speed_10m, gusts: row?.current?.wind_gusts_10m
+    })).filter(r => Number.isFinite(r.temp));
+    if (readings.length > 4) {
+      const hottest = [...readings].sort((a, b) => b.temp - a.temp)[0];
+      const coldest = [...readings].sort((a, b) => a.temp - b.temp)[0];
+      const windiest = [...readings].sort((a, b) => (b.gusts ?? b.wind ?? 0) - (a.gusts ?? a.wind ?? 0))[0];
+      const spread = hottest.temp - coldest.temp;
+      out.push({
+        id: 'earth-extremes-now', template: 'atmosphere', title: `${Math.round(hottest.temp)}°C in ${hottest.name.split(',')[0]} — ${Math.round(coldest.temp)}°C in ${coldest.name.split(',')[0]}, at the same minute`, kicker: 'The planet’s live extremes', visual: 'storm', score: 71, freshness: 'current model hour',
+        location: { lat: coldest.lat, lon: coldest.lon, label: `${coldest.name} — coldest sampled` },
+        summary: `At this minute, across ${readings.length} of Earth's most extreme inhabited and uninhabited places, the modeled temperature spread is ${Math.round(spread)}°C — ${hottest.name} at ${Math.round(hottest.temp)}°C while ${coldest.name} reads ${Math.round(coldest.temp)}°C. The strongest wind in the sample is at ${windiest.name}: ${Math.round(windiest.gusts ?? windiest.wind ?? 0)} km/h gusts. One atmosphere, all of it at once.`,
+        facts: [
+          { label: 'Hottest sampled', value: `${hottest.name} · ${hottest.temp.toFixed(1)}°C`, kind: 'interpretation' },
+          { label: 'Coldest sampled', value: `${coldest.name} · ${coldest.temp.toFixed(1)}°C`, kind: 'interpretation' },
+          { label: 'Windiest sampled', value: `${windiest.name} · gusts ${Math.round(windiest.gusts ?? 0)} km/h`, kind: 'interpretation' },
+          { label: 'Planet-wide spread', value: `${Math.round(spread)}°C across the sample`, kind: 'interpretation' },
+          { label: 'Basis', value: `${readings.length}-location batched Open-Meteo model pass`, kind: 'verified' }
+        ],
+        sources: [src('Open-Meteo global weather model', 'https://open-meteo.com/')],
+        related: ['Terminator', 'Polar extremes', 'Wildest water']
+      });
+    }
+  }
+
+
+  // --- Wildlife being spotted right now: the iNaturalist network's live species pulse ---
+  const inatResults: any[] = inat?.results ?? [];
+  const inatTotal = inat?.total_results ?? 0;
+  const spotted = inatResults
+    .map((o: any) => ({
+      name: o?.taxon?.preferred_common_name ?? o?.taxon?.name,
+      place: o?.place_guess ?? 'somewhere on Earth',
+      lat: Array.isArray(o?.location) ? Number(o.location[0]) : (typeof o?.geojson?.coordinates?.[1] === 'number' ? o.geojson.coordinates[1] : undefined),
+      lon: Array.isArray(o?.location) ? Number(o.location[1]) : (typeof o?.geojson?.coordinates?.[0] === 'number' ? o.geojson.coordinates[0] : undefined),
+      photo: typeof o?.photos?.[0]?.url === 'string' ? o.photos[0].url.replace('square', 'medium') : undefined,
+      when: o?.created_at,
+      uri: o?.uri,
+      observer: o?.user?.login
+    }))
+    .filter((s: any) => s.name && Number.isFinite(s.lat) && s.photo);
+  if (spotted.length >= 3) {
+    const pick = spotted[0];
+    out.push({
+      id: 'wildlife-pulse', template: 'atmosphere', title: `Someone just spotted a ${pick.name} in ${pick.place.split(',')[0]?.trim() ?? pick.place}`, kicker: 'The planet’s wildlife, live', visual: 'city', score: 68, freshness: 'logged minutes ago',
+      location: { lat: pick.lat as number, lon: pick.lon as number, label: pick.place },
+      mediaImage: pick.photo, mediaAlt: `Photograph of ${pick.name} taken by an iNaturalist observer`,
+      summary: `The iNaturalist network — millions of naturalists photographing what they see — has logged ${inatTotal.toLocaleString()} verifiable wildlife observations. The most recent with a photograph: a ${pick.name}, spotted in ${pick.place}. This is the biosphere reporting on itself, in public, in near-real-time.`,
+      facts: [
+        { label: 'Latest sighting', value: `${pick.name} — ${pick.place}`, kind: 'verified' },
+        { label: 'Observer', value: pick.observer ?? 'anonymous naturalist', kind: 'verified' },
+        { label: 'Network total', value: `${inatTotal.toLocaleString()} verifiable observations`, kind: 'observed' },
+        { label: 'Also just spotted', value: spotted.slice(1, 4).map((s: any) => s.name).join(' · '), kind: 'verified' },
+        { label: 'Verification', value: 'Community-verified public observations only', kind: 'verified' }
+      ],
+      sources: [src('iNaturalist observations API', pick.uri ?? 'https://www.inaturalist.org/')],
+      related: ['Nearby cameras', 'Night lights', 'Terminator']
+    });
+  }
+
+  // --- Point Nemo: the loneliest place on Earth, and who is closest to it right now ---
+  if (iss && Number.isFinite(iss.latitude)) {
+    const nemoLat = -48.877, nemoLon = -123.393;
+    const groundKm = distanceKm(iss.latitude, iss.longitude, nemoLat, nemoLon);
+    const altKm = Number(iss.altitude) || 420;
+    const crewDist = Math.sqrt(groundKm * groundKm + altKm * altKm);
+    const landDist = 2688; // Point Nemo is ~2,688 km from the nearest land — the oceanic pole of inaccessibility
+    if (crewDist < landDist) {
+      out.push({
+        id: 'point-nemo-iss', template: 'orbit', title: 'The nearest humans to the loneliest place on Earth are in space', kicker: 'Orbital geometry, live', visual: 'nasa-live', score: 88, freshness: 'positions seconds old',
+        location: { lat: nemoLat, lon: nemoLon, label: 'Point Nemo — oceanic pole of inaccessibility' },
+        summary: `Point Nemo is the spot in the ocean farthest from any land — ${landDist.toLocaleString()} km in every direction. Right now the ISS is passing close enough overhead that the astronauts aboard are the closest humans to it: roughly ${Math.round(crewDist).toLocaleString()} km away, versus ${landDist.toLocaleString()} km of empty ocean to the nearest person on land. Spacecraft are occasionally deorbited here precisely because nobody is.`,
+        facts: [
+          { label: 'ISS distance overhead', value: `~${Math.round(crewDist).toLocaleString()} km`, kind: 'interpretation' },
+          { label: 'Nearest land / people', value: `~${landDist.toLocaleString()} km`, kind: 'verified' },
+          { label: 'ISS ground distance', value: `${Math.round(groundKm).toLocaleString()} km at ${Math.round(altKm)} km altitude`, kind: 'observed' },
+          { label: 'Spacecraft cemetery', value: 'Hundreds of deorbited spacecraft targeted here', kind: 'verified' },
+          { label: 'Basis', value: 'Live ISS position + spherical geometry', kind: 'verified' }
+        ],
+        sources: [src('Where the ISS at? live position', 'https://wheretheiss.at/'), src('Oceanic pole of inaccessibility', 'https://en.wikipedia.org/wiki/Pole_of_inaccessibility')],
+        related: ['iss-over-earth', 'Night lights', 'Southern Ocean waves']
+      });
+    }
+  }
 
   const plasma = swepam?.filter(row => Number.isFinite(row?.speed)).sort((a, b) => String(b.time_tag ?? '').localeCompare(String(a.time_tag ?? '')))[0];
   const mag = aceMag?.filter(row => Number.isFinite(row?.gsm_bz) || Number.isFinite(row?.gse_bz)).sort((a, b) => String(b.time_tag ?? '').localeCompare(String(a.time_tag ?? '')))[0];
