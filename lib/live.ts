@@ -7,7 +7,20 @@ import { cameraEmbed, nearestPublicCameras, publicCameras } from './cameras';
 const now = () => new Date().toISOString();
 const src = (label: string, url: string) => ({ label, url, retrievedAt: now() });
 const featuredCameraIds = ['times-square', 'abbey-road', 'venice-guglie', 'niagara-falls', 'mount-fuji-shizuoka', 'ol-donyo-wildlife', 'etosha-waterhole', 'utsjoki-aurora', 'washington-monument', 'kilauea-crater', 'iceland-volcano-watch', 'sydney-harbour', 'vancouver-harbour', 'table-mountain'];
-const featuredCameras = featuredCameraIds.map(id => publicCameras.find(camera => camera.id === id)).filter((camera): camera is NonNullable<typeof camera> => Boolean(camera));
+// Rotation: a handful of curated anchors plus rotating quality picks from the whole registry,
+// so the Surprise loop keeps surfacing fresh look-ins instead of the same 14 cameras forever.
+const anchorCameraIds = ['kilauea-crater', 'mount-etna', 'iceland-volcano-watch', 'utsjoki-aurora', 'ol-donyo-wildlife', 'niagara-falls'];
+function featuredCamerasNow() {
+  const anchors = anchorCameraIds.map(id => publicCameras.find(c => c.id === id)).filter((c): c is NonNullable<typeof c> => Boolean(c));
+  const kindBonus = (kind: string) => kind === 'volcano' || kind === 'aurora' ? 15 : kind === 'water' || kind === 'nature' || kind === 'wildlife' ? 10 : 0;
+  const ranked = publicCameras
+    .filter(c => c.youtubeId && !c.approximate && c.quality >= 68 && !anchorCameraIds.includes(c.id))
+    .sort((a, b) => (b.quality + kindBonus(b.kind)) - (a.quality + kindBonus(a.kind)));
+  const windowIndex = Math.floor(Date.now() / 1800000);
+  const picks: typeof ranked = [];
+  for (let i = 0; i < 8 && ranked.length; i++) picks.push(ranked[(windowIndex * 8 + i) % ranked.length]);
+  return [...anchors, ...picks].filter((c, i, arr) => arr.findIndex(x => x.id === c.id) === i);
+}
 const cameraCopy: Record<string, { title: string; summary: string; template: Discovery['template']; visual: Discovery['visual'] }> = {
   'times-square': { template: 'city', visual: 'city', title: 'Times Square is glowing in real time', summary: 'An authorized public camera looks into one of the world’s most illuminated urban crossings while weather grounds the scene in the same minute.' },
   'abbey-road': { template: 'city', visual: 'city', title: 'Abbey Road is crossing in real time', summary: 'A public camera watches London’s famous zebra crossing. Small human moments become planetary-scale live texture when paired with weather and city context.' },
@@ -311,7 +324,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     head('https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/ne/GEOCOLOR/latest.jpg'),
 
     nwsAlertsJson(),
-    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${featuredCameras.map(camera => camera.lat).join(',')}&longitude=${featuredCameras.map(camera => camera.lon).join(',')}&current=temperature_2m,wind_speed_10m,is_day,cloud_cover&timezone=auto`),
+    json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${featuredCamerasNow().map(camera => camera.lat).join(',')}&longitude=${featuredCamerasNow().map(camera => camera.lon).join(',')}&current=temperature_2m,wind_speed_10m,is_day,cloud_cover&timezone=auto`),
     json<any[]>('https://epic.gsfc.nasa.gov/api/natural', undefined, 6000),
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=36.5,29.3,14.24,63.46,-78.46,-89.99,71.29,72.58,-66.9,-41.29,-53.16,27.99,-23.5,23.0,1.35,55.75&longitude=-116.9,47.9,40.3,142.79,106.83,15,-156.79,-38.46,142.67,174.78,-70.91,86.93,-68.5,5.0,103.82,37.62&current=temperature_2m,wind_speed_10m,wind_gusts_10m&timezone=auto`),
     json<any>(`https://api.inaturalist.org/v1/observations?order=desc&order_by=created_at&per_page=14&photos=true&taxon_id=3&verifiable=true`, undefined, 6000)
@@ -785,7 +798,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   ], sources: [src('Launch Library 2', 'https://thespacedevs.com/llapi')], related: ['Mission trajectory', 'Weather constraints', 'Pad cameras'] });
 
   const gdacsCamItems = parseGdacsItems(gdacsXml).filter((item: any) => Date.now() - new Date(item.published).getTime() < 1000 * 60 * 60 * 96);
-  const camProximity = (camera: typeof featuredCameras[number]) => {
+  const camProximity = (camera: (typeof publicCameras)[number]) => {
     let best: { item: any; distance: number } | undefined;
     for (const item of gdacsCamItems) {
       const dLat = (item.lat - camera.lat) * 111;
@@ -796,9 +809,14 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     return best;
   };
 
-  featuredCameras.forEach((camera, index) => {
-    const copy = cameraCopy[camera.id];
-    if (!copy) return;
+  const generatedCopy = (camera: { title: string; place: string; kind: string }) => ({
+    template: (camera.kind === 'water' ? 'ocean' : camera.kind === 'volcano' ? 'geology' : 'atmosphere') as Discovery['template'],
+    visual: (camera.kind === 'water' ? 'ocean' : camera.kind === 'aurora' ? 'aurora' : camera.kind === 'volcano' ? 'fire' : camera.kind === 'nature' || camera.kind === 'wildlife' ? 'aurora' : 'city') as Discovery['visual'],
+    title: `${camera.title} — live now`,
+    summary: `An authorized public live video camera at ${camera.place}, paired with current conditions in the same minute.`
+  });
+  featuredCamerasNow().forEach((camera, index) => {
+    const copy = cameraCopy[camera.id] ?? generatedCopy(camera);
     const current = Array.isArray(cameraWeather) ? cameraWeather[index]?.current : null;
     const night = current ? !current.is_day : false;
     const nightAdjustment = !current ? 0 : camera.kind === 'aurora' ? (night ? 5 : -16) : camera.kind === 'city' ? (night ? 2 : 0) : (night ? -14 : 0);
