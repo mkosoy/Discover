@@ -399,6 +399,63 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   }
 
 
+
+  // --- Humanity's day/night split: how many people are in darkness right now, computed live ---
+  {
+    const metroCities: Array<[string, number, number, number]> = [
+      ['Tokyo', 35.68, 139.69, 37.4], ['Delhi', 28.6, 77.2, 32.9], ['Shanghai', 31.2, 121.5, 29.2], ['São Paulo', -23.55, -46.63, 22.6],
+      ['Cairo', 30.04, 31.23, 21.8], ['Mexico City', 19.43, -99.13, 22.3], ['Beijing', 39.9, 116.4, 21.5], ['Mumbai', 19.07, 72.87, 21.3],
+      ['Dhaka', 23.8, 90.4, 23.2], ['Osaka', 34.7, 135.5, 19.1], ['New York', 40.71, -74, 18.8], ['Karachi', 24.86, 67.0, 17.2],
+      ['Buenos Aires', -34.6, -58.4, 15.4], ['Chongqing', 29.56, 106.55, 16.9], ['Istanbul', 41.0, 28.9, 15.8], ['Kolkata', 22.57, 88.36, 15.1],
+      ['Manila', 14.6, 120.98, 14.7], ['Lagos', 6.52, 3.37, 15.9], ['Rio de Janeiro', -22.9, -43.2, 13.6], ['Tianjin', 39.13, 117.2, 14.0],
+      ['Kinshasa', -4.32, 15.31, 15.6], ['Guangzhou', 23.13, 113.26, 13.8], ['Los Angeles', 34.05, -118.24, 12.5], ['Moscow', 55.75, 37.62, 12.6],
+      ['Shenzhen', 22.54, 114.06, 13.1], ['Lahore', 31.55, 74.34, 13.5], ['Bangalore', 12.97, 77.59, 13.2], ['Paris', 48.85, 2.35, 11.3],
+      ['Bogotá', 4.71, -74.07, 11.3], ['Jakarta', -6.2, 106.8, 10.9], ['Chennai', 13.08, 80.27, 11.5], ['Lima', -12.05, -77.04, 11.0],
+      ['Bangkok', 13.75, 100.5, 10.9], ['Hyderabad', 17.38, 78.49, 10.3], ['Seoul', 37.57, 126.98, 10.0], ['Nagoya', 35.17, 136.9, 9.6],
+      ['London', 51.5, -0.12, 9.6], ['Tehran', 35.69, 51.39, 9.4], ['Chicago', 41.88, -87.63, 8.9], ['Chengdu', 30.57, 104.07, 9.8]
+    ];
+    const nowD = new Date();
+    const startD = Date.UTC(nowD.getUTCFullYear(), 0, 0);
+    const doy = Math.floor((nowD.getTime() - startD) / 86400000);
+    const gammaH = 2 * Math.PI / 365 * (doy - 1 + (nowD.getUTCHours() - 12) / 24);
+    const eqtimeH = 229.18 * (0.000075 + 0.001868 * Math.cos(gammaH) - 0.032077 * Math.sin(gammaH) - 0.014615 * Math.cos(2 * gammaH) - 0.040849 * Math.sin(2 * gammaH));
+    const declH = 0.006918 - 0.399912 * Math.cos(gammaH) + 0.070257 * Math.sin(gammaH) - 0.006758 * Math.cos(2 * gammaH) + 0.000907 * Math.sin(2 * gammaH) - 0.002697 * Math.cos(3 * gammaH) + 0.00148 * Math.sin(3 * gammaH);
+    const utcHoursH = nowD.getUTCHours() + nowD.getUTCMinutes() / 60;
+    const subsolarLonH = -((utcHoursH * 60 + eqtimeH) / 4 - 180);
+    let inDark = 0, inDay = 0, inTwilight = 0, total = 0;
+    const darkList: Array<[string, number]> = [];
+    const duskList: string[] = [];
+    for (const [name, lat, lon, pop] of metroCities) {
+      let haDeg = lon - subsolarLonH;
+      while (haDeg > 180) haDeg -= 360;
+      while (haDeg < -180) haDeg += 360;
+      const ha = haDeg * Math.PI / 180;
+      const elev = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(declH) + Math.cos(lat * Math.PI / 180) * Math.cos(declH) * Math.cos(ha)) * 180 / Math.PI;
+      total += pop;
+      if (elev < -6) { inDark += pop; darkList.push([name, pop]); }
+      else if (elev < 3) { inTwilight += pop; duskList.push(name); }
+      else inDay += pop;
+    }
+    if (total > 500) {
+      const darkPct = Math.round(inDark / total * 100);
+      const biggest = darkList.sort((a, b) => b[1] - a[1])[0];
+      out.push({
+        id: 'humanity-darkness-now', template: 'atmosphere', title: `${Math.round(inDark)} million people are in night right now — ${Math.round(inDay)} million in daylight`, kicker: 'The human terminator, live', visual: 'aurora', score: 73, freshness: 'computed this minute',
+        location: { lat: Math.max(-60, Math.min(60, declH * 180 / Math.PI)), lon: Math.max(-179, Math.min(179, subsolarLonH + 90)), label: 'The dusk terminator' },
+        summary: `Across Earth's 40 largest metro areas — roughly ${Math.round(total)} million people — ${darkPct}% are currently in astronomical darkness, ${Math.round(inTwilight)} million are in twilight, and the rest are in daylight.${biggest ? ` The largest city asleep: ${biggest[0]} (${biggest[1]} million).` : ''}${duskList.length ? ` In ${duskList.slice(0, 2).join(' and ')}, it is the golden hour right now.` : ''} Computed from solar geometry, no upstream feed.`,
+        facts: [
+          { label: 'In darkness', value: `~${Math.round(inDark)} million people`, kind: 'interpretation' },
+          { label: 'In daylight', value: `~${Math.round(inDay)} million people`, kind: 'interpretation' },
+          { label: 'In twilight', value: `~${Math.round(inTwilight)} million people`, kind: 'interpretation' },
+          { label: 'Sample', value: '40 largest metro areas, population-weighted', kind: 'verified' },
+          { label: 'Basis', value: 'Solar elevation per city — pure geometry', kind: 'verified' }
+        ],
+        sources: [src('NOAA solar position algorithm', 'https://gml.noaa.gov/grad/solcalc/solareqns.PDF')],
+        related: ['Terminator', 'Night lights', 'Polar extremes']
+      });
+    }
+  }
+
   // --- Wildlife being spotted right now: the iNaturalist network's live species pulse ---
   const inatResults: any[] = inat?.results ?? [];
   const inatTotal = inat?.total_results ?? 0;
