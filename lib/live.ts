@@ -3142,6 +3142,28 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     }
   }
 
+  // --- Absence as insight: the Southern Ocean instrument hole. Plot every
+  // direct ocean instrument we track and the map itself tells the story —
+  // the stormiest ocean on Earth is barely measured.
+  if (Array.isArray(buoys) && buoys.length >= 5) {
+    const allPts = buoys.map((b: any) => ({ lat: b.lat, lon: b.lon }));
+    const southern = buoys.filter((b: any) => b.lat < -30).length;
+    const coverage = `${allPts.length} buoys tracked; ${southern} south of 30°S`;
+    out.push({
+      id: 'southern-ocean-hole', template: 'ocean', title: `The stormiest ocean on Earth is almost entirely unmeasured — the instruments themselves reveal the hole`, kicker: 'An absence of data — the Southern Ocean blind spot', visual: 'ocean', score: 77, freshness: 'structural — always true right now', mediaImage: buildSkyMapSvg(allPts, 'every direct ocean instrument — notice the hole', '#5fa8ff') ?? undefined,
+      location: { lat: -52, lon: 0, label: 'The Southern Ocean — the hole in the map' },
+      summary: `Look at the map above: every dot is a buoy or sensor directly measuring the ocean, and the pattern is unmistakable — the Northern Hemisphere is dense with instruments, while the entire Southern Ocean is nearly empty. This is the stormiest water on Earth: an unbroken ring of ocean around Antarctica where the wind never hits land, producing the largest average waves on the planet and the engine room of global ocean circulation. Yet almost nothing measures it directly. What we know comes mostly from satellites looking down and the occasional research vessel — a few drifting floats in an ocean that encircles a continent. Every measurement that does come out of it is precious precisely because of how absent everything else is.`,
+      facts: [
+        { label: 'The evidence', value: coverage + ' — the visual hole south of the roaring forties is the story', kind: 'observed' },
+        { label: 'Why it matters', value: 'The Southern Ocean absorbs more heat and carbon than any other — and it is the least directly observed major ocean', kind: 'verified' },
+        { label: 'Why the hole exists', value: 'No land, no shipping lanes worth serving, brutal conditions that destroy instruments — nobody is there to maintain them', kind: 'interpretation' },
+        { label: 'What fills the gap', value: 'Satellite altimetry, a sparse fleet of autonomous Argo floats, and a handful of research expeditions per year', kind: 'verified' }
+      ],
+      sources: [src('NOAA buoy network', 'https://www.ndbc.noaa.gov/'), src('Argo float program', 'https://argo.ucsd.edu/')],
+      related: ['Wildest water', 'ocean-measured-now', 'antarctic-polar-day-live']
+    });
+  }
+
   // --- Orbital coincidence: the ISS passing over an active disaster. The crew
   // is closer to it than anyone on the ground in most directions — and they can
   // see it with naked eyes.
