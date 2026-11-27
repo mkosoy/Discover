@@ -708,7 +708,9 @@ async function dartObservations(): Promise<Array<{ id: string; name: string; lat
         if (p.length < 8) continue;
         const t = Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]), Number(p[3]), Number(p[4]), Number(p[5]));
         const v = Number(p[7]);
-        if (Number.isFinite(t) && Number.isFinite(v) && v > 100) series.push({ t, v });
+        // 9999.000 is NOAA's missing-data marker — reject it and any
+        // implausible depth (the ocean floor is never deeper than ~6,500 m here)
+        if (Number.isFinite(t) && Number.isFinite(v) && v > 100 && v < 9000) series.push({ t, v });
       }
       if (series.length < 10) return null;
       const latest = series[0];
@@ -719,7 +721,14 @@ async function dartObservations(): Promise<Array<{ id: string; name: string; lat
   }));
   const goodDarts = rows.filter(Boolean) as any[];
   if (goodDarts.length) { dartCache.data = goodDarts; dartCache.at = Date.now(); }
-  return dartCache.data.length ? dartCache.data : goodDarts;
+  // Never serve readings whose age has passed the freshness cutoff — the cache
+  // must expire its contents, not just itself. Series is time-ordered after
+  // reverse(), so the latest timestamp is the last element.
+  const freshCache = dartCache.data.filter((d: any) => {
+    const lastT = d.series?.length ? d.series[d.series.length - 1].t : 0;
+    return Date.now() - lastT < 240 * 60000;
+  });
+  return freshCache.length ? freshCache : goodDarts;
 }
 
 // Live radio Earth — the planet is broadcasting right now, in every language.
@@ -2471,7 +2480,11 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const recent = osmFeed.changesets.filter((c: any) => Number(c.changes_count) > 0 && Number.isFinite(c.min_lat) && Number.isFinite(c.min_lon));
     if (recent.length >= 5) {
       const totalChanges = recent.reduce((s: number, c: any) => s + Number(c.changes_count || 0), 0);
-      const editors = new Set(recent.map((c: any) => c.user)).size;
+      // Open changesets (no closed_at) are being edited right now — only they
+      // justify 'simultaneously'. Closed ones already finished.
+      const openNow = recent.filter((c: any) => !c.closed_at);
+      const editors = new Set(openNow.length ? openNow.map((c: any) => c.user) : recent.map((c: any) => c.user)).size;
+      const simultaneous = openNow.length >= 2;
       // most interesting: biggest meaningful edit with a comment
       const pick = [...recent].sort((a: any, b: any) => (Number(b.changes_count) + ((b.tags?.comment ? 200 : 0))) - (Number(a.changes_count) + (a.tags?.comment ? 200 : 0)))[0];
       const lat = (Number(pick.min_lat) + Number(pick.max_lat)) / 2;
@@ -2480,12 +2493,12 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const mapper = String(pick.user ?? 'a mapper');
       const spread = recent.map((c: any) => ({ lat: (Number(c.min_lat) + Number(c.max_lat)) / 2, lon: (Number(c.min_lon) + Number(c.max_lon)) / 2 }));
       out.push({
-        id: 'osm-mapping-now', template: 'city', title: `${mapper} just redrew the map ${comment ? `— "${comment.slice(0, 80)}${comment.length > 80 ? '…' : ''}"` : `near ${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`}`, kicker: 'Humanity, live — the map being rewritten', visual: 'city', score: 74, freshness: 'changeset closed moments ago', mediaImage: buildSkyMapSvg(spread, `${editors} volunteers editing the map right now`, '#7ddb6a'), mediaAlt: 'Live map of where OpenStreetMap is being edited right now',
+        id: 'osm-mapping-now', template: 'city', title: `${mapper} just redrew the map ${comment ? `— "${comment.slice(0, 80)}${comment.length > 80 ? '…' : ''}"` : `near ${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`}`, kicker: 'Humanity, live — the map being rewritten', visual: 'city', score: 74, freshness: pick.closed_at ? 'changeset just closed' : 'edit open right now', mediaImage: buildSkyMapSvg(spread, `${editors} volunteers editing the map right now`, '#7ddb6a'), mediaAlt: 'Live map of where OpenStreetMap is being edited right now',
         location: { lat, lon, label: `OpenStreetMap changeset #${pick.id}` },
-        summary: `The map of the Earth is not finished — it is being rewritten right now, edit by edit, by volunteers. In the last few minutes ${editors} different mappers published ${totalChanges.toLocaleString()} object changes visible in this sample alone: roads realigned, buildings traced, trails added, junctions fixed. ${mapper}'s latest edit ${comment ? `— described in their own words as "${comment.slice(0, 120)}" — ` : ''}touched ${Number(pick.changes_count).toLocaleString()} map objects. Most of these edits will matter to almost no one — a corrected footpath, a new bench — but together they are the most detailed map humanity has ever had, updating continuously in public.`,
+        summary: `The map of the Earth is not finished — it is being rewritten right now, edit by edit, by volunteers. In the last few minutes ${editors} different mappers ${simultaneous ? 'are editing simultaneously — their changesets still open — having' : ''} published ${totalChanges.toLocaleString()} object changes visible in this sample alone: roads realigned, buildings traced, trails added, junctions fixed. ${mapper}'s latest edit ${comment ? `— described in their own words as "${comment.slice(0, 120)}" — ` : ''}touched ${Number(pick.changes_count).toLocaleString()} map objects. Most of these edits will matter to almost no one — a corrected footpath, a new bench — but together they are the most detailed map humanity has ever had, updating continuously in public.`,
         facts: [
           { label: 'Sampled changesets', value: `${recent.length} recent — ${totalChanges.toLocaleString()} object changes`, kind: 'observed' },
-          { label: 'Distinct mappers in sample', value: `${editors} people editing simultaneously`, kind: 'observed' },
+          { label: 'Distinct mappers in sample', value: simultaneous ? `${editors} people editing simultaneously right now` : `${editors} people published edits in the last few minutes`, kind: 'observed' },
           pick.changes_count >= 500 ? { label: 'Heavy edit in progress', value: `${Number(pick.changes_count).toLocaleString()} objects — usually a systematic import or a whole highway corridor`, kind: 'interpretation' } : null,
           { label: 'Why it exists', value: 'OpenStreetMap is the Wikipedia of maps — every edit public, immediate, and attributable. This feed is the planet being described by its inhabitants.', kind: 'interpretation' }
         ].filter(Boolean) as any,
@@ -2686,7 +2699,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     };
     for (const line of dsnXml.split('\n')) {
       const st = line.match(/<station name="(\w+)"/);
-      if (st) currentStation = st[1];
+      if (st) { flushDish(); dishName = ''; buf = []; currentStation = st[1]; }
       const dishM = line.match(/<dish name="([\w]+)"[^>]*elevationAngle="([\d.-]*)"/);
       if (dishM) {
         flushDish();
@@ -2846,7 +2859,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
     tideAnomalies()
   ,
     dartObservations(),
-    riverObservations()
+    riverNonBlocking()
   ]);
   const q = quake?.features?.[0];
   const evt = eonet?.events?.[0];

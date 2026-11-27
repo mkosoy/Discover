@@ -492,6 +492,8 @@ export default function DiscoverApp() {
       [/attention gap|sudan/i, { invId: 'crisis-attention-index' }],
       [/volcano|eruption/i, { invId: 'volcano-unrest-live' }],
       [/empty.sky|airspace/i, { invId: 'empty-sky-audit' }],
+      [/wildlife|species|spotted/i, { discPrefix: 'wildlife-pulse' }],
+      [/radio|broadcast/i, { discPrefix: 'radio-' }],
       [/night lights|city cameras/i, { discId: 'airborne-now' }]
     ];
     for (const [pattern, target] of topicAliases) {
