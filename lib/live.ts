@@ -1179,7 +1179,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml, orcaFeeds, orcaDetections, antMawsonHtml, antDavisHtml, antCaseyHtml, nmKergHtml, nmSopoHtml] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml, orcaFeeds, orcaDetections, antMawsonHtml, antDavisHtml, antCaseyHtml, nmKergHtml, nmSopoHtml, sondesNow] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1230,6 +1230,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     text('https://www.antarctica.gov.au/antarctic-operations/webcams/casey/'),
     text('https://www.nmdb.eu/nest/draw_graph.php?formchk=1&stations[]=KERG&output=ascii&tabchoice=revori&dtype=corr_for_efficiency&date_choice=last&last_days=1'),
     text('https://www.nmdb.eu/nest/draw_graph.php?formchk=1&stations[]=SOPO&output=ascii&tabchoice=revori&dtype=corr_for_efficiency&date_choice=last&last_days=1'),
+    json<any>('https://api.v2.sondehub.org/sondes', undefined, 9000),
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -3098,6 +3099,45 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         ],
         sources: [src('Neutron Monitor Database (NMDB)', 'https://www.nmdb.eu/')],
         related: ['solar wind', 'aurora', 'Space weather', 'antarctic-polar-day-live']
+      });
+    }
+  }
+
+  // --- The stratosphere, instrumented: weather balloons in flight right now,
+  // tracked by amateur radio operators worldwide — every forecast on Earth
+  // starts with these measurements.
+  if (sondesNow && typeof sondesNow === 'object') {
+    const active: Array<{ serial: string; lat: number; lon: number; alt: number; temp: number | null; velV: number | null; subtype: string; ageMin: number; uploader: string }> = [];
+    for (const [serial, v] of Object.entries(sondesNow as Record<string, any>)) {
+      if (!v || typeof v !== 'object' || !v.datetime || v.lat == null || v.lon == null) continue;
+      const t = new Date(String(v.datetime).replace('Z', '+00:00')).getTime();
+      if (!Number.isFinite(t)) continue;
+      const ageMin = (Date.now() - t) / 60000;
+      if (ageMin < 0 || ageMin > 180) continue;
+      active.push({
+        serial, lat: Number(v.lat), lon: Number(v.lon), alt: Number(v.alt ?? 0),
+        temp: v.temp != null ? Number(v.temp) : null, velV: v.vel_v != null ? Number(v.vel_v) : null,
+        subtype: String(v.subtype ?? v.type ?? 'sonde'), ageMin: Math.round(ageMin), uploader: String(v.uploader_callsign ?? '')
+      });
+    }
+    if (active.length >= 8) {
+      active.sort((a, b) => b.alt - a.alt);
+      const top = active[0];
+      const rising = active.filter(s => s.velV != null && s.velV > 1).length;
+      const strato = active.filter(s => s.alt > 18000).length;
+      out.push({
+        id: 'weather-balloons-aloft-now', template: 'atmosphere', title: `${active.length} instrument packages are floating through the atmosphere right now — and amateur radio operators are catching their data`, kicker: 'The stratosphere, instrumented — live', visual: 'storm', score: 82, freshness: `positions minutes old`, mediaImage: buildSkyMapSvg(active.slice(0, 120).map(s => ({ lat: s.lat, lon: s.lon })), 'weather balloons aloft right now', '#7fd4ff') ?? undefined,
+        location: { lat: top.lat, lon: top.lon, label: `Highest right now: ${(top.alt / 1000).toFixed(1)} km up` },
+        summary: `Twice a day, at 00:00 and 12:00 UTC, hundreds of weather stations worldwide launch balloons carrying instrument packages into the stratosphere — the measurements they radio down are the raw input of essentially every weather forecast on Earth. Right now ${active.length} of them are still aloft and transmitting. But here is the part almost nobody knows: much of this telemetry is being received not by government agencies but by volunteers — hundreds of amateur radio operators run rooftop receivers that catch the balloons' whispered data and pipe it into a public map, minute by minute. The highest one flying at this moment is at ${(top.alt / 1000).toFixed(1)} km${top.temp != null ? `, where it is measuring ${top.temp}°C` : ''} — well into the stratosphere, above almost all weather, higher than any aircraft.`,
+        facts: [
+          { label: 'Aloft right now', value: `${active.length} sondes transmitting — ${strato} of them above 18 km, deep in the stratosphere`, kind: 'observed' },
+          { label: 'The highest', value: `${(top.alt / 1000).toFixed(1)} km altitude${top.temp != null ? `, measuring ${top.temp}°C` : ''}${top.velV != null && top.velV > 1 ? `, still rising at ${top.velV.toFixed(1)} m/s` : ''} — a ${top.subtype}`, kind: 'observed' },
+          { label: 'Still climbing', value: `${rising} balloons actively ascending — launched within the last couple of hours`, kind: 'observed' },
+          { label: 'The human network', value: 'Hundreds of amateur radio operators receive this telemetry on rooftop antennas and share it publicly in real time', kind: 'verified' },
+          { label: 'Why it matters', value: 'Radiosonde measurements are the backbone of every numerical weather forecast — the models eat exactly this data', kind: 'verified' }
+        ],
+        sources: [src('SondeHub live balloon tracking', 'https://sondehub.org/')],
+        related: ['extremes', 'Radio Earth', 'aurora']
       });
     }
   }
