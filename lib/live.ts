@@ -643,6 +643,15 @@ const RIVER_SITES: Array<[string, string, number, number, number]> = [
   ['01358000', 'Hudson at Green Island, New York', 42.75, -73.69, 13000]
 ];
 const riverCache: { at: number; data: any[] } = { at: 0, data: [] };
+let riverInFlight = false;
+function riverNonBlocking(): Promise<any[]> {
+  if (riverCache.data.length && Date.now() - riverCache.at < 10 * 60000) return Promise.resolve(riverCache.data);
+  if (!riverInFlight) {
+    riverInFlight = true;
+    riverObservations().finally(() => { riverInFlight = false; });
+  }
+  return Promise.resolve(riverCache.data);
+}
 
 async function riverObservations(): Promise<any[]> {
   if (riverCache.data.length && Date.now() - riverCache.at < 10 * 60000) return riverCache.data;
@@ -678,11 +687,11 @@ async function riverObservations(): Promise<any[]> {
 // surface buoys, but a different file suffix (.dart). This is the actual
 // tsunami early-warning hardware of the Pacific.
 const DART_STATIONS: Array<[string, string, number, number]> = [
-  ['21418', 'NE Pacific — off Cascadia', 45.7, -128.8],
-  ['46404', 'offshore Oregon — Cascadia margin', 45.9, -128.8],
-  ['21413', 'off Kamchatka — the subduction factory', 48.7, 158.3],
-  ['21419', 'off Hokkaido — Japan trench', 41.4, 153.6],
-  ['46412', 'off Chile — the 2010 rupture zone', -32.5, -73.4]
+  ['21418', 'NE of Tokyo — outer Japan trench', 38.84, 148.75],
+  ['46404', 'offshore Oregon — Cascadia margin', 45.85, -128.75],
+  ['21413', 'SE of Japan — Izu-Bonin trench', 30.49, 152.12],
+  ['21419', 'east of Hokkaido — Kuril trench', 44.4, 155.65],
+  ['46412', 'off Southern California — the borderland', 32.4, -120.58]
 ];
 
 const dartCache: { at: number; data: any[] } = { at: 0, data: [] };
@@ -978,7 +987,11 @@ function detectConvergences(out: Discovery[]): void {
     const aurora = out.find(d => d.id === 'aurora-watch');
     const wind = out.find(d => d.id === 'solar-wind-stream');
     const members = [spaceWeather, aurora, wind].filter(Boolean) as Discovery[];
-    const stormActive = members.some(m => /geomagnetic storm|eruption|flare/i.test(m.title));
+    // A flare headline alone does not make the chain live: flare X-rays
+    // arrive in minutes, but 'measured at Earth' requires actual geomagnetic
+    // disturbance — otherwise quiet aurora conditions would contradict the
+    // convergence claim. Only a measured geomagnetic storm qualifies.
+    const stormActive = members.some(m => /geomagnetic storm/i.test(m.title));
     if (members.length >= 2 && stormActive) {
       groups.push({
         theme: 'space-weather-chain',
@@ -1029,7 +1042,11 @@ function detectConvergences(out: Discovery[]): void {
   // D. Tsunami chain: tsunami assessment + significant recent oceanic quake.
   {
     const tsunami = out.find(d => d.id === 'tsunami-watch-japan');
-    if (tsunami) {
+    // 'Checking' means instruments are still deciding whether water moved at
+    // all — framing that as a measured water response would be false. The
+    // chain only forms once the assessment is an actual advisory or warning.
+    const tsunamiActive = tsunami && /warning|advisory/i.test(tsunami.title) && !/checking/i.test(tsunami.title);
+    if (tsunami && tsunamiActive) {
       const quakes = out.filter(d => d.id.startsWith('quake-') && kmBetween(d.location, tsunami.location) < 1500);
       if (quakes.length) {
         groups.push({
@@ -1129,7 +1146,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, astros, milAircraft, p2pquakeFeed, darts, rivers, dsnXml] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1166,11 +1183,10 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://api.adsb.lol/v2/squawk/7600', undefined, 6000),
     json<any[]>('https://services.swpc.noaa.gov/products/alerts.json', undefined, 6000),
     json<any>(`https://api.carbonintensity.org.uk/intensity/${new Date(Date.now() - 24 * 3600000).toISOString().slice(0, 16)}Z/fw24h`, undefined, 6000),
-    json<any>('http://api.open-notify.org/astros.json', undefined, 5000),
     json<any>('https://api.adsb.lol/v2/mil', undefined, 7000),
     json<any[]>('https://api.p2pquake.net/v2/history?codes=551&limit=3', undefined, 6000),
     dartObservations(),
-    riverObservations(),
+    riverNonBlocking(),
     text('https://eyes.nasa.gov/dsn/data/dsn.xml')
   ]);
   const out: Discovery[] = [];
@@ -2416,28 +2432,6 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   }
 
 
-  // --- Humans not on Earth right now. open-notify publishes the canonical
-  // public crew list for both crewed stations. Simple, human, and true.
-  if (astros && Array.isArray(astros.people) && astros.number >= 1) {
-    const issCrew = astros.people.filter((p: any) => p.craft === 'ISS').map((p: any) => p.name);
-    const tiangongCrew = astros.people.filter((p: any) => p.craft === 'Tiangong').map((p: any) => p.name);
-    const latest = astros.people[astros.people.length - 1]?.name ?? '';
-    out.push({
-      id: 'humans-in-space', template: 'orbit', title: `${astros.number} people are not on Earth right now — and we know their names`, kicker: 'The entire off-world human population, live', visual: 'orbital', score: 84, freshness: 'canonical public crew roster', mediaImage: buildOrbitalCrewSvg(astros.number, issCrew.length, tiangongCrew.length), mediaAlt: 'Animated orbital visualization of the crewed stations',
-      location: { lat: iss?.latitude ?? 0, lon: iss?.longitude ?? 0, label: 'Low Earth orbit — ISS and Tiangong' },
-      summary: `Every human being who is currently off the planet fits in this list: ${issCrew.length} aboard the International Space Station${tiangongCrew.length ? `, ${tiangongCrew.length} aboard China's Tiangong station` : ''}. ${issCrew.length ? `On the ISS: ${issCrew.join(', ')}. ` : ''}${tiangongCrew.length ? `On Tiangong: ${tiangongCrew.join(', ')}.` : ''} They are circling the Earth once every 90 minutes at 7.66 km/s — meaning right now, somewhere over the planet below, ${latest || 'one of them'} is either asleep, exercising against bone loss, or looking out the cupola at the same clouds you can see in this app.`,
-      facts: [
-        { label: 'Off-world population', value: `${astros.number} humans — the complete list`, kind: 'observed' },
-        issCrew.length ? { label: `ISS crew (${issCrew.length})`, value: issCrew.join(', '), kind: 'observed' } : null,
-        tiangongCrew.length ? { label: `Tiangong crew (${tiangongCrew.length})`, value: tiangongCrew.join(', '), kind: 'observed' } : null,
-        { label: 'How unusual is this', value: 'For most of human history this number was zero. It has been continuously non-zero since November 2, 2000 — over 25 years of uninterrupted human presence off the planet.', kind: 'interpretation' },
-        { label: 'Roster caveat', value: 'Crew lists are updated when expeditions rotate — the source is the canonical public roster, but rotations can lag days behind reality', kind: 'question' }
-      ].filter(Boolean) as any,
-      sources: [src('Open Notify — people in space', 'http://api.open-notify.org/astros.json')],
-      related: ['The ISS is crossing the planet in silence', 'launch', 'sunrise']
-    });
-  }
-
   // --- Military aircraft visible on public ADS-B right now. Most military
   // flights do not broadcast publicly — these are the ones that do: tankers,
   // trainers, transports. Unexpected but completely public data.
@@ -2473,14 +2467,28 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   // with each significant earthquake. Conditional card when assessment is
   // anything but routine "None".
   if (Array.isArray(p2pquakeFeed) && p2pquakeFeed.length) {
-    const latest = p2pquakeFeed.find((q: any) => {
+    // Group bulletins by event: the same earthquake gets updated assessments,
+    // and only the newest bulletin per event counts — when Japan clears an
+    // assessment to 'None', the event is over even if an earlier bulletin said
+    // 'Checking'. Array order is treated as newest-first.
+    const byEvent = new Map<string, any>();
+    for (const q of p2pquakeFeed) {
+      const eq = q?.earthquake;
+      if (!eq) continue;
+      const key = `${eq.time}|${eq?.hypocenter?.name}`;
+      if (!byEvent.has(key)) byEvent.set(key, q);
+    }
+    const latest = [...byEvent.values()].find((q: any) => {
       const t = q?.earthquake?.domesticTsunami;
       return t && t !== 'None' && t !== 'Unknown';
     });
     if (latest) {
       const eq = latest.earthquake;
       const when = latest.earthquake?.time ?? '';
-      const ageMin = when ? Math.round((Date.now() - new Date(when.replace(/\//g, '-')).getTime()) / 60000) : null;
+      // JMA times are Japan local (UTC+9) — parse them as such or ages are
+      // wrong by nine hours in either direction.
+      const jstMs = (() => { const mm = when.replace(/\//g, '-').match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(:\d{2})?)/); if (!mm) return NaN; const hms = mm[2].length === 5 ? mm[2] + ':00' : mm[2]; return new Date(`${mm[1]}T${hms}+09:00`).getTime(); })();
+      const ageMin = when && Number.isFinite(jstMs) ? Math.round((Date.now() - jstMs) / 60000) : null;
       if (ageMin == null || ageMin < 360) {
         const level = eq.domesticTsunami;
         const levelText: Record<string, string> = { Warning: 'a tsunami WARNING is in effect', MajorWarning: 'a MAJOR tsunami warning is in effect', Watch: 'a tsunami advisory is in effect', Checking: 'authorities are checking for tsunami generation' };
@@ -2618,26 +2626,43 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       mdscc: { name: 'Madrid, Spain', lat: 40.4, lon: -4.2 },
       cdscc: { name: 'Canberra, Australia', lat: -35.4, lon: 148.98 }
     };
-    let currentStation = 'dsn';
+    // Parse per dish block: a <target> line exists even when the dish is idle
+    // or the link is down (stale target). A spacecraft only counts as being
+    // heard when that same dish carries an active downSignal for it.
     const links: Array<{ dish: string; station: string; craft: string; craftRaw: string; rtlt: number; el: number }> = [];
+    let currentStation = 'dsn';
+    let dishName = ''; let dishEl = 0; let buf: string[] = [];
+    const flushDish = () => {
+      if (!dishName || !buf.length) return;
+      const activeCraft = new Set<string>();
+      for (const l of buf) {
+        const sig = l.match(/<downSignal([^>]*)\/?>/);
+        if (sig && /active="true"/.test(sig[1])) {
+          const sc = sig[1].match(/spacecraft="([\w]+)"/);
+          if (sc) activeCraft.add(sc[1]);
+        }
+      }
+      for (const l of buf) {
+        const tgtM = l.match(/<target name="([\w]+)"[^>]*rtlt="([\d.-]*)"/);
+        if (!tgtM) continue;
+        const craftRaw = tgtM[1];
+        if (craftRaw === 'DSN') continue;
+        const rtlt = Number(tgtM[2]);
+        if (!activeCraft.has(craftRaw) || !Number.isFinite(rtlt) || rtlt <= 0) continue;
+        links.push({ dish: dishName, station: currentStation, craft: craftNames[craftRaw] ?? craftRaw, craftRaw, rtlt, el: dishEl });
+      }
+    };
     for (const line of dsnXml.split('\n')) {
       const st = line.match(/<station name="(\w+)"/);
       if (st) currentStation = st[1];
       const dishM = line.match(/<dish name="([\w]+)"[^>]*elevationAngle="([\d.-]*)"/);
-      const tgtM = line.match(/<target name="([\w]+)"[^>]*downlegRange="([\d.-]*)"[^>]*rtlt="([\d.-]*)"/) || line.match(/<target name="([\w]+)"[^>]*rtlt="([\d.-]*)"/);
-      if (tgtM) {
-        const craftRaw = tgtM[1];
-        if (craftRaw === 'DSN') continue;
-        const rtlt = Number(tgtM[4] ?? tgtM[3] ?? tgtM[2]);
-        // find the most recent dish line above this target
-        const before = dsnXml.slice(0, dsnXml.indexOf(line));
-        const dishMatches = [...before.matchAll(/<dish name="([\w]+)"[^>]*elevationAngle="([\d.-]*)"/g)];
-        const lastDish = dishMatches[dishMatches.length - 1];
-        if (lastDish && Number.isFinite(rtlt) && rtlt > 0) {
-          links.push({ dish: lastDish[1], station: currentStation, craft: craftNames[craftRaw] ?? craftRaw, craftRaw, rtlt, el: Number(lastDish[2] || 0) });
-        }
+      if (dishM) {
+        flushDish();
+        dishName = dishM[1]; dishEl = Number(dishM[2] || 0); buf = [];
       }
+      buf.push(line);
     }
+    flushDish();
     // dedupe: one link per craft
     const seen = new Set<string>();
     const uniqueLinks = links.filter(l => { if (seen.has(l.craftRaw)) return false; seen.add(l.craftRaw); return true; });
