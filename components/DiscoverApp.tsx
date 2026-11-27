@@ -629,7 +629,27 @@ export default function DiscoverApp() {
             const rank = (d: Discovery) => d.score + (d.mediaVideo || d.visual === 'nasa-live' ? 30 : d.mediaImage ? 12 : 0);
             return rank(b) - rank(a);
           });
-          tourRef.current = { order: ranked.map(d => d.id), idx: -1 };
+          // Geographic diversity: greedy farthest-hop ordering. Each stop picks
+          // the best-ranked remaining card at least ~15 degrees of longitude or
+          // a continent away from the previous one when possible — the tour
+          // should feel like traveling the whole planet, not camping one region.
+          const dist = (a: Discovery, b: Discovery) => {
+            const dLat = Math.abs(a.location.lat - b.location.lat);
+            const dLon = Math.min(Math.abs(a.location.lon - b.location.lon), 360 - Math.abs(a.location.lon - b.location.lon));
+            return Math.hypot(dLat, dLon);
+          };
+          const woven: Discovery[] = [];
+          const pool = [...ranked];
+          while (pool.length) {
+            const last = woven[woven.length - 1];
+            let pick = 0;
+            if (last) {
+              const farIdx = pool.findIndex(d => dist(d, last) > 25);
+              if (farIdx !== -1) pick = farIdx;
+            }
+            woven.push(pool.splice(pick, 1)[0]);
+          }
+          tourRef.current = { order: woven.map(d => d.id), idx: -1 };
           setTourProgress(undefined);
           setWatching(true);
           window.setTimeout(() => advanceTour(), 60);
