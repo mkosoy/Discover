@@ -234,7 +234,7 @@ function deltaSince(key: string, hoursBack: number, now = Date.now()): { delta: 
   return { delta: latest.v - best.v, hours: (latest.t - best.t) / 3600000 };
 }
 
-type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waveDelta3h?: number; waterTemp?: number; airTemp?: number; windSpeed?: number; pressure?: number; pressureDelta3h?: number; time: number };
+type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waveDelta3h?: number; waveSeries?: Array<{ t: number; v: number }>; waterTemp?: number; airTemp?: number; windSpeed?: number; pressure?: number; pressureDelta3h?: number; time: number };
 
 export async function buoyObservations(): Promise<BuoyObs[]> {
   const rows = await Promise.all(BUOY_STATIONS.map(async ([id, name, lat, lon]) => {
@@ -289,7 +289,18 @@ export async function buoyObservations(): Promise<BuoyObs[]> {
         }
         if (backRow) waveDelta3h = wvht - backRow.wvht;
       }
-      return { id, name, lat, lon, waveHeight: wvht, waveDelta3h, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, pressure: Number.isFinite(pres) ? pres : undefined, pressureDelta3h, time: ts };
+      const waveSeries: Array<{ t: number; v: number }> = [];
+      for (const line3 of t.split('\n')) {
+        if (!line3.trim() || line3.startsWith('#')) continue;
+        const c3 = line3.trim().split(/\s+/);
+        if (c3.length < 9) continue;
+        const ts3 = Date.UTC(+c3[0], +c3[1] - 1, +c3[2], +c3[3], +c3[4]);
+        const w3 = parseFloat(c3[8]);
+        if (Number.isFinite(w3) && ts3 > Date.now() - 30 * 3600000) waveSeries.push({ t: ts3, v: w3 });
+        if (waveSeries.length >= 120) break;
+      }
+      waveSeries.reverse();
+      return { id, name, lat, lon, waveHeight: wvht, waveDelta3h, waveSeries, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, pressure: Number.isFinite(pres) ? pres : undefined, pressureDelta3h, time: ts };
     }
     return null;
   }));
@@ -312,6 +323,26 @@ const TIDE_STATIONS: Array<[string, string, number, number]> = [
 
 type TideAnomaly = { id: string; name: string; lat: number; lon: number; measured: number; predicted: number; anomaly: number; time: string; measuredSeries?: Array<{ t: number; v: number }>; predictedSeries?: Array<{ t: number; v: number }> };
 
+
+
+function buildSeriesChartSvg(title: string, unit: string, series: Array<{ t: number; v: number }>, color = '#55ddff'): string | null {
+  if (!series || series.length < 8) return null;
+  const W = 640, H = 360, PADL = 14, PADR = 14, PADT = 44, PADB = 40;
+  const vs = series.map(r => r.v);
+  const lo = Math.min(...vs), hi = Math.max(...vs);
+  const span = Math.max(0.05, hi - lo) * 1.15;
+  const mid = (hi + lo) / 2;
+  const loP = mid - span / 2;
+  const t0 = series[0].t, t1 = series[series.length - 1].t;
+  const tspan = Math.max(1, t1 - t0);
+  const x = (t: number) => PADL + (t - t0) / tspan * (W - PADL - PADR);
+  const y = (v: number) => PADT + (1 - (v - loP) / span) * (H - PADT - PADB);
+  const line = series.map(r => `${x(r.t).toFixed(1)},${y(r.v).toFixed(1)}`).join(' ');
+  const last = series[series.length - 1];
+  const hours = Math.round(tspan / 3600000);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#0a1520"/><polyline points="${line}" fill="none" stroke="${color}" stroke-width="3"/><circle cx="${x(last.t).toFixed(1)}" cy="${y(last.v).toFixed(1)}" r="6" fill="${color}"/><text x="${PADL}" y="26" fill="${color}" font-size="17" font-family="system-ui" font-weight="600">${title}</text><text x="${PADL}" y="${H - 12}" fill="#ffffff" fill-opacity="0.45" font-size="14" font-family="system-ui">last ${hours} hours — ${unit}, measured by the instrument itself</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
 
 function buildTideChartSvg(stationName: string, measured: Array<{ t: number; v: number }>, predicted: Array<{ t: number; v: number }>): string | null {
   if (!measured || !predicted || measured.length < 8 || predicted.length < 4) return null;
@@ -612,7 +643,7 @@ function connectDiscoveries(out: Discovery[]) {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, squawk7700, squawk7600, swpcAlerts] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -644,6 +675,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     tideAnomalies(),
     text('https://gml.noaa.gov/webdata/ccgg/trends/co2_mlo_weekly.csv'),
     wikiEditsSample(),
+    json<any>('https://air-quality-api.open-meteo.com/v1/air-quality?latitude=28.61,31.55,39.9,19.08,30.04,6.52,24.86,33.72,41.01,1.35,51.5,34.05&longitude=77.21,74.34,116.4,72.88,31.24,3.38,67.0,73.05,28.98,103.82,-0.13,-118.24&current=pm2_5,us_aqi&timezone=auto', undefined, 9000),
     json<any>('https://api.adsb.lol/v2/squawk/7700', undefined, 6000),
     json<any>('https://api.adsb.lol/v2/squawk/7600', undefined, 6000),
     json<any[]>('https://services.swpc.noaa.gov/products/alerts.json', undefined, 6000)
@@ -945,6 +977,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const ratio = calmest.waveHeight > 0.3 ? wildest.waveHeight / calmest.waveHeight : null;
     out.push({
       id: 'ocean-measured-now', template: 'ocean', title: `The ${wildest.name.split(',')[0]} is measuring ${wildest.waveHeight.toFixed(1)} m waves right now`, kicker: 'The ocean, physically measured', visual: 'ocean', score: 76 + Math.min(14, Math.round(wildest.waveHeight * 2)), freshness: ageMin != null ? (ageMin < 90 ? `${ageMin} min ago` : `${Math.round(ageMin / 60)}h ago`) : 'measurement time unknown',
+      mediaImage: buildSeriesChartSvg(`wave height at ${wildest.name.split(',')[0]} — now ${wildest.waveHeight.toFixed(1)} m`, 'significant wave height, meters', wildest.waveSeries ?? []) ?? undefined, mediaAlt: 'Measured wave heights — the instrument record',
       location: { lat: wildest.lat, lon: wildest.lon, label: wildest.name },
       summary: `Moored instruments don't model the ocean — they ride it. Across ${ranked.length} NOAA buoys reporting right now, the roughest measured sea is at ${wildest.name}: ${wildest.waveHeight.toFixed(1)} m significant wave height (${Math.round(feet)} feet)${wildest.windSpeed ? ` with ${Math.round(wildest.windSpeed * 3.6)} km/h winds` : ''}${wildest.waterTemp != null ? ` and ${wildest.waterTemp.toFixed(1)}°C water` : ''}.${ratio && ratio > 1.6 ? ` Meanwhile the calmest reporting buoy, off ${calmest.name.split(',')[0]}, reads ${calmest.waveHeight.toFixed(1)} m — the same planet's ocean is ${ratio.toFixed(1)}× rougher in one place than another, at the same moment.` : ''}`,
       facts: [
@@ -1563,6 +1596,40 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         ].filter(Boolean) as any,
         sources: [src('adsb.lol live transponder network', 'https://api.adsb.lol/')],
         related: ['Aircraft census', 'Empty-sky audit', 'The measured planet']
+      });
+    }
+  }
+
+  // --- Hazardous air event detection: when a major city's measured PM2.5
+  // crosses into genuinely dangerous territory, that is a real-time event
+  // affecting millions of lungs — not a statistic.
+  {
+    const airCities: Array<[string, number, number]> = [
+      ['Delhi', 28.61, 77.21], ['Lahore', 31.55, 74.34], ['Beijing', 39.9, 116.4], ['Mumbai', 19.08, 72.88],
+      ['Cairo', 30.04, 31.24], ['Lagos', 6.52, 3.38], ['Karachi', 24.86, 67.0], ['Dhaka', 33.72, 73.05],
+      ['Istanbul', 41.01, 28.98], ['Singapore', 1.35, 103.82], ['London', 51.5, -0.13], ['Los Angeles', 34.05, -118.24]
+    ];
+    const rows = (Array.isArray(cityAirNow) ? cityAirNow : [cityAirNow]).filter(Boolean).map((r: any, idx: number) => {
+      const pm = r?.current?.pm2_5;
+      return Number.isFinite(pm) ? { city: airCities[idx]?.[0] ?? 'unknown', lat: airCities[idx]?.[1] ?? 0, lon: airCities[idx]?.[2] ?? 0, pm } : null;
+    }).filter(Boolean) as Array<{ city: string; lat: number; lon: number; pm: number }>;
+    const worst = [...rows].sort((a, b) => b.pm - a.pm)[0];
+    if (worst && worst.pm >= 75) {
+      const severity = worst.pm >= 250 ? 'hazardous — emergency conditions' : worst.pm >= 150 ? 'very unhealthy' : worst.pm >= 100 ? 'unhealthy' : 'unhealthy for sensitive groups';
+      const cleanest = [...rows].sort((a, b) => a.pm - b.pm)[0];
+      out.push({
+        id: 'air-emergency-now', template: 'city', title: `The air in ${worst.city} is ${severity} right now — ${Math.round(worst.pm)} μg/m³ of fine particulate`, kicker: 'Air emergency, measured live', visual: 'city', score: worst.pm >= 150 ? 90 : 82, freshness: 'measured this hour',
+        location: { lat: worst.lat, lon: worst.lon, label: worst.city },
+        summary: `PM2.5 particles are small enough to pass from the lungs into the bloodstream. The WHO guideline for a 24-hour average is 15 μg/m³ — ${worst.city} is currently at ${Math.round(worst.pm)}, roughly ${Math.round(worst.pm / 15)}× that level, and millions of people are breathing it right now${cleanest ? `. At the same hour, ${cleanest.city} reads ${Math.round(cleanest.pm)} — the same species, the same moment, a ${Math.round(worst.pm / Math.max(1, cleanest.pm))}× difference in what enters their bloodstreams` : ''}.`,
+        facts: [
+          { label: 'PM2.5 now', value: `${Math.round(worst.pm)} μg/m³ — ${severity}`, kind: 'observed' },
+          { label: 'WHO 24h guideline', value: '15 μg/m³', kind: 'verified' },
+          ...(cleanest ? [{ label: 'Cleanest major city right now', value: `${cleanest.city} — ${Math.round(cleanest.pm)} μg/m³`, kind: 'observed' as const }] : []),
+          { label: 'What PM2.5 does', value: 'Crosses from lung tissue into blood; linked to heart attacks, strokes, asthma — the deadliest widespread pollutant', kind: 'verified' },
+          { label: 'Measurement note', value: 'Modeled from monitoring networks and satellite data, hourly', kind: 'interpretation' }
+        ],
+        sources: [src('Open-Meteo air quality (CAMS/monitor networks)', 'https://open-meteo.com/en/docs/air-quality-api')],
+        related: ['The air divide', 'The measured planet', 'Extremes right now']
       });
     }
   }
