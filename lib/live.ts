@@ -257,7 +257,7 @@ function deltaSince(key: string, hoursBack: number, now = Date.now()): { delta: 
   return { delta: latest.v - best.v, hours: (latest.t - best.t) / 3600000 };
 }
 
-type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waveDelta3h?: number; waveSeries?: Array<{ t: number; v: number }>; waterTemp?: number; airTemp?: number; windSpeed?: number; pressure?: number; pressureDelta3h?: number; time: number };
+type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waveDelta3h?: number; waveSeries?: Array<{ t: number; v: number }>; pressureSeries?: Array<{ t: number; v: number }>; waterTemp?: number; airTemp?: number; windSpeed?: number; pressure?: number; pressureDelta3h?: number; time: number };
 
 export async function buoyObservations(): Promise<BuoyObs[]> {
   const rows = await Promise.all(BUOY_STATIONS.map(async ([id, name, lat, lon]) => {
@@ -313,17 +313,21 @@ export async function buoyObservations(): Promise<BuoyObs[]> {
         if (backRow) waveDelta3h = wvht - backRow.wvht;
       }
       const waveSeries: Array<{ t: number; v: number }> = [];
+      const pressureSeries: Array<{ t: number; v: number }> = [];
       for (const line3 of t.split('\n')) {
         if (!line3.trim() || line3.startsWith('#')) continue;
         const c3 = line3.trim().split(/\s+/);
         if (c3.length < 9) continue;
         const ts3 = Date.UTC(+c3[0], +c3[1] - 1, +c3[2], +c3[3], +c3[4]);
         const w3 = parseFloat(c3[8]);
+        const p3 = parseFloat(c3[12]);
         if (Number.isFinite(w3) && ts3 > Date.now() - 30 * 3600000) waveSeries.push({ t: ts3, v: w3 });
+        if (Number.isFinite(p3) && ts3 > Date.now() - 30 * 3600000) pressureSeries.push({ t: ts3, v: p3 });
         if (waveSeries.length >= 120) break;
       }
       waveSeries.reverse();
-      return { id, name, lat, lon, waveHeight: wvht, waveDelta3h, waveSeries, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, pressure: Number.isFinite(pres) ? pres : undefined, pressureDelta3h, time: ts };
+      pressureSeries.reverse();
+      return { id, name, lat, lon, waveHeight: wvht, waveDelta3h, waveSeries, pressureSeries, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, pressure: Number.isFinite(pres) ? pres : undefined, pressureDelta3h, time: ts };
     }
     return null;
   }));
@@ -348,7 +352,7 @@ type TideAnomaly = { id: string; name: string; lat: number; lon: number; measure
 
 
 
-function buildSeriesChartSvg(title: string, unit: string, series: Array<{ t: number; v: number }>, color = '#55ddff'): string | null {
+function buildSeriesChartSvg(title: string, unit: string, series: Array<{ t: number; v: number }>, color = '#55ddff', footerOverride?: string): string | null {
   if (!series || series.length < 8) return null;
   const W = 640, H = 360, PADL = 14, PADR = 14, PADT = 44, PADB = 40;
   const vs = series.map(r => r.v);
@@ -363,7 +367,8 @@ function buildSeriesChartSvg(title: string, unit: string, series: Array<{ t: num
   const line = series.map(r => `${x(r.t).toFixed(1)},${y(r.v).toFixed(1)}`).join(' ');
   const last = series[series.length - 1];
   const hours = Math.round(tspan / 3600000);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#0a1520"/><polyline points="${line}" fill="none" stroke="${color}" stroke-width="3"/><circle cx="${x(last.t).toFixed(1)}" cy="${y(last.v).toFixed(1)}" r="6" fill="${color}"/><text x="${PADL}" y="26" fill="${color}" font-size="17" font-family="system-ui" font-weight="600">${title}</text><text x="${PADL}" y="${H - 12}" fill="#ffffff" fill-opacity="0.45" font-size="14" font-family="system-ui">last ${hours} hours — ${unit}, measured by the instrument itself</text></svg>`;
+  const spanLabel = tspan > 60 * 86400000 ? `last ${(tspan / (365.25 * 86400000)).toFixed(1)} years` : tspan > 2 * 86400000 ? `last ${Math.round(tspan / 86400000)} days` : `last ${hours} hours`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#0a1520"/><polyline points="${line}" fill="none" stroke="${color}" stroke-width="3"/><circle cx="${x(last.t).toFixed(1)}" cy="${y(last.v).toFixed(1)}" r="6" fill="${color}"/><text x="${PADL}" y="26" fill="${color}" font-size="17" font-family="system-ui" font-weight="600">${title}</text><text x="${PADL}" y="${H - 12}" fill="#ffffff" fill-opacity="0.45" font-size="14" font-family="system-ui">${footerOverride ?? `${spanLabel} — ${unit}, measured by the instrument itself`}</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
@@ -399,6 +404,7 @@ function buildTideChartSvg(stationName: string, measured: Array<{ t: number; v: 
     ? `M${fillPts.map(r => `${r.x.toFixed(1)},${r.y1.toFixed(1)}`).join(' L')} L${[...fillPts].reverse().map(r => `${r.x.toFixed(1)},${(r.y2 as number).toFixed(1)}`).join(' L')} Z`
     : '';
   const hours = Math.round(tspan / 3600000);
+  const spanLabel = tspan > 60 * 86400000 ? `last ${(tspan / (365.25 * 86400000)).toFixed(1)} years` : tspan > 2 * 86400000 ? `last ${Math.round(tspan / 86400000)} days` : `last ${hours} hours`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#0a1520"/>${fillPath ? `<path d="${fillPath}" fill="#55ddff" fill-opacity="0.14"/>` : ''}<polyline points="${line(inWindow)}" fill="none" stroke="#ffffff" stroke-opacity="0.5" stroke-width="2.5" stroke-dasharray="7 5"/><polyline points="${line(measured)}" fill="none" stroke="#55ddff" stroke-width="3.5"/><text x="${PADL}" y="26" fill="#55ddff" font-size="17" font-family="system-ui" font-weight="600">— measured at the gauge</text><text x="${PADL + 300}" y="26" fill="#ffffff" fill-opacity="0.6" font-size="17" font-family="system-ui">- - predicted by the moon</text><text x="${PADL}" y="${H - 12}" fill="#ffffff" fill-opacity="0.45" font-size="14" font-family="system-ui">${stationName} — last ${hours} hours, meters above mean sea level. The gap between the lines is the anomaly.</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
@@ -764,7 +770,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       temp: row?.current?.temperature_2m, wind: row?.current?.wind_speed_10m, gusts: row?.current?.wind_gusts_10m
     })).filter(r => Number.isFinite(r.temp));
     if (readings.length > 4) {
-      const extremesChart = buildSeriesChartSvg('The planet\'s thermometer — 16 extreme sites, sorted coldest to hottest', '°C', [...readings].sort((a, b) => a.temp - b.temp).map((r, idx) => ({ t: idx, v: r.temp })), '#ff9955');
+      const extremesChart = buildSeriesChartSvg('The planet\'s thermometer — 16 extreme sites, sorted coldest to hottest', '°C', [...readings].sort((a, b) => a.temp - b.temp).map((r, idx) => ({ t: idx, v: r.temp })), '#ff9955', '16 extreme sites, coldest → hottest — modeled current hour');
       const hottest = [...readings].sort((a, b) => b.temp - a.temp)[0];
       const coldest = [...readings].sort((a, b) => a.temp - b.temp)[0];
       const windiest = [...readings].sort((a, b) => (b.gusts ?? b.wind ?? 0) - (a.gusts ?? a.wind ?? 0))[0];
@@ -1044,6 +1050,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const drop = Math.abs(falling.pressureDelta3h ?? 0);
       out.push({
         id: 'storm-deepening-now', template: 'ocean', title: `The pressure at ${falling.name.split(',')[0]} just fell ${drop.toFixed(1)} millibars in 3 hours — a storm is deepening overhead`, kicker: 'Caught in the act — pressure tendency, measured', visual: 'storm', score: 87 + Math.min(6, Math.round(drop)), freshness: 'barometer reading minutes old',
+        mediaImage: buildSeriesChartSvg(`barometric pressure at ${falling.name.split(',')[0]} — falling`, 'millibars, measured', falling.pressureSeries ?? [], '#ffaa55') ?? undefined, mediaAlt: 'Measured pressure — the barometer trace as the storm deepens',
         location: { lat: falling.lat, lon: falling.lon, label: falling.name },
         summary: `Barometers don't predict storms — they feel them forming. A moored buoy at ${falling.name} has measured the air pressure falling ${drop.toFixed(1)} millibars over the last 3 hours. That rate of fall means the atmosphere overhead is literally deepening: air is being evacuated upward, winds are accelerating inward, and a storm system is organizing itself right now${falling.windSpeed ? ` — the same buoy already measures ${Math.round(falling.windSpeed * 3.6)} km/h winds` : ''}${falling.waveHeight ? ` and ${falling.waveHeight.toFixed(1)} m seas building` : ''}. This is the earliest physical signature of a storm, caught live.`,
         facts: [
@@ -1528,12 +1535,15 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       .filter(r => Number.isFinite(r.ppm) && r.ppm > 300);
     const latest = rows[rows.length - 1];
     if (latest) {
+      const co2Series = rows.slice(-730).map(r => ({ t: new Date(r.date + 'T00:00:00Z').getTime(), v: r.ppm }));
+      const co2Chart = buildSeriesChartSvg(`the Keeling Curve — last two years, now ${latest.ppm.toFixed(1)} ppm`, 'CO₂ parts per million, measured daily', co2Series, '#77dd88');
       const latestMs = new Date(latest.date + 'T00:00:00Z').getTime();
       const yearAgoTarget = latestMs - 52 * 7 * 86400000;
       const yearAgo = rows.reduce((best, r) => Math.abs(yearAgoTarget - new Date(r.date + 'T00:00:00Z').getTime()) < Math.abs(yearAgoTarget - new Date(best.date + 'T00:00:00Z').getTime()) ? r : best, rows[0]);
       const rise = yearAgo && yearAgo !== latest ? latest.ppm - yearAgo.ppm : null;
       out.push({
         id: 'keeling-curve-live', template: 'atmosphere', title: `The atmosphere just measured ${latest.ppm.toFixed(2)} parts per million of CO₂ — the highest in millions of years`, kicker: 'Mauna Loa observatory — the longest measurement on Earth', visual: 'orbital', score: 74, freshness: `measured ${latest.date}`,
+        mediaImage: co2Chart ?? undefined, mediaAlt: 'The Keeling Curve rendered from the live daily measurements — the seasonal sawtooth riding the relentless rise',
         location: { lat: 19.54, lon: -155.58, label: 'Mauna Loa Observatory, Hawaii' },
         summary: `On a Hawaiian volcano, far from any city's exhaust, an instrument has sampled the same air since 1958. It reads ${latest.ppm.toFixed(2)} ppm CO₂ right now${rise != null ? ` — up ${rise.toFixed(2)} ppm from one year ago, a rate of change far faster than anything in the ice-core record` : ''}. Pre-industrial air was 280 ppm. This is not a model or an estimate: it is the most continuous direct measurement of what humanity is doing to the atmosphere, and it has never once gone down.`,
         facts: [
@@ -1655,9 +1665,11 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         ? worst.aqi > 300 ? 'hazardous — emergency conditions' : worst.aqi > 200 ? 'very unhealthy' : worst.aqi > 150 ? 'unhealthy' : worst.aqi > 100 ? 'unhealthy for sensitive groups' : 'moderate'
         : worst.pm >= 250 ? 'hazardous — emergency conditions' : worst.pm >= 150 ? 'very unhealthy' : worst.pm >= 100 ? 'unhealthy' : 'unhealthy for sensitive groups';
       const cleanest = [...rows].sort((a, b) => a.pm - b.pm)[0];
+      const airChart = buildSeriesChartSvg(`fine particulate across 12 major cities, dirtiest → cleanest`, 'μg/m³ PM2.5', [...rows].sort((a, b) => b.pm - a.pm).map((r, idx) => ({ t: idx, v: r.pm })), '#cc88ff', `${rows.map(r => r.city.split(' ')[0]).join(' · ')} — modeled from monitoring networks, this hour`);
       out.push({
         id: 'air-emergency-now', template: 'city', title: `The air in ${worst.city} is ${severity} right now — ${Math.round(worst.pm)} μg/m³ of fine particulate`, kicker: 'Air emergency, measured live', visual: 'city', score: worst.pm >= 150 ? 90 : 82, freshness: 'measured this hour',
         location: { lat: worst.lat, lon: worst.lon, label: worst.city },
+        mediaImage: airChart ?? undefined, mediaAlt: 'Particulate pollution across major cities right now — the ladder of what humanity is breathing',
         summary: `PM2.5 particles are small enough to pass from the lungs into the bloodstream. The WHO guideline for a 24-hour average is 15 μg/m³ — ${worst.city} is currently at ${Math.round(worst.pm)}, roughly ${Math.round(worst.pm / 15)}× that level, and millions of people are breathing it right now${cleanest ? `. At the same hour, ${cleanest.city} reads ${Math.round(cleanest.pm)} — the same species, the same moment, a ${Math.round(worst.pm / Math.max(1, cleanest.pm))}× difference in what enters their bloodstreams` : ''}.`,
         facts: [
           { label: 'PM2.5 now', value: `${Math.round(worst.pm)} μg/m³ — ${severity}`, kind: 'observed' },
