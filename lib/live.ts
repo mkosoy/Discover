@@ -3141,9 +3141,15 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       if (!Number.isFinite(t)) continue;
       const ageMin = (Date.now() - t) / 60000;
       if (ageMin < 0 || ageMin > 180) continue;
+      const velVRaw = v.vel_v != null ? Number(v.vel_v) : null;
+      // Telemetry glitches are common in crowd-sourced reception — ascent rates beyond
+      // ±20 m/s or altitudes above 45 km on routine radiosondes are almost always corrupt frames.
+      const velV = velVRaw != null && Math.abs(velVRaw) <= 20 ? velVRaw : null;
+      const alt = Number(v.alt ?? 0);
+      if (alt > 45000) continue;
       active.push({
-        serial, lat: Number(v.lat), lon: Number(v.lon), alt: Number(v.alt ?? 0),
-        temp: v.temp != null ? Number(v.temp) : null, velV: v.vel_v != null ? Number(v.vel_v) : null,
+        serial, lat: Number(v.lat), lon: Number(v.lon), alt,
+        temp: v.temp != null && Number(v.temp) > -100 && Number(v.temp) < 60 ? Number(v.temp) : null, velV,
         subtype: String(v.subtype ?? v.type ?? 'sonde'), ageMin: Math.round(ageMin), uploader: String(v.uploader_callsign ?? '')
       });
     }
@@ -3207,7 +3213,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       return ts && (nowMs - ts) / 60000 < 30 && f?.geometry?.coordinates?.length >= 2;
     });
     if (live.length >= 50) {
-      const fastest = [...live].sort((a, b) => (b.properties?.sog ?? 0) - (a.properties?.sog ?? 0))[0];
+      const plausible = live.filter(f => (f.properties?.sog ?? 0) <= 55);
+      const fastest = [...plausible].sort((a, b) => (b.properties?.sog ?? 0) - (a.properties?.sog ?? 0))[0];
       const moving = live.filter(f => (f.properties?.sog ?? 0) > 3).length;
       const pts = live.slice(0, 250).map(f => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }));
       out.push({
