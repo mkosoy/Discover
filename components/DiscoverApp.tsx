@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowRight, Check, Compass, Eye, Globe2, Loader2, LocateFixed, Newspaper, Play, Radio, Satellite, Share2, Shuffle, Sparkles, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowRight, Check, Compass, Eye, Globe2, HelpCircle, LayoutGrid, Loader2, LocateFixed, Newspaper, Play, Radio, Satellite, Share2, Shuffle, Sparkles, Volume2, VolumeX, X } from 'lucide-react';
 import Globe from './Globe';
 import type { Discovery, Investigation } from '@/lib/types';
 import { cameraCoverage, cameraEmbed, publicCameras, type PublicCamera } from '@/lib/cameras';
@@ -156,6 +156,14 @@ export default function DiscoverApp() {
   const [mode, setMode] = useState<'discover' | 'investigate'>('discover');
   const [selectedInvestigation, setSelectedInvestigation] = useState<Investigation>();
   const [watching, setWatching] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  useEffect(() => {
+    if (!window.localStorage.getItem('elsewhere-onboarded')) {
+      setHelpOpen(true);
+      window.localStorage.setItem('elsewhere-onboarded', '1');
+    }
+  }, []);
   const tourRef = useRef<{ order: string[]; idx: number }>({ order: [], idx: -1 });
   const [tourProgress, setTourProgress] = useState<{ idx: number; total: number }>();
   const [tourHint, setTourHint] = useState(false);
@@ -479,12 +487,19 @@ export default function DiscoverApp() {
     const norm = label.toLowerCase().trim();
     const directDiscovery = discoveries.find(d => d.id === label || d.id === norm || d.title.toLowerCase() === norm);
     if (directDiscovery) { selectDiscovery(directDiscovery); setLensLoading(false); return; }
+    // Trailing-dash labels are id prefixes ('quake-', 'radio-') — resolve to the
+    // best-scored matching card rather than falling through to local weather.
+    if (label.endsWith('-')) {
+      const prefixed = discoveries.filter(d => d.id.startsWith(label)).sort((a, b) => b.score - a.score)[0];
+      if (prefixed) { selectDiscovery(prefixed); setLensLoading(false); return; }
+    }
     const directInvestigation = investigations.find(i => i.id === label || i.id === norm || i.title.toLowerCase() === norm);
     if (directInvestigation) { selectInvestigation(directInvestigation); setLensLoading(false); return; }
     const topicAliases: Array<[RegExp, { invId?: string; discPrefix?: string; discId?: string }]> = [
       [/wildest water|southern ocean waves|storm surge|portugal coastal currents/i, { invId: 'wildest-water-live' }],
       [/polar extremes|aurora watch/i, { discPrefix: 'polar-extremes' }],
       [/terminator/i, { discPrefix: 'terminator-' }],
+      [/seismic-drum|seismometer|earth humming/i, { discId: 'earth-humming-live' }],
       [/seismic|aftershock|tsunami/i, { invId: 'seismic-pulse-week' }],
       [/solar wind|solar wind speed/i, { discId: 'solar-wind-stream' }],
       [/upcoming launches|launch cadence/i, { invId: 'orbital-cadence' }],
@@ -660,9 +675,68 @@ export default function DiscoverApp() {
           setTourProgress(undefined);
         }
       }}><Play size={17} />{watching ? (tourProgress ? `Tour ${tourProgress.idx}/${tourProgress.total}` : 'Tour live') : 'Tour'}</button>
+      <button className={browseOpen ? 'watch active' : 'watch'} onClick={() => setBrowseOpen(!browseOpen)} aria-label="Browse everything happening now by category"><LayoutGrid size={17} />Browse</button>
+      <button className="ambient" onClick={() => setHelpOpen(true)} aria-label="How Elsewhere works and its data sources"><HelpCircle size={17} />About</button>
       <button className={ambient ? 'ambient active' : 'ambient'} onClick={() => setAmbient(!ambient)} aria-label="Toggle ambient sound">{ambient ? <Volume2 size={17} /> : <VolumeX size={17} />}{ambient ? 'Sound on' : 'Sound'}</button>
       <button className="share" onClick={shareCurrent} aria-label="Copy link to this view">{copied ? <Check size={17} /> : <Share2 size={17} />}{copied ? 'Copied' : 'Share'}</button>
     </div>
+
+    {browseOpen && <div className="overlayShade" onClick={() => setBrowseOpen(false)}>
+      <div className="overlayPanel browsePanel" onClick={e => e.stopPropagation()}>
+        <button className="panelClose" aria-label="Close" onClick={() => setBrowseOpen(false)}><X size={17} /></button>
+        <h3>Everything happening right now</h3>
+        <p className="overlaySub">{discoveries.length} live signals, measured or observed within the last hour — grouped by what part of the planet they belong to. Best first in each group.</p>
+        {([
+          ['Ocean', (d: Discovery) => d.template === 'ocean'],
+          ['Solid Earth', (d: Discovery) => d.template === 'geology' || d.template === 'wildfire'],
+          ['Sky & atmosphere', (d: Discovery) => d.template === 'atmosphere'],
+          ['Human systems', (d: Discovery) => d.template === 'city'],
+          ['Space & orbit', (d: Discovery) => d.template === 'orbit' || d.template === 'launch']
+        ] as Array<[string, (d: Discovery) => boolean]>).map(([cat, match]) => {
+          const items = discoveries.filter(match).sort((a, b) => b.score - a.score).slice(0, 8);
+          if (!items.length) return null;
+          return <div key={cat} className="browseGroup">
+            <h4>{cat}<span>{discoveries.filter(match).length} live</span></h4>
+            {items.map(d => <button key={d.id} className="browseItem" onClick={() => { setBrowseOpen(false); selectDiscovery(d, undefined, true); }}>
+              <b>{d.title}</b>
+              <small>{d.kicker} · {d.freshness}</small>
+            </button>)}
+          </div>;
+        })}
+        {investigations.length > 0 && <div className="browseGroup">
+          <h4>Deeper investigations<span>{investigations.length} live</span></h4>
+          {investigations.slice(0, 6).map(i2 => <button key={i2.id} className="browseItem investigationItem" onClick={() => { setBrowseOpen(false); selectInvestigation(i2); }}>
+            <b>{i2.title}</b>
+            <small>confidence {i2.confidence}%</small>
+          </button>)}
+        </div>}
+      </div>
+    </div>}
+
+    {helpOpen && <div className="overlayShade" onClick={() => setHelpOpen(false)}>
+      <div className="overlayPanel helpPanel" onClick={e => e.stopPropagation()}>
+        <button className="panelClose" aria-label="Close" onClick={() => setHelpOpen(false)}><X size={17} /></button>
+        <h3>Discover what's happening. Understand what it means.</h3>
+        <p className="overlaySub">Elsewhere reads the planet's public instruments in real time — every card you see is live data, measured or observed within the last hour. Nothing here is a stock photo or a simulation of the present.</p>
+        <div className="helpSteps">
+          <div><b>Surprise Me</b><p>Jumps you somewhere interesting on Earth right now — a storm being measured, a volcano restless, a city waking up.</p></div>
+          <div><b>Tour</b><p>The planet performs: the best live moments ranked and woven across continents, auto-advancing. Press once, just watch.</p></div>
+          <div><b>Tap anywhere</b><p>Touch any point on the globe — ocean, desert, ice — and Elsewhere reads that place: weather, aircraft overhead, nearest cameras, hazards, the satellites above it.</p></div>
+          <div><b>My sky</b><p>Reads what is directly above you right now. Coordinates are rounded to ~1 km on your device before anything leaves it.</p></div>
+          <div><b>Browse</b><p>Everything happening at once, grouped by ocean, earth, sky, human systems and space.</p></div>
+          <div><b>Investigations</b><p>Deeper stories built by combining weak signals — instruments agreeing across thousands of kilometers, absences that are themselves evidence, events not yet in any news feed.</p></div>
+        </div>
+        <details className="sourcesDirectory"><summary>The public data behind this — {(() => { const urls = new Set<string>(); discoveries.forEach(d => d.sources?.forEach((s: any) => urls.add(s.url))); investigations.forEach(i2 => i2.sources?.forEach((s: any) => urls.add(s.url))); return urls.size; })()} live sources</summary>
+          <p className="overlaySub">Every source is a free public feed — no keys, no scraping, no private data. These are instruments and observations humanity publishes openly; Elsewhere just listens to all of them at once.</p>
+          {(() => {
+            const byLabel = new Map<string, string>();
+            discoveries.forEach(d => d.sources?.forEach((s: any) => byLabel.set(s.label, s.url)));
+            investigations.forEach(i2 => i2.sources?.forEach((s: any) => byLabel.set(s.label, s.url)));
+            return [...byLabel.entries()].sort().map(([label, url]) => <a key={url + label} href={url} target="_blank">{label}</a>);
+          })()}
+        </details>
+      </div>
+    </div>}
 
     <AnimatePresence mode="wait">
       {mode === 'discover' && active && panelOpen && <motion.aside key={active.id} className="discoveryPanel" initial={{ opacity: 0, y: 42, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 26, scale: .985 }} transition={{ type: 'spring', damping: 26, stiffness: 230 }}>

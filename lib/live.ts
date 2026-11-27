@@ -347,11 +347,15 @@ export async function buoyObservations(): Promise<BuoyObs[]> {
     const t = await text(`https://www.ndbc.noaa.gov/data/realtime2/${id}.txt`);
     if (!t) return null;
     let scanned = 0;
+    let firstRowTs = 0;
     for (const line of t.split('\n')) {
       if (!line.trim() || line.startsWith('#')) continue;
       if (++scanned > 6) break;
       const c = line.trim().split(/\s+/);
       if (c.length < 9) continue;
+      // The newest transmission's timestamp — wave data or not. A buoy still
+      // transmitting anything is not silent; only its wave sensor may be down.
+      if (!firstRowTs) firstRowTs = Date.UTC(+c[0], +c[1] - 1, +c[2], +c[3], +c[4]);
       const wvht = parseFloat(c[8]);
       if (!Number.isFinite(wvht)) continue;
       const wtmp = parseFloat(c[14]);
@@ -364,8 +368,12 @@ export async function buoyObservations(): Promise<BuoyObs[]> {
       // A buoy that stopped reporting must not win the live ranking with a
       // weeks-old reading — stale observations are dropped, not trusted.
       if (Date.now() - ts > 3 * 3600000) {
-        const silentMin = Math.round((Date.now() - ts) / 60000);
-        if (silentMin < 12 * 60 && Number.isFinite(wvht)) silentBuoyReport.push({ id, name, lat, lon, silentMin, lastWaveHeight: wvht, lastWind: Number.isFinite(wspd) ? wspd : null });
+        // Only a true radio silence counts: if ANY transmission (even without
+        // wave data) is newer than 3h, the buoy is alive — its wave sensor may
+        // be degraded, but 'gone silent' would be a false claim.
+        const newestActivity = Math.max(firstRowTs, ts);
+        const silentMin = Math.round((Date.now() - newestActivity) / 60000);
+        if (silentMin >= 180 && silentMin < 12 * 60 && Number.isFinite(wvht)) silentBuoyReport.push({ id, name, lat, lon, silentMin, lastWaveHeight: wvht, lastWind: Number.isFinite(wspd) ? wspd : null });
         return null;
       }
       // Pressure tendency: scan further rows (older readings) for a reading
@@ -2539,7 +2547,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         summary: `The wind at this buoy is calm — under ${Math.max(8, Math.round((b.windSpeed ?? 0) * 3.6))} km/h — yet the water is moving in slow, powerful ${b.dominantPeriod.toFixed(0)}-second rolls${dirText}. That mismatch is the whole story: local wind makes choppy, fast waves; only a distant storm, hundreds or thousands of kilometers away, can organize the ocean into long-period energy like this. The waves literally outran the weather that made them. The swell is the first physical arrival of a storm system that forecasts may not mention for another day or two — measured right now by a buoy almost nobody is watching.`,
         facts: [
           { label: 'Dominant wave period', value: `${b.dominantPeriod?.toFixed(1)} seconds — anything over ~12s means distant origin`, kind: 'observed' },
-          { label: 'Wave height', value: `${b.waveHeight.toFixed(1)} m and ${(b.waveDelta3h ?? 0) >= 0 ? 'building' : 'steady'}`, kind: 'observed' },
+          { label: 'Wave height', value: `${b.waveHeight.toFixed(1)} m${!Number.isFinite(b.waveDelta3h) ? '' : (b.waveDelta3h as number) > 0.3 ? ' — building' : (b.waveDelta3h as number) < -0.3 ? ' — easing' : ' — steady'}`, kind: 'observed' },
           { label: 'Local wind', value: `${Math.round((b.windSpeed ?? 0) * 3.6)} km/h — too calm to be making these waves`, kind: 'observed' },
           { label: 'What this means', value: 'A storm system is out at sea right now, intense enough to send energy this far. Mariners read period before height for exactly this reason.', kind: 'interpretation' }
         ],
@@ -2574,7 +2582,16 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   // --- The unwitnessed planet: strong earthquakes almost nobody felt. Most of
   // Earth's surface has no humans — the shaking is constant and unseen.
   {
-    const unfelt = (quakes?.features ?? []).filter((f: any) => (f.properties?.mag ?? 0) >= 5 && (f.properties?.felt ?? 0) < 15 && f.geometry?.coordinates);
+    // Missing felt ≠ zero felt: USGS omits the field until reports aggregate.
+    // A null count only means 'unfelt' once the quake is old enough that anyone
+    // shaken would have reported by now (~6h). Younger nulls are disqualified.
+    const unfelt = (quakes?.features ?? []).filter((f: any) => {
+      const mag = f.properties?.mag ?? 0;
+      const felt = f.properties?.felt;
+      if (mag < 5 || !f.geometry?.coordinates) return false;
+      if (Number.isFinite(felt)) return felt < 15;
+      return (Date.now() - (f.properties?.time ?? 0)) > 6 * 3600000;
+    });
     if (unfelt.length >= 1) {
       const big = unfelt.sort((a: any, b: any) => b.properties.mag - a.properties.mag)[0];
       const mag = big.properties.mag;
