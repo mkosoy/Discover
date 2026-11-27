@@ -479,6 +479,9 @@ export default function DiscoverApp() {
   const advanceTour = () => {
     const tour = tourRef.current;
     const valid = tour.order.filter(id => discoveries.some(d => d.id === id));
+    // Fold in discoveries that arrived after the tour started — viewers shouldn't
+    // miss newly featured moments until they restart.
+    for (const d of discoveries) if (!valid.includes(d.id) && !d.unavailable) valid.push(d.id);
     if (!valid.length) { surprise(false); return; }
     tour.idx = (tour.idx + 1) % valid.length;
     tour.order = valid;
