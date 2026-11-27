@@ -356,6 +356,20 @@ export default function DiscoverApp() {
   };
 
   useEffect(() => {
+    // Recover from stale-chunk crashes after a redeploy: old HTML references chunks
+    // that no longer exist, so reload once to fetch the fresh document.
+    const onError = (event: ErrorEvent) => {
+      const message = String(event?.error?.message ?? event?.message ?? '');
+      if (/ChunkLoadError|Loading chunk \d+ failed/.test(message) && !sessionStorage.getItem('chunk-reload')) {
+        sessionStorage.setItem('chunk-reload', '1');
+        window.location.reload();
+      }
+    };
+    window.addEventListener('error', onError);
+    return () => window.removeEventListener('error', onError);
+  }, []);
+
+  useEffect(() => {
     const openHash = () => {
       const hash = decodeURIComponent(window.location.hash.replace(/^#/, ''));
       if (!hash) return;

@@ -148,3 +148,8 @@ Next hill-climb candidates:
 - Mobile GPU budget: capped DPR 1.5, half starfield, no AA on small screens.
 - New investigations: sunset-chase-live (aircraft classified by solar elevation — 126 in the twilight band at first measurement) and wildest-water-live (Drake Passage 15× rougher than Red Sea, live wave heights across 14 seas). 13 investigations total.
 - Polar extremes card: sun never rises on Longyearbyen / never sets on South Pole Station, computed live, rotates seasonally.
+
+## Round VIII checkpoint (post-review hill-climbing, local-only)
+- Fixed all 9 Devin Review findings across two rounds: airborne census magnitude (100x inflated people-aloft, meters-vs-feet altitude), invented seismic evidence on investigation links (now honest place-probe), camera/place cards yanked by feed refresh, 8 misattributed camera pins removed (honest absence beats fake coverage), polar worldview bbox inversion + honest swath labeling, megacity comparison removed, metadata crawler amplification dedupe + negative caching.
+- New cards: wildlife-pulse (iNaturalist live sightings with real photos, network total), earth-extremes-now (16-site batched Open-Meteo: hottest/coldest/windiest at the same minute), humanity-darkness-now (40-metro population-weighted day/night/twilight split, pure geometry), point-nemo-iss (conditional wow-moment: ISS crew are the nearest humans to the oceanic pole of inaccessibility when within range).
+- Feed now ~34 discovery cards.
