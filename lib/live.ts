@@ -2403,14 +2403,15 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const tiangongCrew = astros.people.filter((p: any) => p.craft === 'Tiangong').map((p: any) => p.name);
     const latest = astros.people[astros.people.length - 1]?.name ?? '';
     out.push({
-      id: 'humans-in-space', template: 'orbit', title: `${astros.number} people are not on Earth right now — and we know their names`, kicker: 'The entire off-world human population, live', visual: 'orbital', score: 84, freshness: 'crew list current', mediaImage: buildOrbitalCrewSvg(astros.number, issCrew.length, tiangongCrew.length), mediaAlt: 'Animated orbital visualization of the crewed stations',
+      id: 'humans-in-space', template: 'orbit', title: `${astros.number} people are not on Earth right now — and we know their names`, kicker: 'The entire off-world human population, live', visual: 'orbital', score: 84, freshness: 'canonical public crew roster', mediaImage: buildOrbitalCrewSvg(astros.number, issCrew.length, tiangongCrew.length), mediaAlt: 'Animated orbital visualization of the crewed stations',
       location: { lat: iss?.latitude ?? 0, lon: iss?.longitude ?? 0, label: 'Low Earth orbit — ISS and Tiangong' },
       summary: `Every human being who is currently off the planet fits in this list: ${issCrew.length} aboard the International Space Station${tiangongCrew.length ? `, ${tiangongCrew.length} aboard China's Tiangong station` : ''}. ${issCrew.length ? `On the ISS: ${issCrew.join(', ')}. ` : ''}${tiangongCrew.length ? `On Tiangong: ${tiangongCrew.join(', ')}.` : ''} They are circling the Earth once every 90 minutes at 7.66 km/s — meaning right now, somewhere over the planet below, ${latest || 'one of them'} is either asleep, exercising against bone loss, or looking out the cupola at the same clouds you can see in this app.`,
       facts: [
         { label: 'Off-world population', value: `${astros.number} humans — the complete list`, kind: 'observed' },
         issCrew.length ? { label: `ISS crew (${issCrew.length})`, value: issCrew.join(', '), kind: 'observed' } : null,
         tiangongCrew.length ? { label: `Tiangong crew (${tiangongCrew.length})`, value: tiangongCrew.join(', '), kind: 'observed' } : null,
-        { label: 'How unusual is this', value: 'For most of human history this number was zero. It has been continuously non-zero since November 2, 2000 — over 25 years of uninterrupted human presence off the planet.', kind: 'interpretation' }
+        { label: 'How unusual is this', value: 'For most of human history this number was zero. It has been continuously non-zero since November 2, 2000 — over 25 years of uninterrupted human presence off the planet.', kind: 'interpretation' },
+        { label: 'Roster caveat', value: 'Crew lists are updated when expeditions rotate — the source is the canonical public roster, but rotations can lag days behind reality', kind: 'question' }
       ].filter(Boolean) as any,
       sources: [src('Open Notify — people in space', 'http://api.open-notify.org/astros.json')],
       related: ['The ISS is crossing the planet in silence', 'launch', 'sunrise']
