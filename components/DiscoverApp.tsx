@@ -452,6 +452,13 @@ export default function DiscoverApp() {
       </motion.button>}
     </section>
 
+    {layers && (layers.quakes.length + layers.fires.length + layers.storms.length > 0) && <div className="layerLegend" aria-hidden>
+      <span><i className="dotQuake" />earthquakes this week — brighter is fresher</span>
+      {layers.fires.length > 0 && <span><i className="dotFire" />active fires</span>}
+      {layers.storms.length > 0 && <span><i className="dotStorm" />storms / floods</span>}
+      <span><i className="dotSky" />aircraft now</span>
+    </div>}
+
     <div className="actionDock">
       <button className="surprise" onClick={() => surprise()} disabled={loading}><Shuffle size={20} />{loading ? 'Listening…' : 'Surprise Me'}</button>
       {showInstallHint && <button className="installHint" onClick={() => { setShowInstallHint(false); window.localStorage.setItem('elsewhere-install-hint-dismissed', '1'); }}>Add Elsewhere to your Home Screen — Share <span aria-hidden>⎋</span> then “Add to Home Screen” · tap to dismiss</button>}
