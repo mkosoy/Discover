@@ -437,7 +437,7 @@ function connectDiscoveries(out: Discovery[]) {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, swpcAlerts] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, swpcAlerts] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -467,6 +467,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>('https://www.nhc.noaa.gov/CurrentStorms.json', undefined, 6000),
     radioEarth(),
     tideAnomalies(),
+    text('https://gml.noaa.gov/webdata/ccgg/trends/co2_mlo_weekly.csv'),
     json<any[]>('https://services.swpc.noaa.gov/products/alerts.json', undefined, 6000)
   ]);
   const out: Discovery[] = [];
@@ -1199,6 +1200,36 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       related: ['Nearby cameras', 'Historical comparison', 'Night lights']
     });
   });
+
+  // --- The Keeling Curve, live: Mauna Loa has measured the atmosphere
+  // continuously since 1958 — the longest direct instrument record of what
+  // humanity is doing to the air itself.
+  if (co2Csv) {
+    const rows = co2Csv.split('\n').map(l => l.trim()).filter(l => l && /^\d{4}-\d{2}-\d{2},[\d.]/.test(l))
+      .map(l => { const c = l.split(','); return { date: c[0], ppm: parseFloat(c[1]) }; })
+      .filter(r => Number.isFinite(r.ppm) && r.ppm > 300);
+    const latest = rows[rows.length - 1];
+    if (latest) {
+      const latestMs = new Date(latest.date + 'T00:00:00Z').getTime();
+      const yearAgoTarget = latestMs - 52 * 7 * 86400000;
+      const yearAgo = rows.reduce((best, r) => Math.abs(yearAgoTarget - new Date(r.date + 'T00:00:00Z').getTime()) < Math.abs(yearAgoTarget - new Date(best.date + 'T00:00:00Z').getTime()) ? r : best, rows[0]);
+      const rise = yearAgo && yearAgo !== latest ? latest.ppm - yearAgo.ppm : null;
+      out.push({
+        id: 'keeling-curve-live', template: 'atmosphere', title: `The atmosphere just measured ${latest.ppm.toFixed(2)} parts per million of CO₂ — the highest in millions of years`, kicker: 'Mauna Loa observatory — the longest measurement on Earth', visual: 'orbital', score: 74, freshness: `measured week of ${latest.date}`,
+        location: { lat: 19.54, lon: -155.58, label: 'Mauna Loa Observatory, Hawaii' },
+        summary: `On a Hawaiian volcano, far from any city's exhaust, an instrument has sampled the same air since 1958. It reads ${latest.ppm.toFixed(2)} ppm CO₂ right now${rise != null ? ` — up ${rise.toFixed(2)} ppm from one year ago, a rate of change far faster than anything in the ice-core record` : ''}. Pre-industrial air was 280 ppm. This is not a model or an estimate: it is the most continuous direct measurement of what humanity is doing to the atmosphere, and it has never once gone down.`,
+        facts: [
+          { label: 'Latest reading', value: `${latest.ppm.toFixed(2)} ppm — week of ${latest.date}`, kind: 'observed' },
+          ...(rise != null ? [{ label: 'One-year change', value: `+${rise.toFixed(2)} ppm`, kind: 'observed' as const }] : []),
+          { label: 'Pre-industrial baseline', value: '280 ppm — measured from trapped ice-core air', kind: 'verified' },
+          { label: 'Record length', value: 'Continuous since 1958 — the Keeling Curve', kind: 'verified' },
+          { label: 'Why Mauna Loa', value: 'High altitude, mid-ocean — well-mixed air away from local sources, so the reading represents the global atmosphere', kind: 'interpretation' }
+        ],
+        sources: [src('NOAA GML Mauna Loa weekly data', 'https://gml.noaa.gov/ccgg/trends/')],
+        related: ['Carbon intensity', 'The measured planet', 'Extremes right now']
+      });
+    }
+  }
 
   // --- The terminator: where dawn and dusk are happening right now (pure astronomy, always live) ---
   {
