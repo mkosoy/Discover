@@ -1179,7 +1179,7 @@ export async function getCachedDiscoveries(): Promise<any[]> {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml, orcaFeeds, orcaDetections, antMawsonHtml, antDavisHtml, antCaseyHtml, nmKergHtml, nmSopoHtml, sondesNow] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, cityAirNow, squawk7700, squawk7600, swpcAlerts, ukIntensity24h, milAircraft, p2pquakeFeed, darts, rivers, dsnXml, osmFeed, newsXml, orcaFeeds, orcaDetections, antMawsonHtml, antDavisHtml, antCaseyHtml, nmKergHtml, nmSopoHtml, sondesNow, finShips] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -1231,6 +1231,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     text('https://www.nmdb.eu/nest/draw_graph.php?formchk=1&stations[]=KERG&output=ascii&tabchoice=revori&dtype=corr_for_efficiency&date_choice=last&last_days=1'),
     text('https://www.nmdb.eu/nest/draw_graph.php?formchk=1&stations[]=SOPO&output=ascii&tabchoice=revori&dtype=corr_for_efficiency&date_choice=last&last_days=1'),
     json<any>('https://api.v2.sondehub.org/sondes', undefined, 9000),
+    json<any>('https://meri.digitraffic.fi/api/ais/v1/locations', { headers: { 'Accept-Encoding': 'gzip' } }, 9000),
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -3183,6 +3184,36 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       sources: [src('NOAA buoy network', 'https://www.ndbc.noaa.gov/'), src('Argo float program', 'https://argo.ucsd.edu/')],
       related: ['Wildest water', 'ocean-measured-now', 'antarctic-polar-day-live']
     });
+  }
+
+  // --- The only free window onto the world's ships: Finland publishes every
+  // vessel position in its waters in real time — data that is paywalled
+  // everywhere else on Earth.
+  if (finShips && Array.isArray((finShips as any).features)) {
+    const feats = (finShips as any).features as any[];
+    const nowMs = Date.now();
+    const live = feats.filter(f => {
+      const ts = f?.properties?.timestampExternal ?? 0;
+      return ts && (nowMs - ts) / 60000 < 30 && f?.geometry?.coordinates?.length >= 2;
+    });
+    if (live.length >= 50) {
+      const fastest = [...live].sort((a, b) => (b.properties?.sog ?? 0) - (a.properties?.sog ?? 0))[0];
+      const moving = live.filter(f => (f.properties?.sog ?? 0) > 3).length;
+      const pts = live.slice(0, 250).map(f => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }));
+      out.push({
+        id: 'ships-finnish-window', template: 'ocean', title: `${live.length} ships are broadcasting their positions in northern European waters right now — the only place on Earth this data is free`, kicker: 'Every ship, live — a transparency anomaly', visual: 'ocean', score: 76, freshness: 'positions minutes old', mediaImage: buildSkyMapSvg(pts, 'live ship positions — Finnish AIS publication', '#64d8ff') ?? undefined,
+        location: { lat: 60.2, lon: 24, label: 'The Baltic approaches — Gulf of Finland' },
+        summary: `Almost everywhere on Earth, real-time ship positions are a commercial product — vessel tracking is a paid industry built on data crews are required to broadcast for safety. Except here. Finland's transport agency publishes the raw positions of every vessel in its waters, free, updated within minutes, no key, no account. Right now ${live.length} ships are on the map — ${moving} of them underway and moving. This is the edge of the ice season: within weeks these same waters will need icebreaker convoys, and the same public feed will show them forming. One small country's open-data law gives anyone on Earth a window into how the sea actually gets used.`,
+        facts: [
+          { label: 'On the map right now', value: `${live.length} vessels with positions less than 30 minutes old — ${moving} actively underway`, kind: 'observed' },
+          ...(fastest?.properties?.sog ? [{ label: 'The fastest', value: `A vessel making ${Number(fastest.properties.sog).toFixed(1)} knots in the Gulf of Finland right now`, kind: 'observed' as const }] : []),
+          { label: 'Why this is unusual', value: 'Ship positions are broadcast for collision avoidance — but nearly everywhere, aggregating them is a paid service. Finland simply publishes the feed.', kind: 'interpretation' },
+          { label: 'The season ahead', value: 'The Baltic freezes every winter — icebreaker operations and convoy formation will be visible on this same feed within weeks', kind: 'verified' }
+        ],
+        sources: [src('Fintraffic marine traffic API', 'https://meri.digitraffic.fi/')],
+        related: ['Wildest water', 'ocean-measured-now', 'southern-ocean-hole']
+      });
+    }
   }
 
   // --- Orbital coincidence: the ISS passing over an active disaster. The crew
