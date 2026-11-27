@@ -381,14 +381,15 @@ export default function Globe({ active, discoveries, investigations, cameras, sk
     const point = subsolarPoint();
     return latLon(point.lat, point.lon, 5.4);
   }, []);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 760;
   return <div className="globeWrap" aria-label="Interactive earth visualization">
-    <Canvas camera={{ position: [0, 1.8, 7.6], fov: 42 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
+    <Canvas camera={{ position: [0, 1.8, 7.6], fov: 42 }} dpr={isMobile ? [1, 1.5] : [1, 2]} gl={{ antialias: !isMobile, alpha: true, powerPreference: 'high-performance' }}>
       <IntroZoom />
       <color attach="background" args={['#02040c']} />
       <ambientLight intensity={.38} />
       <directionalLight position={[sun.x, sun.y, sun.z]} intensity={2.45} />
       <pointLight position={[-3, -2, -2]} intensity={.38} color="#5b7cff" />
-      <Stars radius={80} depth={35} count={3600} factor={3.2} saturation={0} fade speed={.45} />
+      <Stars radius={80} depth={35} count={isMobile ? 1800 : 3600} factor={3.2} saturation={0} fade speed={.45} />
       <Earth active={active} discoveries={discoveries} investigations={investigations} cameras={cameras} sky={sky} layers={layers} onSelect={onSelect} onSelectCamera={onSelectCamera} onSelectInvestigation={onSelectInvestigation} />
       <OrbitControls enablePan={false} enableZoom minDistance={3.25} maxDistance={8} zoomSpeed={.55} rotateSpeed={.42} enableDamping dampingFactor={.08} autoRotate={!active} autoRotateSpeed={.32} makeDefault />
     </Canvas>
