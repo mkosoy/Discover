@@ -655,8 +655,12 @@ function LiveImage({ src, alt }: { src: string; alt: string }) {
   // NOAA publishes animated GeoColor loops for most GOES sectors — derive the loop URL
   // from the static latest.jpg pattern and let the reader watch the last few hours move.
   const goesMatch = src.match(/cdn\.star\.nesdis\.noaa\.gov\/(GOES\d+)\/ABI\/SECTOR\/([a-z]+)\/GEOCOLOR\/latest\.jpg/);
+  // NOAA publishes loops at different resolutions per sector (Alaska is 1000px, most others 600px):
+  // try 600 first, then fall back to 1000 before giving up.
+  const [loopSize, setLoopSize] = useState(600);
+  useEffect(() => setLoopSize(600), [src]);
   const loopUrl = goesMatch && !loopFailed
-    ? `https://cdn.star.nesdis.noaa.gov/${goesMatch[1]}/ABI/SECTOR/${goesMatch[2]}/GEOCOLOR/${goesMatch[1]}-${goesMatch[2].toUpperCase()}-GEOCOLOR-600x600.gif`
+    ? `https://cdn.star.nesdis.noaa.gov/${goesMatch[1]}/ABI/SECTOR/${goesMatch[2]}/GEOCOLOR/${goesMatch[1]}-${goesMatch[2].toUpperCase()}-GEOCOLOR-${loopSize}x${loopSize}.gif`
     : null;
   useEffect(() => setFailed(false), [src, refreshTick]);
   useEffect(() => {
@@ -676,7 +680,7 @@ function LiveImage({ src, alt }: { src: string; alt: string }) {
     src={effectiveSrc}
     alt={alt}
     crossOrigin={src.includes('nesdis.noaa.gov') ? 'anonymous' : undefined}
-    onError={() => { if (loop) setLoopFailed(true); else setFailed(true); }}
+    onError={() => { if (loop) { if (loopSize === 600) setLoopSize(1000); else setLoopFailed(true); } else setFailed(true); }}
     onLoad={event => {
       try {
         const image = event.currentTarget;

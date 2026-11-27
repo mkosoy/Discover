@@ -65,13 +65,14 @@ export async function GET(request: Request) {
   const lat = Number(url.searchParams.get('lat'));
   const lon = Number(url.searchParams.get('lon'));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return NextResponse.json({ error: 'invalid coordinates' }, { status: 400 });
-  const [weather, place, air, quakes, gdacsXml, aircraftFeed] = await Promise.all([
+  const [weather, place, air, quakes, gdacsXml, aircraftFeed, wiki] = await Promise.all([
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,weather_code,wind_speed_10m,wind_direction_10m,is_day&daily=sunrise,sunset&timezone=auto`),
     json<any>(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=en`, { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }),
     json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,ozone&timezone=auto`),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson'),
     text('https://www.gdacs.org/xml/rss.xml'),
-    jsonLive<any>(`https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/100`)
+    jsonLive<any>(`https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/100`),
+    json<any>(`https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=10000&gslimit=4&format=json&origin=*`)
   ]);
   const current = weather?.current;
   const address = place?.address ?? {};
@@ -115,6 +116,7 @@ export async function GET(request: Request) {
                   ? `The clearest visual way into this place is the nearest curated public look-in around ${nearestCamera.place}, while local weather, daylight, seismicity and aircraft motion supply the surrounding evidence.`
                   : 'This point is quiet in the public alert feeds, so Elsewhere reads weather, daylight, terrain, seismicity and human motion to reveal what is distinctive without inventing an event.';
   const imagery = earthImagery(lat, lon);
+  const notable = (wiki?.query?.geosearch ?? []).filter((n: any) => n?.title && !/^(canton|arrondissement|province|prefecture|county|district|municipality|department|oblast|region|state of)/i.test(n.title) && !/\((department|province|county|district|municipality|state|region|oblast|prefecture)\)/i.test(n.title));
   const facts = [
     current ? { label: 'Weather', value: `${weatherText(current.weather_code)}, ${Math.round(current.temperature_2m)}°C`, kind: 'observed' } : { label: 'Weather', value: 'Unavailable', kind: 'question' },
     current ? { label: 'Wind', value: `${Math.round(current.wind_speed_10m)} km/h from ${Math.round(current.wind_direction_10m)}°`, kind: 'observed' } : null,
@@ -131,6 +133,7 @@ export async function GET(request: Request) {
     weather?.elevation != null ? { label: 'Elevation', value: `${Math.round(weather.elevation)} m`, kind: 'verified' } : null,
     weather?.timezone ? { label: 'Local timezone', value: weather.timezone.replace('_', ' '), kind: 'verified' } : null,
     nearestCamera ? { label: 'Nearest live look-in', value: `${nearestCamera.place} · ${Math.round(nearestCamera.distance)} km away`, kind: 'verified' } : null,
+    notable.length ? { label: 'Notable nearby', value: notable.slice(0, 2).map((n: any) => `${n.title}${n.dist ? ` · ${n.dist < 1000 ? Math.round(n.dist) + ' m' : (n.dist / 1000).toFixed(1) + ' km'}` : ''}`).join(' — '), kind: 'verified' } : null,
     { label: 'Satellite context', value: imagery.nearRealtime ? 'GOES GeoColor sector image, usually minutes old' : 'Latest daylight swath; orbital gaps possible', kind: 'observed' },
     { label: 'Attribution', value: 'Weather is model/grid data; reverse geocoding is approximate; populated places may be coarse', kind: 'question' }
   ].filter(Boolean);
