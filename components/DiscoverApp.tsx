@@ -819,7 +819,12 @@ export default function DiscoverApp() {
             const parents = investigations.filter(i => i.liveLinks?.some(l => l.discoveryId === active.id));
             return parents.length ? <div className="rabbit"><span>Part of the investigation</span>{parents.map(i => <button key={i.id} onClick={() => selectInvestigation(i)}>{i.title}<ArrowRight size={13} /></button>)}</div> : null;
           })()}
-          {Boolean(active.related.length) && <div className="rabbit"><span>Explore further</span>{active.related.map(r => <button key={r} onClick={() => exploreRelated(r)}>{r}<ArrowRight size={13} /></button>)}</div>}
+          {Boolean(active.related.length) && <div className="rabbit"><span>Explore further</span>{active.related.map(r => {
+            // Id references render as the target card's own words, not a raw slug.
+            const target = discoveries.find(d => d.id === r);
+            const label = target ? (target.kicker || target.title.split('—')[0].trim()).replace(/^The /, 'the ').slice(0, 60) : r;
+            return <button key={r} onClick={() => exploreRelated(r)}>{label}<ArrowRight size={13} /></button>;
+          })}</div>}
           {lensLoading && <div className="contextLens"><b>Reading local evidence…</b></div>}
           {lens && <div className="contextLens"><b>{lens.topic}</b>{lens.retrievedAt && <small className="lensTime">retrieved {new Date(lens.retrievedAt).toLocaleTimeString()}</small>}{Boolean(lens.videos?.length) && <CameraLookins videos={lens.videos} />}<div className="lensGrid">{lens.facts?.map((f: any) => <div key={f.label} className={`lensFact ${f.kind}`}><span>{f.label}</span><p>{f.value}</p></div>)}</div></div>}
           <details className="sources"><summary>Evidence and sources</summary>{active.sources.map(s => <a key={s.url} href={s.url} target="_blank">{s.label}<small>{new Date(s.retrievedAt).toLocaleTimeString()}</small></a>)}</details>
