@@ -520,6 +520,11 @@ export default function DiscoverApp() {
       const prefixMatches = discoveries.filter(d => d.title.toLowerCase().startsWith(norm));
       if (prefixMatches.length >= 1) { selectDiscovery(prefixMatches.sort((a, b) => b.score - a.score)[0]); setLensLoading(false); return; }
     }
+    // Slug references ('storm-deepening') resolve by id prefix — convergence links use stable ids.
+    if (norm.length >= 8 && !discoveries.some(d => d.id === norm)) {
+      const idMatches = discoveries.filter(d => d.id.startsWith(norm));
+      if (idMatches.length >= 1) { selectDiscovery(idMatches.sort((a, b) => b.score - a.score)[0]); setLensLoading(false); return; }
+    }
     // Trailing-dash labels are id prefixes ('quake-', 'radio-') — resolve to the
     // best-scored matching card rather than falling through to local weather.
     if (label.endsWith('-')) {

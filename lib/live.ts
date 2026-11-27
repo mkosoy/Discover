@@ -3215,14 +3215,14 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     if (live.length >= 50) {
       const plausible = live.filter(f => (f.properties?.sog ?? 0) <= 55);
       const fastest = [...plausible].sort((a, b) => (b.properties?.sog ?? 0) - (a.properties?.sog ?? 0))[0];
-      const moving = live.filter(f => (f.properties?.sog ?? 0) > 3).length;
-      const pts = live.slice(0, 250).map(f => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }));
+      const moving = live.filter(f => { const sog = f.properties?.sog ?? 0; return sog > 3 && sog <= 55; }).length;
+      const pts = live.map(f => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }));
       out.push({
         id: 'ships-finnish-window', template: 'ocean', title: `${live.length} ships are broadcasting their positions in northern European waters right now — the only place on Earth this data is free`, kicker: 'Every ship, live — a transparency anomaly', visual: 'ocean', score: 76, freshness: 'positions minutes old', mediaImage: buildSkyMapSvg(pts, 'live ship positions — Finnish AIS publication', '#64d8ff') ?? undefined,
         location: { lat: 60.2, lon: 24, label: 'The Baltic approaches — Gulf of Finland' },
         summary: `Almost everywhere on Earth, real-time ship positions are a commercial product — vessel tracking is a paid industry built on data crews are required to broadcast for safety. Except here. Finland's transport agency publishes the raw positions of every vessel in its waters, free, updated within minutes, no key, no account. Right now ${live.length} ships are on the map — ${moving} of them underway and moving. This is the edge of the ice season: within weeks these same waters will need icebreaker convoys, and the same public feed will show them forming. One small country's open-data law gives anyone on Earth a window into how the sea actually gets used.`,
         facts: [
-          { label: 'On the map right now', value: `${live.length} vessels with positions less than 30 minutes old — ${moving} actively underway`, kind: 'observed' },
+          { label: 'In the feed right now', value: `${live.length} vessels with positions less than 30 minutes old — all plotted above, ${moving} actively underway`, kind: 'observed' },
           ...(fastest?.properties?.sog ? [{ label: 'The fastest', value: `A vessel making ${Number(fastest.properties.sog).toFixed(1)} knots in the Gulf of Finland right now`, kind: 'observed' as const }] : []),
           { label: 'Why this is unusual', value: 'Ship positions are broadcast for collision avoidance — but nearly everywhere, aggregating them is a paid service. Finland simply publishes the feed.', kind: 'interpretation' },
           { label: 'The season ahead', value: 'The Baltic freezes every winter — icebreaker operations and convoy formation will be visible on this same feed within weeks', kind: 'verified' }
@@ -3238,7 +3238,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   // the stratosphere. Neither alone tells the story; together they are a slice
   // through a living weather system.
   if (sondesNow && Array.isArray(buoys) && buoys.length) {
-    const stormy = buoys.filter((b: any) => (b.pressureDelta3h != null && b.pressureDelta3h <= -1.5) || (b.waveHeight != null && b.waveHeight >= 3.5));
+    const stormy = buoys.filter((b: any) => (b.pressureDelta3h != null && b.pressureDelta3h <= -1.5) || (b.waveHeight != null && b.waveHeight >= 3.5 && b.windSpeed != null && b.windSpeed >= 12));
     if (stormy.length) {
       let sliceHit: { sonde: any; buoy: any; distKm: number } | null = null;
       for (const [serial, v] of Object.entries(sondesNow as Record<string, any>)) {
@@ -3247,6 +3247,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         if (!Number.isFinite(t) || (Date.now() - t) / 60000 > 120) continue;
         const alt = Number(v.alt);
         if (alt < 3000 || alt > 45000) continue;
+        const vv = v.vel_v != null ? Number(v.vel_v) : null;
+        if (vv == null || vv <= 0.5 || vv > 20) continue; // card claims an ascent — descending/unknown frames disqualify
         for (const b of stormy) {
           const dlat = (Number(v.lat) - b.lat) * 111;
           const dlon = (Number(v.lon) - b.lon) * 111 * Math.cos(b.lat * Math.PI / 180);
@@ -3259,9 +3261,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         out.push({
           id: 'storm-vertical-slice', template: 'atmosphere', title: `A weather balloon is climbing through the same storm a buoy is measuring at the surface — one event, measured from sea to stratosphere`, kicker: 'Vertical slice through a living storm', visual: 'storm', score: 86, freshness: 'both instruments live',
           location: { lat: s.lat, lon: s.lon, label: `${(s.alt / 1000).toFixed(1)} km up, ${sliceHit.distKm} km from the buoy` },
-          summary: `Two instruments neither of which knows the other exists are measuring the same storm right now. At the surface, the ${b.name} buoy is recording ${b.pressureDelta3h != null && b.pressureDelta3h <= -1.5 ? `pressure falling ${Math.abs(b.pressureDelta3h).toFixed(1)} millibars in 3 hours` : `${Number(b.waveHeight).toFixed(1)} m seas`}. And ${sliceHit.distKm} km away, a radiosonde is ascending through the same system — currently at ${(s.alt / 1000).toFixed(1)} km altitude${s.temp != null ? `, measuring ${Number(s.temp)}°C` : ''}. The buoy sees what the storm does to the ocean; the balloon sees what it is made of inside. Alone, each is a number. Together they are a vertical slice through a living weather system — the same atmospheric event caught from the sea surface to the stratosphere, in public, in real time.`,
+          summary: `Two instruments neither of which knows the other exists are measuring the same storm right now. At the surface, the ${b.name} is recording ${b.pressureDelta3h != null && b.pressureDelta3h <= -1.5 ? `pressure falling ${Math.abs(b.pressureDelta3h).toFixed(1)} millibars in 3 hours` : `${Number(b.waveHeight).toFixed(1)} m seas`}. And ${sliceHit.distKm} km away, a radiosonde is ascending through the same system — currently at ${(s.alt / 1000).toFixed(1)} km altitude${s.temp != null ? `, measuring ${Number(s.temp)}°C` : ''}. The buoy sees what the storm does to the ocean; the balloon sees what it is made of inside. Alone, each is a number. Together they are a vertical slice through a living weather system — the same atmospheric event caught from the sea surface to the stratosphere, in public, in real time.`,
           facts: [
-            { label: 'From below', value: `${b.name} buoy: ${b.pressureDelta3h != null && b.pressureDelta3h <= -1.5 ? `pressure falling ${Math.abs(b.pressureDelta3h).toFixed(1)} hPa/3h` : `${Number(b.waveHeight).toFixed(1)} m waves`}`, kind: 'observed' },
+            { label: 'From below', value: `${b.name}: ${b.pressureDelta3h != null && b.pressureDelta3h <= -1.5 ? `pressure falling ${Math.abs(b.pressureDelta3h).toFixed(1)} hPa/3h` : `${Number(b.waveHeight).toFixed(1)} m waves`}`, kind: 'observed' },
             { label: 'From inside', value: `Radiosonde at ${(s.alt / 1000).toFixed(1)} km${s.temp != null ? ` reading ${Number(s.temp)}°C` : ''}, ${sliceHit.distKm} km from the buoy`, kind: 'observed' },
             { label: 'Why this matters', value: 'Surface instruments and upper-air soundings are separate networks run for separate purposes — catching them measuring the same event simultaneously is the whole-system view', kind: 'interpretation' }
           ],
