@@ -1359,7 +1359,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const darkPct = Math.round(inDark / total * 100);
       const biggest = darkList.sort((a, b) => b[1] - a[1])[0];
       out.push({
-        id: 'humanity-darkness-now', template: 'atmosphere', title: `${Math.round(inDark)} million people are in night right now — ${Math.round(inDay)} million in daylight`, kicker: 'The human terminator, live', visual: 'aurora', score: 73, freshness: 'computed this minute',
+        id: 'humanity-darkness-now', template: 'atmosphere', title: `Across the world's largest metros, ${Math.round(inDark)} million people are in night right now — ${Math.round(inDay)} million in daylight`, kicker: 'The human terminator, live', visual: 'aurora', score: 73, freshness: 'computed this minute',
         mediaImage: (() => {
           const series: Array<{ t: number; v: number }> = [];
           for (let h = -24; h <= 0; h += 0.5) {
@@ -1406,6 +1406,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       observedOn: o?.observed_on ?? o?.time_observed_at,
       obsId: o?.id ?? o?.uuid,
       grade: o?.quality_grade,
+      taxonCount: typeof o?.taxon?.observations_count === 'number' ? o.taxon.observations_count : undefined,
       uri: o?.uri,
       observer: o?.user?.login
     }))
@@ -1414,7 +1415,10 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     // Prefer community-confirmed (research-grade) sightings; fall back to the newest upload
     // with honest labeling rather than implying confirmation that has not happened yet.
     const research = spotted.filter((s: any) => s.grade === 'research');
-    const pick = research[0] ?? spotted[0];
+    // Prefer rarity: a seldom-documented species is a better story than a mallard —
+    // rank research-grade sightings by how rarely the species is observed network-wide.
+    const byRarity = (a: any, b: any) => (a.taxonCount ?? 9e9) - (b.taxonCount ?? 9e9);
+    const pick = (research.length ? [...research].sort(byRarity)[0] : undefined) ?? [...spotted].sort(byRarity)[0];
     const observedMs = pick.observedOn ? Date.parse(pick.observedOn) : NaN;
     const uploadMs = pick.when ? Date.parse(pick.when) : NaN;
     const observedAgeH = Number.isFinite(observedMs) ? (Date.now() - observedMs) / 3600000 : NaN;
@@ -1851,7 +1855,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const airNow = eventAir?.current;
     const nearestCamera = nearestPublicCameras(lat, lon, 1)[0];
     const imagery = earthImagery(lat, lon);
-    out.push({ id: `eonet-${evt.id}`, entityId: evt.id, template: lowerCat.includes('fire') ? 'wildfire' : 'atmosphere', title: `${cat} unfolding in ${evt.title}`, kicker: 'NASA EONET natural event', visual, score: lowerCat.includes('fire') ? 84 : 78, freshness: ago(geom.date), mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} around ${evt.title}`, location: { lat, lon, label: evt.title }, summary: `${evt.title} is being tracked in NASA's open natural-event catalog. Elsewhere compares the event position with wind, modeled smoke/air-quality signals, satellite context and the nearest public visual evidence rather than pretending one feed proves impact.`, facts: [
+    out.push({ id: `eonet-${evt.id}`, entityId: evt.id, template: lowerCat.includes('fire') ? 'wildfire' : 'atmosphere', title: lowerCat.includes('fire') ? `${evt.title.replace(/^wildfire\s*/i, '')} — wildfire unfolding` : `${cat} unfolding in ${evt.title}`, kicker: 'NASA EONET natural event', visual, score: lowerCat.includes('fire') ? 84 : 78, freshness: ago(geom.date), mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} around ${evt.title}`, location: { lat, lon, label: evt.title }, summary: `${evt.title} is being tracked in NASA's open natural-event catalog. Elsewhere compares the event position with wind, modeled smoke/air-quality signals, satellite context and the nearest public visual evidence rather than pretending one feed proves impact.`, facts: [
       { label: 'Category', value: cat, kind: 'verified' },
       { label: 'Last geometry', value: ago(geom.date), kind: 'observed' },
       { label: 'Wind transport', value: weatherNow ? `${Math.round(weatherNow.wind_speed_10m)} km/h from ${Math.round(weatherNow.wind_direction_10m)}°` : 'Unavailable', kind: weatherNow ? 'observed' : 'question' },
