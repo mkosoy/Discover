@@ -441,8 +441,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       const biggest = darkList.sort((a, b) => b[1] - a[1])[0];
       out.push({
         id: 'humanity-darkness-now', template: 'atmosphere', title: `${Math.round(inDark)} million people are in night right now — ${Math.round(inDay)} million in daylight`, kicker: 'The human terminator, live', visual: 'aurora', score: 73, freshness: 'computed this minute',
-        location: { lat: Math.max(-60, Math.min(60, declH * 180 / Math.PI)), lon: Math.max(-179, Math.min(179, subsolarLonH + 90)), label: 'The dusk terminator' },
-        summary: `Across Earth's 40 largest metro areas — roughly ${Math.round(total)} million people — ${darkPct}% are currently in astronomical darkness, ${Math.round(inTwilight)} million are in twilight, and the rest are in daylight.${biggest ? ` The largest city asleep: ${biggest[0]} (${biggest[1]} million).` : ''}${duskList.length ? ` In ${duskList.slice(0, 2).join(' and ')}, it is the golden hour right now.` : ''} Computed from solar geometry, no upstream feed.`,
+        location: { lat: 0, lon: ((subsolarLonH + 90 + 540) % 360) - 180, label: 'The dusk terminator at the equator' },
+        summary: `Across Earth's 40 largest metro areas — roughly ${Math.round(total)} million people — ${darkPct}% currently have the sun more than 6° below the horizon, ${Math.round(inTwilight)} million are in twilight, and the rest are in daylight.${biggest ? ` The largest city asleep: ${biggest[0]} (${biggest[1]} million).` : ''}${duskList.length ? ` In ${duskList.slice(0, 2).join(' and ')}, it is the golden hour right now.` : ''} Computed from solar geometry, no upstream feed.`,
         facts: [
           { label: 'In darkness', value: `~${Math.round(inDark)} million people`, kind: 'interpretation' },
           { label: 'In daylight', value: `~${Math.round(inDay)} million people`, kind: 'interpretation' },
@@ -467,23 +467,38 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       lon: Array.isArray(o?.location) ? Number(o.location[1]) : (typeof o?.geojson?.coordinates?.[0] === 'number' ? o.geojson.coordinates[0] : undefined),
       photo: typeof o?.photos?.[0]?.url === 'string' ? o.photos[0].url.replace('square', 'medium') : undefined,
       when: o?.created_at,
+      observedOn: o?.observed_on ?? o?.time_observed_at,
+      obsId: o?.id ?? o?.uuid,
+      grade: o?.quality_grade,
       uri: o?.uri,
       observer: o?.user?.login
     }))
     .filter((s: any) => s.name && Number.isFinite(s.lat) && s.photo);
   if (spotted.length >= 3) {
-    const pick = spotted[0];
+    // Prefer community-confirmed (research-grade) sightings; fall back to the newest upload
+    // with honest labeling rather than implying confirmation that has not happened yet.
+    const research = spotted.filter((s: any) => s.grade === 'research');
+    const pick = research[0] ?? spotted[0];
+    const observedMs = pick.observedOn ? Date.parse(pick.observedOn) : NaN;
+    const uploadMs = pick.when ? Date.parse(pick.when) : NaN;
+    const observedAgeH = Number.isFinite(observedMs) ? (Date.now() - observedMs) / 3600000 : NaN;
+    const timingCopy = Number.isFinite(observedAgeH) && observedAgeH > 36
+      ? `photographed ${Math.round(observedAgeH / 24)} day${observedAgeH >= 72 ? 's' : ''} ago and just uploaded`
+      : 'observed and uploaded within roughly the last day';
+    const gradeCopy = pick.grade === 'research'
+      ? 'Research grade — community-confirmed identification'
+      : 'Identification awaiting community confirmation';
     out.push({
-      id: 'wildlife-pulse', template: 'atmosphere', title: `Someone just spotted a ${pick.name} in ${pick.place.split(',')[0]?.trim() ?? pick.place}`, kicker: 'The planet’s wildlife, live', visual: 'city', score: 68, freshness: 'logged minutes ago',
+      id: `wildlife-pulse-${pick.obsId ?? 'latest'}`, template: 'atmosphere', title: `Someone just spotted a ${pick.name} in ${pick.place.split(',')[0]?.trim() ?? pick.place}`, kicker: 'The planet’s wildlife, live', visual: 'city', score: 68, freshness: Number.isFinite(uploadMs) ? ago(uploadMs) : 'logged recently',
       location: { lat: pick.lat as number, lon: pick.lon as number, label: pick.place },
       mediaImage: pick.photo, mediaAlt: `Photograph of ${pick.name} taken by an iNaturalist observer`,
-      summary: `The iNaturalist network — millions of naturalists photographing what they see — has logged ${inatTotal.toLocaleString()} verifiable wildlife observations. The most recent with a photograph: a ${pick.name}, spotted in ${pick.place}. This is the biosphere reporting on itself, in public, in near-real-time.`,
+      summary: `The iNaturalist network — millions of naturalists photographing what they see — has logged ${inatTotal.toLocaleString()} verifiable wildlife observations. A recent sighting with a photograph: a ${pick.name} in ${pick.place}, ${timingCopy}. This is the biosphere reporting on itself, in public, in near-real-time.`,
       facts: [
         { label: 'Latest sighting', value: `${pick.name} — ${pick.place}`, kind: 'verified' },
         { label: 'Observer', value: pick.observer ?? 'anonymous naturalist', kind: 'verified' },
         { label: 'Network total', value: `${inatTotal.toLocaleString()} verifiable observations`, kind: 'observed' },
-        { label: 'Also just spotted', value: spotted.slice(1, 4).map((s: any) => s.name).join(' · '), kind: 'verified' },
-        { label: 'Verification', value: 'Community-verified public observations only', kind: 'verified' }
+        { label: 'Also just logged', value: spotted.slice(1, 4).map((s: any) => s.name).join(' · '), kind: 'verified' },
+        { label: 'Verification', value: gradeCopy, kind: pick.grade === 'research' ? 'verified' : 'interpretation' }
       ],
       sources: [src('iNaturalist observations API', pick.uri ?? 'https://www.inaturalist.org/')],
       related: ['Nearby cameras', 'Night lights', 'Terminator']
@@ -493,18 +508,26 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   // --- Point Nemo: the loneliest place on Earth, and who is closest to it right now ---
   if (iss && Number.isFinite(iss.latitude)) {
     const nemoLat = -48.877, nemoLon = -123.393;
-    const groundKm = distanceKm(iss.latitude, iss.longitude, nemoLat, nemoLon);
     const altKm = Number(iss.altitude) || 420;
-    const crewDist = Math.sqrt(groundKm * groundKm + altKm * altKm);
+    // Exact straight-line distance through 3D space between a surface point and an orbiting object:
+    // chord = sqrt((R+h)^2 + R^2 - 2R(R+h)cos(theta)), theta the surface central angle.
+    const R = 6371;
+    const radN = Math.PI / 180;
+    const theta = Math.acos(
+      Math.sin(nemoLat * radN) * Math.sin(iss.latitude * radN) +
+      Math.cos(nemoLat * radN) * Math.cos(iss.latitude * radN) * Math.cos((iss.longitude - nemoLon) * radN)
+    );
+    const crewDist = Math.sqrt((R + altKm) ** 2 + R * R - 2 * R * (R + altKm) * Math.cos(theta));
+    const groundKm = R * theta;
     const landDist = 2688; // Point Nemo is ~2,688 km from the nearest land — the oceanic pole of inaccessibility
     if (crewDist < landDist) {
       out.push({
-        id: 'point-nemo-iss', template: 'orbit', title: 'The nearest humans to the loneliest place on Earth are in space', kicker: 'Orbital geometry, live', visual: 'nasa-live', score: 88, freshness: 'positions seconds old',
+        id: 'point-nemo-iss', template: 'orbit', title: 'The nearest humans to the loneliest place on Earth are almost certainly in space', kicker: 'Orbital geometry, live', visual: 'nasa-live', score: 88, freshness: 'positions seconds old',
         location: { lat: nemoLat, lon: nemoLon, label: 'Point Nemo — oceanic pole of inaccessibility' },
-        summary: `Point Nemo is the spot in the ocean farthest from any land — ${landDist.toLocaleString()} km in every direction. Right now the ISS is passing close enough overhead that the astronauts aboard are the closest humans to it: roughly ${Math.round(crewDist).toLocaleString()} km away, versus ${landDist.toLocaleString()} km of empty ocean to the nearest person on land. Spacecraft are occasionally deorbited here precisely because nobody is.`,
+        summary: `Point Nemo is the spot in the ocean farthest from any land — ${landDist.toLocaleString()} km in every direction. Right now the ISS is passing close enough overhead that the astronauts aboard are in all likelihood the closest humans to it — barring an unlucky ship or aircraft in one of the emptiest stretches of ocean on the planet: roughly ${Math.round(crewDist).toLocaleString()} km away, versus ${landDist.toLocaleString()} km of empty ocean to the nearest person on land. Spacecraft are occasionally deorbited here precisely because nobody is.`,
         facts: [
           { label: 'ISS distance overhead', value: `~${Math.round(crewDist).toLocaleString()} km`, kind: 'interpretation' },
-          { label: 'Nearest land / people', value: `~${landDist.toLocaleString()} km`, kind: 'verified' },
+          { label: 'Nearest land', value: `~${landDist.toLocaleString()} km — ships/aircraft not tracked here`, kind: 'verified' },
           { label: 'ISS ground distance', value: `${Math.round(groundKm).toLocaleString()} km at ${Math.round(altKm)} km altitude`, kind: 'observed' },
           { label: 'Spacecraft cemetery', value: 'Hundreds of deorbited spacecraft targeted here', kind: 'verified' },
           { label: 'Basis', value: 'Live ISS position + spherical geometry', kind: 'verified' }

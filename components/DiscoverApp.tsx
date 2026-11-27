@@ -423,6 +423,36 @@ export default function DiscoverApp() {
     setLens(undefined);
     setPanelOpen(true);
     setMode('discover');
+    // Resolve named topics to the real cards/investigations they refer to before falling
+    // back to a synthesized evidence lens — a tap on "Wildest water" must open the actual
+    // investigation, not generic weather at the current card's coordinates.
+    const norm = label.toLowerCase().trim();
+    const directDiscovery = discoveries.find(d => d.id === label || d.id === norm || d.title.toLowerCase() === norm);
+    if (directDiscovery) { selectDiscovery(directDiscovery); setLensLoading(false); return; }
+    const directInvestigation = investigations.find(i => i.id === label || i.id === norm || i.title.toLowerCase() === norm);
+    if (directInvestigation) { selectInvestigation(directInvestigation); setLensLoading(false); return; }
+    const topicAliases: Array<[RegExp, { invId?: string; discPrefix?: string; discId?: string }]> = [
+      [/wildest water|southern ocean waves|storm surge|portugal coastal currents/i, { invId: 'wildest-water-live' }],
+      [/polar extremes|aurora watch/i, { discPrefix: 'polar-extremes' }],
+      [/terminator/i, { discPrefix: 'terminator-' }],
+      [/seismic|aftershock|tsunami/i, { invId: 'seismic-pulse-week' }],
+      [/solar wind|solar wind speed/i, { discId: 'solar-wind-stream' }],
+      [/upcoming launches|launch cadence/i, { invId: 'orbital-cadence' }],
+      [/air quality|air divide/i, { invId: 'air-divide-now' }],
+      [/attention gap|sudan/i, { invId: 'crisis-attention-index' }],
+      [/volcano|eruption/i, { invId: 'volcano-unrest-live' }],
+      [/empty.sky|airspace/i, { invId: 'empty-sky-audit' }],
+      [/night lights|city cameras/i, { discId: 'airborne-now' }]
+    ];
+    for (const [pattern, target] of topicAliases) {
+      if (!pattern.test(label)) continue;
+      if (target.invId) {
+        const inv = investigations.find(i => i.id === target.invId);
+        if (inv) { selectInvestigation(inv); setLensLoading(false); return; }
+      }
+      const disc = target.discId ? discoveries.find(d => d.id === target.discId) : target.discPrefix ? discoveries.find(d => d.id.startsWith(target.discPrefix as string)) : undefined;
+      if (disc) { selectDiscovery(disc); setLensLoading(false); return; }
+    }
     if (label.toLowerCase().includes('nearby signals')) {
       setLens({ topic: label, retrievedAt: new Date().toISOString(), facts: (active.connections ?? []).map(c => ({ label: c.title, value: c.reason, kind: 'interpretation' })) });
       setLensLoading(false);
