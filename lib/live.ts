@@ -116,6 +116,46 @@ async function text(url: string): Promise<string | null> {
   } catch { return null; }
 }
 
+// Real measured ocean — NOAA/NDBC moored buoys report actual wave heights,
+// water temperatures and winds every 10-60 minutes. This is the difference
+// between a model of the ocean and the ocean itself.
+const BUOY_STATIONS: Array<[string, string, number, number]> = [
+  ['46050', 'Stonewall Bank buoy, off Oregon', 44.68, -124.53],
+  ['46006', 'Southeast Papa buoy, Gulf of Alaska', 40.29, -137.0],
+  ['46059', 'offshore California buoy', 38.05, -130.0],
+  ['44065', 'New York harbor entrance buoy', 40.37, -73.7],
+  ['41049', 'Atlantic buoy northwest of Bermuda', 27.5, -63.1],
+  ['51001', 'northwest Hawaii offshore buoy', 23.42, -162.2],
+  ['42001', 'mid-Gulf of Mexico buoy', 25.9, -89.67],
+  ['46001', 'deep Gulf of Alaska buoy', 56.3, -148.1],
+  ['41047', 'northeast Bahamas offshore buoy', 27.47, -71.5],
+  ['46087', 'San Clemente Basin buoy, off Los Angeles', 32.52, -118.6]
+];
+
+type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waterTemp?: number; windSpeed?: number; time: number };
+
+async function buoyObservations(): Promise<BuoyObs[]> {
+  const rows = await Promise.all(BUOY_STATIONS.map(async ([id, name, lat, lon]) => {
+    const t = await text(`https://www.ndbc.noaa.gov/data/realtime2/${id}.txt`);
+    if (!t) return null;
+    let scanned = 0;
+    for (const line of t.split('\n')) {
+      if (!line.trim() || line.startsWith('#')) continue;
+      if (++scanned > 6) break;
+      const c = line.trim().split(/\s+/);
+      if (c.length < 9) continue;
+      const wvht = parseFloat(c[8]);
+      if (!Number.isFinite(wvht)) continue;
+      const wtmp = parseFloat(c[14]);
+      const wspd = parseFloat(c[6]);
+      const ts = Date.UTC(+c[0], +c[1] - 1, +c[2], +c[3], +c[4]);
+      return { id, name, lat, lon, waveHeight: wvht, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, time: ts };
+    }
+    return null;
+  }));
+  return rows.filter((row): row is NonNullable<typeof row> => Boolean(row)) as BuoyObs[];
+}
+
 function xmlValue(block: string, tag: string) {
   const match = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`));
   return match?.[1]?.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim() ?? '';
@@ -305,7 +345,7 @@ function connectDiscoveries(out: Discovery[]) {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -330,7 +370,9 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=${featuredNow.map(camera => camera.lat).join(',')}&longitude=${featuredNow.map(camera => camera.lon).join(',')}&current=temperature_2m,wind_speed_10m,is_day,cloud_cover&timezone=auto`),
     json<any[]>('https://epic.gsfc.nasa.gov/api/natural', undefined, 6000),
     json<any>(`https://api.open-meteo.com/v1/forecast?latitude=36.5,29.3,14.24,63.46,-78.46,-89.99,71.29,72.58,-66.9,-41.29,-53.16,27.99,-23.5,23.0,1.35,55.75&longitude=-116.9,47.9,40.3,142.79,106.83,15,-156.79,-38.46,142.67,174.78,-70.91,86.93,-68.5,5.0,103.82,37.62&current=temperature_2m,wind_speed_10m,wind_gusts_10m&timezone=auto`),
-    json<any>(`https://api.inaturalist.org/v1/observations?order=desc&order_by=created_at&per_page=14&photos=true&taxon_id=3&verifiable=true`, undefined, 6000)
+    json<any>(`https://api.inaturalist.org/v1/observations?order=desc&order_by=created_at&per_page=14&photos=true&taxon_id=3&verifiable=true`, undefined, 6000),
+    buoyObservations(),
+    json<any>('https://www.nhc.noaa.gov/CurrentStorms.json', undefined, 6000)
   ]);
   const out: Discovery[] = [];
   const issTrack = orbitalTrack(issTle?.line1, issTle?.line2);
@@ -560,8 +602,19 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   if (plasma || mag || xray) {
     const speed = plasma?.speed ?? 0;
     const bz = mag?.gsm_bz ?? mag?.gse_bz;
+    // Flare detection: peak X-ray flux in the last 3 hours — an M/X-class spike
+    // is a genuinely rare, genuinely happening-right-now event, so the card
+    // retitles itself and rockets up the ranking when one is in progress.
+    const recentXrays = (xrays ?? []).filter((row: any) => row?.time_tag && Date.now() - new Date(row.time_tag.replace(' ', 'T') + (String(row.time_tag).includes('Z') ? '' : 'Z')).getTime() < 3 * 3600000);
+    const peakFlux = recentXrays.reduce((best: number, row: any) => Math.max(best, row?.flux ?? 0), xray?.flux ?? 0);
+    const flareActive = peakFlux >= 1e-5;
+    const flareX = peakFlux >= 1e-4;
+    const flareTitle = flareActive
+      ? `A${flareX ? 'n X-class — the strongest kind —' : 'n M-class'} solar flare is erupting on the Sun right now`
+      : 'The solar wind is pressing against near-Earth space';
+    const flareScore = flareActive ? (flareX ? 97 : 93) : 86 + Math.max(0, Math.min(8, (speed - 400) / 50));
     out.push({
-      id: 'solar-wind-stream', template: 'atmosphere', title: 'The solar wind is pressing against near-Earth space', kicker: 'NOAA real-time space weather', visual: 'orbital', score: 86 + Math.max(0, Math.min(8, (speed - 400) / 50)), freshness: plasma?.time_tag ? ago(plasma.time_tag) : 'minutes ago',
+      id: 'solar-wind-stream', template: 'atmosphere', title: flareTitle, kicker: flareActive ? 'Solar flare in progress — GOES X-ray monitor' : 'NOAA real-time space weather', visual: 'orbital', score: flareScore, freshness: plasma?.time_tag ? ago(plasma.time_tag) : 'minutes ago',
       mediaImage: `https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png?v=${Date.now()}`, mediaAlt: 'Latest NOAA GOES solar ultraviolet image',
       location: { lat: 72, lon: -40, label: 'Sun–Earth L1 → polar magnetosphere' },
       summary: 'ACE measures solar-wind particles and magnetic fields upstream of Earth while GOES watches the Sun in X-rays. The map marker represents the downstream polar impact region, not the spacecraft position.',
@@ -577,6 +630,63 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   }
 
   const q = quakes?.features?.sort((a: any, b: any) => (b.properties?.mag ?? 0) - (a.properties?.mag ?? 0))[0];
+  // --- The ocean, measured: real buoys reporting actual wave heights right now.
+  // Unlike the model-based wildest-water investigation, these are physical
+  // instruments riding the sea surface — the highest reading wins the story.
+  if (buoys?.length >= 4) {
+    const ranked = [...buoys].sort((a, b) => b.waveHeight - a.waveHeight);
+    const wildest = ranked[0];
+    const calmest = ranked[ranked.length - 1];
+    const ageMin = wildest.time ? Math.round((Date.now() - wildest.time) / 60000) : null;
+    const feet = wildest.waveHeight * 3.281;
+    const ratio = calmest.waveHeight > 0.3 ? wildest.waveHeight / calmest.waveHeight : null;
+    out.push({
+      id: 'ocean-measured-now', template: 'ocean', title: `The ${wildest.name.split(',')[0]} is measuring ${wildest.waveHeight.toFixed(1)} m waves right now`, kicker: 'The ocean, physically measured', visual: 'ocean', score: 76 + Math.min(14, Math.round(wildest.waveHeight * 2)), freshness: ageMin != null && ageMin < 90 ? `${ageMin} min ago` : 'within the hour',
+      location: { lat: wildest.lat, lon: wildest.lon, label: wildest.name },
+      summary: `Moored instruments don't model the ocean — they ride it. Across ${ranked.length} NOAA buoys reporting right now, the roughest measured sea is at ${wildest.name}: ${wildest.waveHeight.toFixed(1)} m significant wave height (${Math.round(feet)} feet)${wildest.windSpeed ? ` with ${Math.round(wildest.windSpeed * 3.6)} km/h winds` : ''}${wildest.waterTemp != null ? ` and ${wildest.waterTemp.toFixed(1)}°C water` : ''}.${ratio && ratio > 1.6 ? ` Meanwhile the calmest reporting buoy, off ${calmest.name.split(',')[0]}, reads ${calmest.waveHeight.toFixed(1)} m — the same planet's ocean is ${ratio.toFixed(1)}× rougher in one place than another, at the same moment.` : ''}`,
+      facts: [
+        { label: 'Significant wave height', value: `${wildest.waveHeight.toFixed(1)} m (${Math.round(feet)} ft) — top third of waves average higher`, kind: 'observed' },
+        wildest.windSpeed != null ? { label: 'Measured wind', value: `${Math.round(wildest.windSpeed)} m/s at the buoy`, kind: 'observed' } : null,
+        wildest.waterTemp != null ? { label: 'Water temperature', value: `${wildest.waterTemp.toFixed(1)}°C`, kind: 'observed' } : null,
+        { label: 'Roughest-to-calmest spread', value: ratio ? `${ratio.toFixed(1)}× across the buoy network right now` : 'not computable this hour', kind: 'interpretation' },
+        { label: 'Network sample', value: ranked.map(b => `${b.id}: ${b.waveHeight.toFixed(1)} m`).join(' · '), kind: 'observed' },
+        { label: 'Instrument', value: 'Physical moored buoy — measured, not modeled', kind: 'verified' }
+      ].filter(Boolean) as any,
+      sources: [src('NOAA NDBC real-time buoy observations', 'https://www.ndbc.noaa.gov/')],
+      related: ['Wildest water', 'Portugal coastal currents', 'Terminator']
+    });
+  }
+
+  // --- Named tropical cyclones, when they exist: NHC's active-storm ledger.
+  // Conditional — the card only exists while a real named storm does.
+  const storms: any[] = nhc?.activeStorms ?? [];
+  if (storms.length) {
+    const strongest = [...storms].sort((a, b) => (b.maxWindKts ?? b.intensity ?? 0) - (a.maxWindKts ?? a.intensity ?? 0))[0];
+    const name = strongest.name ?? 'Unnamed system';
+    const windMph = strongest.maxWindMph ?? (strongest.maxWindKts ? Math.round(strongest.maxWindKts * 1.151) : undefined);
+    const classification = strongest.classification ?? 'tropical system';
+    const lat = strongest.latitudeNumeric ?? strongest.latitude;
+    const lon = strongest.longitudeNumeric ?? strongest.longitude;
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      const imagery = earthImagery(lat, lon);
+      out.push({
+        id: `cyclone-${String(name).toLowerCase().replace(/\s+/g, '-')}`, entityId: strongest.id, template: 'atmosphere', title: `${classification === 'HU' || /hurricane/i.test(classification) ? 'Hurricane' : 'Tropical cyclone'} ${name} is spinning over open water right now`, kicker: 'Named storm, live advisory', visual: 'storm', score: 90 + Math.min(8, Math.round((windMph ?? 60) / 25)), freshness: 'current NHC advisory', mediaImage: imagery.url, mediaAlt: `${imagery.altPrefix} near ${name}`,
+        location: { lat, lon, label: `${classification} ${name}` },
+        summary: `The National Hurricane Center's active ledger currently lists ${storms.length} named system${storms.length === 1 ? '' : 's'}; ${name} is the strongest${windMph ? `, with sustained winds around ${windMph} mph` : ''}. The position comes straight from the current advisory — where it goes next is the forecasters' open question, honestly labeled as such.`,
+        facts: [
+          { label: 'Classification', value: String(classification), kind: 'observed' },
+          windMph ? { label: 'Sustained winds', value: `${windMph} mph`, kind: 'observed' } : null,
+          strongest.movement ? { label: 'Movement', value: String(strongest.movement), kind: 'observed' } : null,
+          strongest.pressure ? { label: 'Central pressure', value: `${strongest.pressure} mb`, kind: 'observed' } : null,
+          { label: 'Active systems', value: String(storms.length), kind: 'observed' },
+          { label: 'Track certainty', value: 'Cone of uncertainty widens with every forecast day', kind: 'question' }
+        ].filter(Boolean) as any,
+        sources: [src('NOAA National Hurricane Center current storms', 'https://www.nhc.noaa.gov/')],
+        related: ['Wildest water', 'Storm surge', 'Coastal cameras']
+      });
+    }
+  }
+
   if (q) {
     const [lon, lat, depth] = q.geometry.coordinates;
     const imagery = earthImagery(lat, lon);
