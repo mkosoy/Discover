@@ -88,6 +88,7 @@ export async function currentWeatherBatch(points: Array<[number, number]>, field
           wind_speed_10m: d.wind_speed != null ? d.wind_speed * 3.6 : undefined,
           wind_gusts_10m: d.wind_gust != null ? d.wind_gust * 3.6 : undefined,
           cloud_cover: d.cloud_area_fraction,
+          pressure_msl: d.air_pressure_at_sea_level,
           is_day: undefined,
           provider: 'met.no'
         }

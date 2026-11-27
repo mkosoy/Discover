@@ -1133,7 +1133,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     nwsAlertsJson(),
     currentWeatherBatch(featuredNow.map(camera => [camera.lat, camera.lon] as [number, number]), 'temperature_2m,wind_speed_10m,is_day,cloud_cover'),
     json<any[]>('https://epic.gsfc.nasa.gov/api/natural', undefined, 6000),
-    currentWeatherBatch([[36.5,-116.9],[29.3,47.9],[14.24,40.3],[63.46,142.79],[-78.46,106.83],[-89.99,15],[71.29,-156.79],[72.58,-38.46],[-66.9,142.67],[-41.29,174.78],[-53.16,-70.91],[27.99,86.93],[-23.5,-68.5],[23.0,5.0],[1.35,103.82],[55.75,37.62]]),
+    currentWeatherBatch([[36.5,-116.9],[29.3,47.9],[14.24,40.3],[63.46,142.79],[-78.46,106.83],[-89.99,15],[71.29,-156.79],[72.58,-38.46],[-66.9,142.67],[-41.29,174.78],[-53.16,-70.91],[27.99,86.93],[-23.5,-68.5],[23.0,5.0],[1.35,103.82],[55.75,37.62],[-55,-60],[-52,0],[-48,100],[-50,160],[55,-35],[50,-160],[45,150],[60,110]], 'temperature_2m,wind_speed_10m,wind_gusts_10m,pressure_msl'),
     json<any>(`https://api.inaturalist.org/v1/observations?order=desc&order_by=created_at&per_page=14&photos=true&taxon_id=3&verifiable=true`, undefined, 6000),
     buoyObservations(),
     json<any>('https://www.nhc.noaa.gov/CurrentStorms.json', undefined, 6000),
@@ -1206,7 +1206,8 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     ['Utqiagvik, Alaska', 71.29, -156.79], ['Summit Station, Greenland', 72.58, -38.46],
     ['Commonwealth Bay, Antarctica', -66.9, 142.67], ['Wellington, New Zealand', -41.29, 174.78], ['Punta Arenas, Chile', -53.16, -70.91],
     ['Mount Everest summit', 27.99, 86.93], ['Atacama Desert, Chile', -23.5, -68.5], ['Sahara, Algeria', 23.0, 5.0],
-    ['Singapore', 1.35, 103.82], ['Moscow', 55.75, 37.62]
+    ['Singapore', 1.35, 103.82], ['Moscow', 55.75, 37.62],
+    ['the Drake Passage', -55, -60], ['the Southern Ocean (Atlantic)', -52, 0], ['south of Australia', -48, 100], ['the Southern Ocean (Pacific)', -50, 160], ['the North Atlantic storm belt', 55, -35], ['the Gulf of Alaska', 50, -160], ['the North Pacific storm belt', 45, 150], ['central Siberia', 60, 110]
   ];
   if (extremeRows.length > 4) {
     const readings = extremeRows.map((row, i) => ({
@@ -2504,95 +2505,6 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     });
   }
 
-  // --- Air traffic control, live in your ear. LiveATC is a volunteer network
-  // streaming real tower frequencies — public because aviation radio has always
-  // been public. Rotating airport.
-  {
-    const ATC: Array<[string, string, string, number, number]> = [
-      ['kjfk_twr', 'JFK Tower', 'New York', 40.64, -73.78],
-      ['klax_twr', 'LAX Tower', 'Los Angeles', 33.94, -118.4],
-      ['kord_twr', "O'Hare Tower", 'Chicago', 41.97, -87.9]
-    ];
-    const pick = ATC[Math.floor(Date.now() / 300000) % ATC.length];
-    out.push({
-      id: 'atc-live-audio', template: 'city', title: `A controller at ${pick[1]} is vectoring real aircraft this second — you can listen`, kicker: 'Aviation radio — public since forever', visual: 'city', score: 79, freshness: 'streaming live now',
-      location: { lat: pick[3], lon: pick[4], label: `${pick[1]}, ${pick[2]}` },
-      mediaAudio: `https://d.liveatc.net/${pick[0]}`,
-      mediaImage: buildWaveformSvg(`${pick[1]} — live frequency`), mediaAlt: 'Generative audio visualization for the tower frequency',
-      summary: `Every exchange between pilots and air traffic control happens on open radio frequencies — always has. Right now a controller in the ${pick[1]} cab is sequencing arrivals a few miles apart, reading back clearances, occasionally snapping at someone. A volunteer network of radio enthusiasts streams these frequencies publicly; what you hear is the actual operational voice of one of the world's busiest airspaces, unedited, with static and all. Listen for the rhythm: instructions read back word-for-word, because in aviation a misheard number is a disaster and the culture of repetition is the safety system.`,
-      facts: [
-        { label: 'Frequency type', value: `${pick[1]} — tower control`, kind: 'verified' },
-        { label: 'Why this is public', value: 'Aviation radio is unencrypted by design — safety depends on anyone being able to listen in and speak up', kind: 'interpretation' },
-        { label: 'What you are hearing', value: 'Live operational control of real commercial flights — nothing is simulated', kind: 'observed' },
-        { label: 'The network', value: 'LiveATC — volunteers hosting receivers near airports worldwide since 2002', kind: 'verified' }
-      ],
-      sources: [src('LiveATC.net', 'https://www.liveatc.net/')],
-      related: ['airborne-now', 'military-aircraft-visible', 'aircraft-emergency-now']
-    });
-  }
-
-
-  // --- The meta-scan: across every instrument series currently flowing through
-  // the system, which single measurement is the most statistically unusual right
-  // now? This is the measured-novelty detector generalized — the app auditing its
-  // own instruments. Conditional: appears only when something is genuinely odd.
-  {
-    const candidates: Array<{ z: number; instrument: string; value: string; meaning: string; lat: number; lon: number; label: string; series?: Array<{ t: number; v: number }> }> = [];
-    if (Array.isArray(buoys)) for (const b of buoys as any[]) {
-      const zw = noveltyZ(b.waveSeries);
-      if (zw != null && Math.abs(zw) >= 2) candidates.push({ z: zw, instrument: `wave height at ${b.name}`, value: `${Number(b.waveHeight).toFixed(1)} m seas`, meaning: zw > 0 ? 'seas running unusually high for this buoy right now' : 'unusually flat — the ocean holding its breath', lat: b.lat, lon: b.lon, label: b.name, series: b.waveSeries });
-      const zp = noveltyZ(b.pressureSeries);
-      if (zp != null && Math.abs(zp) >= 2) candidates.push({ z: zp, instrument: `barometric pressure at ${b.name}`, value: `${Number(b.pressure).toFixed(1)} hPa`, meaning: zp < 0 ? 'pressure unusually low or falling fast — cyclonic behavior' : 'pressure unusually high — strong ridge building', lat: b.lat, lon: b.lon, label: b.name, series: b.pressureSeries });
-    }
-    if (Array.isArray(darts)) for (const d of darts as any[]) {
-      const zd = noveltyZ(d.series);
-      if (zd != null && Math.abs(zd) >= 2) candidates.push({ z: zd, instrument: `seafloor water column at DART ${d.id}`, value: `${d.height.toFixed(2)} m`, meaning: 'the weight of the ocean above the tsunami sensor is deviating from its own recent behavior', lat: d.lat, lon: d.lon, label: d.name, series: d.series });
-    }
-    if (Array.isArray(kp) && kp.length > 8) {
-      const rows = kp.slice(1).map((r: any) => ({ t: new Date(r[0]).getTime(), v: Number(r[1]) })).filter((r: any) => Number.isFinite(r.v) && Number.isFinite(r.t));
-      const z = noveltyZ(rows);
-      const latestRow = rows[rows.length - 1];
-      if (z != null && Math.abs(z) >= 2 && latestRow) candidates.push({ z, instrument: 'planetary K index — global geomagnetic disturbance', value: `Kp ${latestRow.v.toFixed(1)}`, meaning: z > 0 ? 'the magnetosphere is ringing harder than its own recent baseline' : 'unusually quiet space weather', lat: 0, lon: 0, label: 'Global magnetometer network', series: rows });
-    }
-    const ukRows = ukIntensity24h?.data ?? [];
-    const ukSeries = ukRows.map((r: any) => ({ t: new Date(r.from).getTime(), v: r?.intensity?.actual })).filter((p: any) => Number.isFinite(p.v) && Number.isFinite(p.t));
-    {
-      const z = noveltyZ(ukSeries);
-      if (z != null && Math.abs(z) >= 2 && ukSeries.length) candidates.push({ z, instrument: 'UK grid carbon intensity', value: `${Math.round(ukSeries[ukSeries.length - 1].v)} gCO₂/kWh`, meaning: z > 0 ? 'the grid is running unusually dirty against its own daily rhythm' : 'the grid is running unusually clean — wind or demand shifting', lat: 52.5, lon: -1.8, label: 'Great Britain grid', series: ukSeries });
-    }
-    if (Array.isArray(xrays) && xrays.length > 20) {
-      const xs = xrays.map((r: any) => ({ t: new Date(r.time_tag).getTime(), v: Number(r.flux) })).filter((r: any) => Number.isFinite(r.v) && r.v > 0 && Number.isFinite(r.t));
-      if (xs.length > 20) {
-        // log-scale: flares are multiplicative events
-        const logSeries = xs.map(r => ({ t: r.t, v: Math.log10(r.v) }));
-        const z = noveltyZ(logSeries);
-        if (z != null && Math.abs(z) >= 2) candidates.push({ z, instrument: 'solar X-ray flux at GOES', value: `${xs[xs.length - 1].v.toExponential(1)} W/m²`, meaning: z > 0 ? 'the Sun just got brighter in X-rays — the signature of a flare in progress' : 'the Sun unusually quiet in X-rays', lat: 0, lon: 0, label: 'GOES X-ray sensor, geostationary orbit', series: undefined });
-      }
-    }
-    candidates.sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
-    const top = candidates[0];
-    if (top && Math.abs(top.z) >= 2.5) {
-      const others = candidates.slice(1, 4);
-      const chart = top.series && top.series.length >= 12 ? buildSeriesChartSvg(top.instrument, 'measured series', top.series, '#ffd166', 'the trailing record this reading is judged against') : null;
-      out.push({
-        id: 'most-unusual-measurement', template: 'ocean', title: `The most statistically unusual measurement on Earth right now: ${top.instrument}`, kicker: 'The planet auditing itself — novelty detection across all live instruments', visual: 'ocean', score: 86 + Math.min(8, Math.round(Math.abs(top.z))), freshness: 'computed this minute',
-        location: { lat: top.lat, lon: top.lon, label: top.label },
-        mediaImage: chart ?? undefined, mediaAlt: 'Instrument series with the anomalous latest reading',
-        summary: `Every minute this system asks the same question of every instrument it can read: compared to your own recent behavior, how strange is what you are measuring right now? The current answer: ${top.instrument} reads ${top.value} — a z-score of ${top.z > 0 ? '+' : ''}${top.z.toFixed(1)}, meaning the reading is ${Math.abs(top.z).toFixed(1)} standard deviations from this instrument's own trailing baseline. ${top.meaning.charAt(0).toUpperCase() + top.meaning.slice(1)}. This is how genuinely interesting events separate themselves from noise: not by crossing fixed thresholds, but by being unusual for the place that is measuring them.`,
-        facts: [
-          { label: 'Reading', value: top.value, kind: 'observed' },
-          { label: 'Novelty (z-score)', value: `${top.z > 0 ? '+' : ''}${top.z.toFixed(2)} standard deviations vs the instrument's own trailing series`, kind: 'observed' },
-          { label: 'What it means', value: top.meaning, kind: 'interpretation' },
-          others.length ? { label: 'Runners-up right now', value: others.map(o => `${o.instrument} (${o.z > 0 ? '+' : ''}${o.z.toFixed(1)})`).join(' · ').slice(0, 140), kind: 'observed' } : null,
-          { label: 'Method honesty', value: 'Each instrument is only ever compared to itself — no cross-instrument false precision. Needs 12+ points of history or the instrument sits out.', kind: 'verified' }
-        ].filter(Boolean) as any,
-        sources: [src('Instrument series as cited on each card', 'https://www.ndbc.noaa.gov/')],
-        related: ['measured-planet-live', 'storm-deepening-now', 'space-weather-now']
-      });
-    }
-  }
-
-
   // --- What changed on Earth: the feed diffed against itself an hour ago.
   // The temporal insight layer — events are nouns, but change is the verb.
   {
@@ -2732,6 +2644,40 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         ],
         sources: [src('NASA DSN Now', 'https://eyes.nasa.gov/dsn/dsn.html')],
         related: ['humans-in-space', 'iss-over-earth', 'point-nemo-iss']
+      });
+    }
+  }
+
+
+  // --- The planet's pressure skeleton: where the deepest low and strongest
+  // high sit right now. Pressure gradients are the engine of all wind — this
+  // is the atmosphere's infrastructure read directly.
+  {
+    const rows: any[] = Array.isArray(extremesRaw) ? extremesRaw : extremesRaw ? [extremesRaw] : [];
+    const sites = extremeSites;
+
+    const readings = rows.map((row, i) => ({ name: sites[i]?.[0] ?? `zone ${i}`, lat: sites[i]?.[1] ?? 0, lon: sites[i]?.[2] ?? 0, p: row?.current?.pressure_msl })).filter(r => Number.isFinite(r.p));
+    if (readings.length >= 10) {
+      const lowest = [...readings].sort((a, b) => a.p - b.p)[0];
+      const highest = [...readings].sort((a, b) => b.p - a.p)[0];
+      const gradient = highest.p - lowest.p;
+      const isDeep = lowest.p < 985;
+      const ladderSeries = [...readings].sort((a, b) => a.p - b.p).map((r, i) => ({ t: i, v: r.p }));
+      const chart = buildSeriesChartSvg('The planet\'s pressure skeleton — 24 zones, deepest to strongest', 'hPa at sea level', ladderSeries, '#c792ea', `${lowest.name} ${Math.round(lowest.p)} ↔ ${highest.name} ${Math.round(highest.p)}`);
+      out.push({
+        id: 'pressure-skeleton-now', template: 'atmosphere', title: isDeep ? `A deep low is spinning over ${lowest.name} right now — ${Math.round(lowest.p)} hPa, and air is flowing toward it` : `The atmosphere's engine right now: ${Math.round(gradient)} hPa of pressure difference across the planet`, kicker: 'The pressure skeleton of the atmosphere', visual: 'storm', score: isDeep ? 84 : 74, freshness: 'current model hour',
+        location: { lat: lowest.lat, lon: lowest.lon, label: lowest.name },
+        mediaImage: chart ?? undefined, mediaAlt: 'Pressure readings across 24 planetary zones, sorted',
+        summary: `Wind is not a thing in itself — it is air flowing down pressure differences. Right now the deepest low in the planetary scan is over ${lowest.name} at ${Math.round(lowest.p)} hPa; the strongest high sits over ${highest.name} at ${Math.round(highest.p)} hPa. Between them, ${Math.round(gradient)} hPa of imbalance is quietly driving every wind on Earth tonight. ${isDeep ? `A reading below 985 hPa means a genuinely powerful cyclone — the kind with a name or one that should have one.` : 'No monster cyclone tonight — but the machine never stops.'} The Southern Ocean lows run almost continuously; the Siberian high rules winter continents. Watching this skeleton shift is watching weather before it becomes weather.`,
+        facts: [
+          { label: 'Deepest low', value: `${lowest.name} — ${lowest.p.toFixed(0)} hPa`, kind: 'interpretation' },
+          { label: 'Strongest high', value: `${highest.name} — ${highest.p.toFixed(0)} hPa`, kind: 'interpretation' },
+          { label: 'Planetary imbalance', value: `${gradient.toFixed(0)} hPa — the total pressure difference driving tonight\'s winds`, kind: 'interpretation' },
+          { label: 'Reference points', value: 'Mean sea-level pressure is 1013 hPa; hurricanes reach below 950; the Siberian high can exceed 1040', kind: 'verified' },
+          { label: 'Basis', value: `${readings.length}-zone batched model pass — synoptic-scale, so real cyclones read accurately`, kind: 'verified' }
+        ],
+        sources: [src('Open-Meteo global weather model', 'https://open-meteo.com/')],
+        related: ['storm-deepening-now', 'wildest-water-live', 'earth-extremes-now']
       });
     }
   }
