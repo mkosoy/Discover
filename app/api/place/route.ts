@@ -98,7 +98,7 @@ export async function GET(request: Request) {
   const lat = Number(url.searchParams.get('lat'));
   const lon = Number(url.searchParams.get('lon'));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return NextResponse.json({ error: 'invalid coordinates' }, { status: 400 });
-  const [weather, place, air, quakes, gdacsXml, aircraftFeed, wiki, buoysNear, tidesNear] = await Promise.all([
+  const [weather, place, air, quakes, gdacsXml, aircraftFeed, wiki, buoysNear, tidesNear, radarMeta] = await Promise.all([
     currentWeather(lat, lon),
     json<any>(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=en`, { headers: { 'User-Agent': 'Elsewhere/0.1 (https://elsewhere-discover-nine.vercel.app)' } }),
     json<any>(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,ozone&timezone=auto`),
@@ -107,7 +107,8 @@ export async function GET(request: Request) {
     jsonLive<any>(`https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/100`),
     json<any>(`https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=10000&gslimit=4&format=json&origin=*`),
     buoyObservations(),
-    tideAnomalies()
+    tideAnomalies(),
+    json<any>('https://api.rainviewer.com/public/weather-maps.json')
   ]);
   const current = weather?.current;
   const address = place?.address ?? {};
@@ -165,6 +166,23 @@ export async function GET(request: Request) {
       sourceLabel: 'NASA Black Marble night-lights reference composite (static, not live)',
       altPrefix: 'NASA night-lights reference view — it is night here now',
       nearRealtime: false
+    };
+  }
+  // When rain or snow is actively falling here, the most honest imagery is
+  // weather radar — measured reflections off actual precipitation, refreshed
+  // every 10 minutes — rather than a cloud-top satellite view.
+  const radarFrames = radarMeta?.radar?.past ?? [];
+  const latestRadar = radarFrames[radarFrames.length - 1];
+  if ((current?.precipitation ?? 0) >= 0.3 && latestRadar && radarMeta?.host) {
+    const z = 6;
+    const xt = Math.floor((lon + 180) / 360 * Math.pow(2, z));
+    const latRad = lat * Math.PI / 180;
+    const yt = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, z));
+    imagery = {
+      url: `${radarMeta.host}${latestRadar.path}/256/${z}/${xt}/${yt}/4/1_1.png`,
+      sourceLabel: 'RainViewer global weather radar composite — measured precipitation, ~10 min update',
+      altPrefix: 'Live weather radar centered near this point',
+      nearRealtime: true
     };
   }
   const notable = (wiki?.query?.geosearch ?? []).filter((n: any) => n?.title && !(/^(canton|arrondissement|province|prefecture|county|district|municipality|department|oblast|region|state) of /i.test(n.title) || /^(county|province|district|prefecture|oblast|region) \w+$/i.test(n.title) || /\b(county|prefecture|oblast|municipality|arrondissement)$/i.test(n.title)) && !/\((department|province|county|district|municipality|state|region|oblast|prefecture)\)/i.test(n.title));
