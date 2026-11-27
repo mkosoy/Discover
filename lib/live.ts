@@ -644,12 +644,17 @@ const RIVER_SITES: Array<[string, string, number, number, number]> = [
 ];
 const riverCache: { at: number; data: any[] } = { at: 0, data: [] };
 let riverInFlight = false;
+// Records the last time a generation had to run with an empty river set because
+// the cache was cold — downstream caches use it to avoid freezing a degraded
+// payload for their full TTL.
+export let riverServedColdAt = 0;
 function riverNonBlocking(): Promise<any[]> {
   if (riverCache.data.length && Date.now() - riverCache.at < 10 * 60000) return Promise.resolve(riverCache.data);
   if (!riverInFlight) {
     riverInFlight = true;
     riverObservations().finally(() => { riverInFlight = false; });
   }
+  if (!riverCache.data.length) riverServedColdAt = Date.now();
   return Promise.resolve(riverCache.data);
 }
 
