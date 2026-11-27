@@ -2938,11 +2938,12 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     if (bestFly && bestDist < 900) {
       const evName = bestFly.e.title ?? 'an active event';
       out.push({
-        id: 'iss-over-disaster-now', template: 'orbit', title: `The ISS is passing within ${Math.round(bestDist)} km of ${evName.length > 60 ? evName.slice(0, 57) + '…' : evName} — the crew can see it out the window`, kicker: 'Orbital coincidence, live', visual: 'orbital', score: 82, freshness: 'orbital position seconds old',
+        id: 'iss-over-disaster-now', template: 'orbit', title: `The ISS is swinging ${Math.round(Math.hypot(bestDist, 420))} km past ${evName.length > 60 ? evName.slice(0, 57) + '…' : evName} — the crew can see it out the window`, kicker: 'Orbital coincidence, live', visual: 'orbital', score: 82, freshness: 'orbital position seconds old',
         location: { lat: bestFly.elat, lon: bestFly.elon, label: evName },
-        summary: `Right now the International Space Station is flying within ${Math.round(bestDist)} km of ${evName}. At 420 km altitude, the crew is closer to this event than most humans on the ground — and with their own eyes they can see what satellites measure: smoke columns, storm spirals, eruption plumes. Astronauts routinely photograph disasters from the cupola; some of the best wildfire and hurricane imagery in existence is handheld Nikon shots through that window. A coincidence of orbits and events — but a real one, happening overhead right now.`,
+        summary: `Right now the International Space Station's ground track passes within ${Math.round(bestDist)} km of ${evName} — adding the 420 km of altitude, the straight-line distance at closest approach is about ${Math.round(Math.hypot(bestDist, 420))} km. At 420 km altitude, the crew is closer to this event than most humans on the ground — and with their own eyes they can see what satellites measure: smoke columns, storm spirals, eruption plumes. Astronauts routinely photograph disasters from the cupola; some of the best wildfire and hurricane imagery in existence is handheld Nikon shots through that window. A coincidence of orbits and events — but a real one, happening overhead right now.`,
         facts: [
-          { label: 'Ground distance', value: `${Math.round(bestDist)} km from the ground track — closer than most people on Earth`, kind: 'observed' },
+          { label: 'Ground-track distance', value: `${Math.round(bestDist)} km horizontally — how close the orbit's ground line comes`, kind: 'observed' },
+          { label: 'True slant distance', value: `~${Math.round(Math.hypot(bestDist, 420))} km including the 420 km of altitude — the honest straight-line number`, kind: 'observed' },
           { label: 'The event', value: `${evName} — tracked by NASA EONET`, kind: 'observed' },
           { label: 'Orbital speed', value: '7.66 km/s — the pass lasts minutes, then the geometry is gone', kind: 'observed' },
           { label: 'Crew visibility', value: 'Naked-eye + handheld cameras — astronaut photography of disasters is a real scientific archive', kind: 'interpretation' }
