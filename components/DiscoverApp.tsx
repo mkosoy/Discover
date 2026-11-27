@@ -286,7 +286,9 @@ export default function DiscoverApp() {
     const weighted = candidates.flatMap(d => {
       const templatePenalty = active && d.template === active.template ? 18 : 0;
       const distancePenalty = active && angularDistance(active.location.lat, active.location.lon, d.location.lat, d.location.lon) < 10 ? 10 : 0;
-      const weight = Math.max(1, Math.round((d.score - templatePenalty - distancePenalty) / 12));
+      // Watch mode is a lobby screen: live video and real imagery win over text-only cards.
+      const spectacleBoost = watching ? (d.mediaVideo ? 24 : d.mediaImage ? 8 : 0) : (d.mediaVideo ? 8 : 0);
+      const weight = Math.max(1, Math.round((d.score + spectacleBoost - templatePenalty - distancePenalty) / 12));
       return Array(weight).fill(d);
     });
     const next = weighted[Math.floor(Math.random() * weighted.length)] ?? discoveries[0];
