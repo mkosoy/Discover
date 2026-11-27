@@ -12,7 +12,9 @@ export function worldviewSnapshot(lat: number, lon: number, latSpan = 8, lonSpan
 
 export function nightLightsSnapshot(lat: number, lon: number, latSpan = 8, lonSpan = 12) {
   const centerLon = Math.max(-180 + lonSpan / 2, Math.min(180 - lonSpan / 2, lon));
-  const clampedLat = Math.max(-75 + latSpan / 2, Math.min(75 - latSpan / 2, lat));
+  // City lights is a static global composite (unlike MODIS daytime swaths), so
+  // polar locations are valid — clamp only to what EPSG:4326 can express.
+  const clampedLat = Math.max(-85 + latSpan / 2, Math.min(85 - latSpan / 2, lat));
   const latMin = clampedLat - latSpan / 2;
   const latMax = clampedLat + latSpan / 2;
   const lonMin = centerLon - lonSpan / 2;
