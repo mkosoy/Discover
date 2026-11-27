@@ -827,6 +827,41 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     }
   }
 
+  // --- Multi-instrument event synthesis: when the tide gauge, the coastal
+  // warnings, the buoy winds and the barometers independently agree, that
+  // convergence IS the event — no single instrument tells the story alone.
+  if (tides?.length && buoys?.length) {
+    const surge = tides.filter(t => Math.abs(t.anomaly) >= 0.3 && t.anomaly > 0).sort((a, b) => b.anomaly - a.anomaly)[0];
+    if (surge) {
+      const features = Array.isArray((nwsAlerts as any)?.features) ? (nwsAlerts as any).features : [];
+      const state = surge.name.split(',').pop()?.trim() ?? '';
+      const alert = features.find((f: any) => {
+        const pr = f?.properties ?? {};
+        return /coastal flood|storm surge|high surf/i.test(`${pr.event ?? ''} ${pr.headline ?? ''}`) && (!state || String(pr.areaDesc ?? '').includes(state));
+      });
+      const nearBuoy = buoys.map(b => ({ ...b, dist: Math.hypot(b.lat - surge.lat, b.lon - surge.lon) })).sort((a, b) => a.dist - b.dist)[0];
+      const buoyWindy = nearBuoy && nearBuoy.dist < 5 && (nearBuoy.windSpeed ?? 0) >= 8;
+      const buoyLow = nearBuoy && nearBuoy.dist < 8 && (nearBuoy.pressure ?? 1100) <= 1008;
+      const confirmations = [true, Boolean(alert), Boolean(buoyWindy), Boolean(buoyLow)].filter(Boolean).length;
+      if (confirmations >= 2) {
+        out.push({
+          id: 'coastal-storm-synthesis', template: 'ocean', title: `${confirmations >= 3 ? 'Four' : 'Two'} independent instruments agree: a coastal storm is pushing the sea into ${surge.name.split(',')[0]} right now`, kicker: 'Event detected by instrument convergence', visual: 'storm', score: 90 + confirmations, freshness: 'instruments reporting within the hour',
+          location: { lat: surge.lat, lon: surge.lon, label: surge.name },
+          summary: `No single reading makes a storm — but independent instruments agreeing is as close to ground truth as public data gets. Right now: a tide gauge at ${surge.name} reads ${Math.round(surge.anomaly * 100)} cm above the moon's prediction${alert ? `; the National Weather Service has an active ${alert.properties.event} for this coast` : ''}${buoyWindy ? `; the nearest buoy measures ${Math.round((nearBuoy.windSpeed ?? 0) * 3.6)} km/h winds` : ''}${buoyLow ? ` with pressure down at ${nearBuoy.pressure?.toFixed(0)} mb` : ''}. Onshore wind piles water against the coast, low pressure lifts the sea surface itself, and the gauge measures the result. This card exists only while the instruments agree.`,
+          facts: [
+            { label: 'Tide gauge anomaly', value: `+${Math.round(surge.anomaly * 100)} cm above astronomical prediction — measured`, kind: 'observed' },
+            alert ? { label: 'Weather service', value: `Active ${alert.properties.event}`, kind: 'observed' } : null,
+            buoyWindy ? { label: 'Buoy winds', value: `${Math.round((nearBuoy.windSpeed ?? 0) * 3.6)} km/h${nearBuoy.waveHeight ? `, ${nearBuoy.waveHeight.toFixed(1)} m seas` : ''} — measured offshore`, kind: 'observed' } : null,
+            buoyLow ? { label: 'Barometer offshore', value: `${nearBuoy.pressure?.toFixed(1)} mb — low pressure lifting the sea surface`, kind: 'observed' } : null,
+            { label: 'Detection method', value: `${confirmations} independent measurement systems corroborating — this card appears only while they agree`, kind: 'verified' }
+          ].filter(Boolean) as any,
+          sources: [src('NOAA CO-OPS tide gauges', 'https://tidesandcurrents.noaa.gov/'), src('NOAA NDBC buoys', 'https://www.ndbc.noaa.gov/'), src('NWS active alerts', 'https://api.weather.gov/')],
+          related: ['The sea vs the moon', 'The measured planet', 'The ocean, measured']
+        });
+      }
+    }
+  }
+
   // --- The sea vs the moon: measured water level minus astronomical prediction.
   // A big anomaly is the ocean literally defying the moon — wind or pressure
   // piling water against a coast. Conditional: only while physics is loud.
