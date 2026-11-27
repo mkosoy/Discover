@@ -315,18 +315,37 @@ type TideAnomaly = { id: string; name: string; lat: number; lon: number; measure
 
 function buildTideChartSvg(stationName: string, measured: Array<{ t: number; v: number }>, predicted: Array<{ t: number; v: number }>): string | null {
   if (!measured || !predicted || measured.length < 8 || predicted.length < 4) return null;
-  const W = 320, H = 120, PAD = 6;
+  // Sized to the media area's wide aspect so cover-fit doesn't crop; SVG scales crisply.
+  const W = 640, H = 360, PADL = 14, PADR = 14, PADT = 44, PADB = 40;
   const all = [...measured.map(r => r.v), ...predicted.map(r => r.v)];
   const lo = Math.min(...all), hi = Math.max(...all);
-  const span = Math.max(0.05, hi - lo);
+  const span = Math.max(0.05, hi - lo) * 1.12;
+  const mid = (hi + lo) / 2;
+  const loP = mid - span / 2;
   const inWindow = predicted.filter(r => r.t <= measured[measured.length - 1].t + 3600000);
   const t0 = Math.min(...inWindow.map(r => r.t));
   const t1 = Math.max(...measured.map(r => r.t));
   const tspan = Math.max(1, t1 - t0);
-  const x = (t: number) => PAD + (t - t0) / tspan * (W - PAD * 2);
-  const y = (v: number) => H - PAD - (v - lo) / span * (H - PAD * 2);
-  const line = (rows: Array<{ t: number; v: number }>) => rows.filter(r => r.t >= t0 && r.t <= t1).map(r => `${x(r.t).toFixed(1)},${y(r.v).toFixed(1)}`).join(' ');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#0a1520"/><polyline points="${line(inWindow)}" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.5" stroke-dasharray="4 3"/><polyline points="${line(measured)}" fill="none" stroke="#55ddff" stroke-width="2"/><text x="${PAD + 2}" y="${PAD + 11}" fill="#55ddff" font-size="10" font-family="system-ui">measured</text><text x="${PAD + 62}" y="${PAD + 11}" fill="#ffffff" fill-opacity="0.55" font-size="10" font-family="system-ui">predicted (moon)</text><text x="${PAD + 2}" y="${H - PAD - 2}" fill="#ffffff" fill-opacity="0.4" font-size="9" font-family="system-ui">${stationName} — last ${Math.round(tspan / 3600000)}h, meters above MSL</text></svg>`;
+  const x = (t: number) => PADL + (t - t0) / tspan * (W - PADL - PADR);
+  const y = (v: number) => PADT + (1 - (v - loP) / span) * (H - PADT - PADB);
+  const pts = (rows: Array<{ t: number; v: number }>) => rows.filter(r => r.t >= t0 && r.t <= t1).map(r => ({ px: x(r.t), py: y(r.v), ...r }));
+  const line = (rows: Array<{ t: number; v: number }>) => pts(rows).map(r => `${r.px.toFixed(1)},${r.py.toFixed(1)}`).join(' ');
+  const mp = pts(measured);
+  const pp = pts(inWindow);
+  // divergence fill: area between measured and predicted at measurement times
+  const predAt = (t: number) => {
+    for (let i = 0; i < pp.length - 1; i++) {
+      const a = pp[i], b = pp[i + 1];
+      if (t >= a.t && t <= b.t && b.t > a.t) return a.py + (t - a.t) / (b.t - a.t) * (b.py - a.py);
+    }
+    return null;
+  };
+  const fillPts = mp.map(r => ({ x: r.px, y1: r.py, y2: predAt(r.t) })).filter(r => r.y2 != null);
+  const fillPath = fillPts.length > 2
+    ? `M${fillPts.map(r => `${r.x.toFixed(1)},${r.y1.toFixed(1)}`).join(' L')} L${[...fillPts].reverse().map(r => `${r.x.toFixed(1)},${(r.y2 as number).toFixed(1)}`).join(' L')} Z`
+    : '';
+  const hours = Math.round(tspan / 3600000);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#0a1520"/>${fillPath ? `<path d="${fillPath}" fill="#55ddff" fill-opacity="0.14"/>` : ''}<polyline points="${line(inWindow)}" fill="none" stroke="#ffffff" stroke-opacity="0.5" stroke-width="2.5" stroke-dasharray="7 5"/><polyline points="${line(measured)}" fill="none" stroke="#55ddff" stroke-width="3.5"/><text x="${PADL}" y="26" fill="#55ddff" font-size="17" font-family="system-ui" font-weight="600">— measured at the gauge</text><text x="${PADL + 300}" y="26" fill="#ffffff" fill-opacity="0.6" font-size="17" font-family="system-ui">- - predicted by the moon</text><text x="${PADL}" y="${H - 12}" fill="#ffffff" fill-opacity="0.45" font-size="14" font-family="system-ui">${stationName} — last ${hours} hours, meters above mean sea level. The gap between the lines is the anomaly.</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
