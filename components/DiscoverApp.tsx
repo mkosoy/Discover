@@ -626,7 +626,7 @@ export default function DiscoverApp() {
           // Tour mode: rank everything happening right now — live video and imagery first —
           // then walk the planet best-first instead of randomly.
           const ranked = [...discoveries].sort((a, b) => {
-            const rank = (d: Discovery) => d.score + (d.mediaVideo || d.visual === 'nasa-live' ? 30 : d.mediaImage ? 12 : 0);
+            const rank = (d: Discovery) => d.score + (d.mediaVideo || d.visual === 'nasa-live' ? 30 : d.mediaImage ? 12 : 0) + ((d.facts ?? []).some(f => f.label === 'Convergent evidence') ? 15 : 0);
             return rank(b) - rank(a);
           });
           // Geographic diversity: greedy farthest-hop ordering. Each stop picks

@@ -2533,7 +2533,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       if (presMovers.length && Math.abs(presMovers[0].delta) >= 1.5) lines.push(`pressure ${presMovers[0].delta < 0 ? 'fell' : 'rose'} ${Math.abs(presMovers[0].delta).toFixed(1)} hPa at the fastest-changing barometer`);
       if (lines.length) {
         out.push({
-          id: 'earth-delta-hour', template: 'atmosphere', title: `The last ${minutes >= 90 ? Math.round(minutes / 60) + ' hours' : 'hour'} on Earth, diffed: ${lines[0].charAt(0).toLowerCase() + lines[0].slice(1)}`, kicker: 'The planet as a diff — what actually changed', visual: 'storm', score: 81, freshness: `compared against ${minutes} minutes ago`,
+          id: 'earth-delta-hour', template: 'atmosphere', title: `The last ${minutes >= 90 ? Math.round(minutes / 60) + ' hours' : minutes + ' minutes'} on Earth, diffed: ${lines[0].charAt(0).toLowerCase() + lines[0].slice(1)}`, kicker: 'The planet as a diff — what actually changed', visual: 'storm', score: 81, freshness: `compared against ${minutes} minutes ago`,
           location: { lat: appeared[0]?.location.lat ?? 0, lon: appeared[0]?.location.lon ?? 0, label: appeared[0]?.location.label ?? 'Global' },
           summary: `Most news tells you what is happening. This tells you what CHANGED — the feed compared against itself ${minutes} minutes ago, instrument deltas included. ${lines.join('; ')}. Change is the truest signal of a living planet: a static extreme is climate, but a delta is an event.`,
           facts: [
