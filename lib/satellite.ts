@@ -41,10 +41,13 @@ export function earthImagery(lat: number, lon: number): EarthImagery {
     altPrefix: 'Latest NOAA GOES GeoColor sector image',
     nearRealtime: true
   };
+  const polar = Math.abs(lat) > 71;
   return {
     url: worldviewSnapshot(lat, lon),
     sourceLabel: 'NASA MODIS latest available true-color satellite swath',
-    altPrefix: 'NASA MODIS latest available true-color satellite swath',
+    altPrefix: polar
+      ? 'NASA MODIS true-color swath of the nearest covered latitudes — polar regions are outside daily coverage'
+      : 'NASA MODIS latest available true-color satellite swath',
     nearRealtime: false
   };
 }

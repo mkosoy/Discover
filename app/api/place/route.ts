@@ -140,7 +140,7 @@ export async function GET(request: Request) {
       locality: address.city ?? address.town ?? address.village ?? place?.name, country: address.country,
       timezone: weather?.timezone,
       mediaImage: imagery.url,
-      mediaAlt: `${imagery.altPrefix} around ${lat.toFixed(2)}°, ${lon.toFixed(2)}°`,
+      mediaAlt: Math.abs(lat) > 71 && !imagery.nearRealtime ? imagery.altPrefix : `${imagery.altPrefix} around ${lat.toFixed(2)}°, ${lon.toFixed(2)}°`,
       facts,
       sources: [
         { label: imagery.sourceLabel, url: imagery.nearRealtime ? 'https://www.star.nesdis.noaa.gov/GOES/' : 'https://worldview.earthdata.nasa.gov/', retrievedAt: new Date().toISOString() },
