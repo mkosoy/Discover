@@ -133,7 +133,7 @@ const BUOY_STATIONS: Array<[string, string, number, number]> = [
   ['46087', 'Neah Bay buoy, off Washington', 48.49, -124.73]
 ];
 
-type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waterTemp?: number; windSpeed?: number; time: number };
+type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waterTemp?: number; airTemp?: number; windSpeed?: number; time: number };
 
 async function buoyObservations(): Promise<BuoyObs[]> {
   const rows = await Promise.all(BUOY_STATIONS.map(async ([id, name, lat, lon]) => {
@@ -148,12 +148,13 @@ async function buoyObservations(): Promise<BuoyObs[]> {
       const wvht = parseFloat(c[8]);
       if (!Number.isFinite(wvht)) continue;
       const wtmp = parseFloat(c[14]);
+      const atmp = parseFloat(c[13]);
       const wspd = parseFloat(c[6]);
       const ts = Date.UTC(+c[0], +c[1] - 1, +c[2], +c[3], +c[4]);
       // A buoy that stopped reporting must not win the live ranking with a
       // weeks-old reading — stale observations are dropped, not trusted.
       if (Date.now() - ts > 3 * 3600000) return null;
-      return { id, name, lat, lon, waveHeight: wvht, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, time: ts };
+      return { id, name, lat, lon, waveHeight: wvht, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, time: ts };
     }
     return null;
   }));
@@ -771,6 +772,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         { label: 'Significant wave height', value: `${wildest.waveHeight.toFixed(1)} m (${Math.round(feet)} ft) — top third of waves average higher`, kind: 'observed' },
         wildest.windSpeed != null ? { label: 'Measured wind', value: `${Math.round(wildest.windSpeed)} m/s at the buoy`, kind: 'observed' } : null,
         wildest.waterTemp != null ? { label: 'Water temperature', value: `${wildest.waterTemp.toFixed(1)}°C`, kind: 'observed' } : null,
+        wildest.waterTemp != null && wildest.airTemp != null ? { label: 'Air-sea heat exchange', value: Math.abs(wildest.waterTemp - wildest.airTemp) >= 2 ? `water ${(wildest.waterTemp - wildest.airTemp) >= 0 ? '+' : ''}${(wildest.waterTemp - wildest.airTemp).toFixed(1)}°C vs air — heat is flowing ${wildest.waterTemp > wildest.airTemp ? 'out of the ocean into the atmosphere' : 'out of the atmosphere into the ocean'} right now` : 'sea and air in near-equilibrium', kind: 'interpretation' } : null,
         { label: 'Roughest-to-calmest spread', value: ratio ? `${ratio.toFixed(1)}× across the buoy network right now` : 'not computable this hour', kind: 'interpretation' },
         { label: 'Network sample', value: ranked.map(b => `${b.id}: ${b.waveHeight.toFixed(1)} m`).join(' · '), kind: 'observed' },
         { label: 'Instrument', value: 'Physical moored buoy — measured, not modeled', kind: 'verified' }
