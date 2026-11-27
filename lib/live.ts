@@ -697,6 +697,50 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         related: ['Night lights', 'City cameras', 'Air quality pulse']
       });
     }
+
+    // --- Polar night / midnight sun: the seasonal extreme, computed live ---
+    const settlements: Array<[string, number, number, string]> = [
+      ['Longyearbyen, Svalbard', 78.22, 15.63, '~2,400 residents'],
+      ['Utqiagvik, Alaska', 71.29, -156.79, '~4,900 residents'],
+      ['Tromsø, Norway', 69.65, 18.96, '~78,000 residents'],
+      ['McMurdo Station, Antarctica', -77.84, 166.67, '~1,000 residents'],
+      ['Rothera Research Station, Antarctica', -67.57, -68.13, '~100 researchers'],
+      ['Amundsen–Scott South Pole Station', -90, 0, '~150 researchers']
+    ];
+    const declDeg = decl * 180 / Math.PI;
+    const elevationAt = (lat: number, hourAngleDeg: number) => {
+      const latR = lat * Math.PI / 180;
+      const ha = hourAngleDeg * Math.PI / 180;
+      return Math.asin(Math.sin(latR) * Math.sin(decl) + Math.cos(latR) * Math.cos(decl) * Math.cos(ha)) * 180 / Math.PI;
+    };
+    const polarNight: Array<{ name: string; lat: number; lon: number; who: string; noonElev: number }> = [];
+    const midnightSun: Array<{ name: string; lat: number; lon: number; who: string; midnightElev: number }> = [];
+    for (const [name, lat, lon, who] of settlements) {
+      const noonElev = elevationAt(lat, 0);
+      const midnightElev = elevationAt(lat, 180);
+      if (noonElev < 0) polarNight.push({ name, lat, lon, who, noonElev });
+      if (midnightElev > 0) midnightSun.push({ name, lat, lon, who, midnightElev });
+    }
+    const darkPick = polarNight.sort((a, b) => a.noonElev - b.noonElev)[0];
+    const lightPick = midnightSun.sort((a, b) => b.midnightElev - a.midnightElev)[0];
+    if (darkPick && lightPick) {
+      const northern = darkPick.lat > 0;
+      out.push({
+        id: `polar-extremes-${northern ? 'north' : 'south'}`, template: 'atmosphere', title: `The sun never rises on ${darkPick.name.split(',')[0]} — and never sets on ${lightPick.name.split(',')[0]}`, kicker: 'The planet’s seasonal extreme, live',
+        visual: 'aurora', score: 72, freshness: 'computed this minute',
+        location: { lat: darkPick.lat, lon: darkPick.lon, label: `${darkPick.name} — polar night` },
+        summary: `At solar noon in ${darkPick.name}, the sun climbs to only ${darkPick.noonElev.toFixed(1)}° — below the horizon all day. At the same moment, in ${lightPick.name}, the sun is still ${lightPick.midnightElev.toFixed(1)}° above the horizon at midnight. One planet, two opposite sky-clocks, both computed from the same orbital geometry.`,
+        facts: [
+          { label: 'Noon sun — polar night', value: `${darkPick.noonElev.toFixed(1)}° below horizon`, kind: 'interpretation' },
+          { label: 'Midnight sun — far side', value: `${lightPick.midnightElev.toFixed(1)}° above horizon`, kind: 'interpretation' },
+          { label: 'Who lives it', value: `${darkPick.who} · ${lightPick.who}`, kind: 'interpretation' },
+          { label: 'Solar declination now', value: `${declDeg.toFixed(1)}°`, kind: 'observed' },
+          { label: 'Basis', value: 'Orbital geometry — no upstream feed', kind: 'verified' }
+        ],
+        sources: [src('NOAA solar position algorithm', 'https://gml.noaa.gov/grad/solcalc/solareqns.PDF')],
+        related: ['Night lights', 'Aurora watch', 'Terminator']
+      });
+    }
   }
 
   // --- Airborne right now: the whole species, in the air ---
