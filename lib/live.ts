@@ -3233,6 +3233,45 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     }
   }
 
+  // --- Vertical slice: when a radiosonde ascends through the same storm a buoy
+  // is measuring at the surface, one event is being measured from the sea to
+  // the stratosphere. Neither alone tells the story; together they are a slice
+  // through a living weather system.
+  if (sondesNow && Array.isArray(buoys) && buoys.length) {
+    const stormy = buoys.filter((b: any) => (b.pressureDelta3h != null && b.pressureDelta3h <= -1.5) || (b.waveHeight != null && b.waveHeight >= 3.5));
+    if (stormy.length) {
+      let sliceHit: { sonde: any; buoy: any; distKm: number } | null = null;
+      for (const [serial, v] of Object.entries(sondesNow as Record<string, any>)) {
+        if (!v || typeof v !== 'object' || !v.datetime || v.lat == null || v.lon == null || !v.alt) continue;
+        const t = new Date(String(v.datetime).replace('Z', '+00:00')).getTime();
+        if (!Number.isFinite(t) || (Date.now() - t) / 60000 > 120) continue;
+        const alt = Number(v.alt);
+        if (alt < 3000 || alt > 45000) continue;
+        for (const b of stormy) {
+          const dlat = (Number(v.lat) - b.lat) * 111;
+          const dlon = (Number(v.lon) - b.lon) * 111 * Math.cos(b.lat * Math.PI / 180);
+          const dist = Math.hypot(dlat, dlon);
+          if (dist < 350 && (!sliceHit || dist < sliceHit.distKm)) sliceHit = { sonde: { serial, lat: Number(v.lat), lon: Number(v.lon), alt, temp: v.temp ?? null }, buoy: b, distKm: Math.round(dist) };
+        }
+      }
+      if (sliceHit) {
+        const s = sliceHit.sonde, b = sliceHit.buoy;
+        out.push({
+          id: 'storm-vertical-slice', template: 'atmosphere', title: `A weather balloon is climbing through the same storm a buoy is measuring at the surface — one event, measured from sea to stratosphere`, kicker: 'Vertical slice through a living storm', visual: 'storm', score: 86, freshness: 'both instruments live',
+          location: { lat: s.lat, lon: s.lon, label: `${(s.alt / 1000).toFixed(1)} km up, ${sliceHit.distKm} km from the buoy` },
+          summary: `Two instruments neither of which knows the other exists are measuring the same storm right now. At the surface, the ${b.name} buoy is recording ${b.pressureDelta3h != null && b.pressureDelta3h <= -1.5 ? `pressure falling ${Math.abs(b.pressureDelta3h).toFixed(1)} millibars in 3 hours` : `${Number(b.waveHeight).toFixed(1)} m seas`}. And ${sliceHit.distKm} km away, a radiosonde is ascending through the same system — currently at ${(s.alt / 1000).toFixed(1)} km altitude${s.temp != null ? `, measuring ${Number(s.temp)}°C` : ''}. The buoy sees what the storm does to the ocean; the balloon sees what it is made of inside. Alone, each is a number. Together they are a vertical slice through a living weather system — the same atmospheric event caught from the sea surface to the stratosphere, in public, in real time.`,
+          facts: [
+            { label: 'From below', value: `${b.name} buoy: ${b.pressureDelta3h != null && b.pressureDelta3h <= -1.5 ? `pressure falling ${Math.abs(b.pressureDelta3h).toFixed(1)} hPa/3h` : `${Number(b.waveHeight).toFixed(1)} m waves`}`, kind: 'observed' },
+            { label: 'From inside', value: `Radiosonde at ${(s.alt / 1000).toFixed(1)} km${s.temp != null ? ` reading ${Number(s.temp)}°C` : ''}, ${sliceHit.distKm} km from the buoy`, kind: 'observed' },
+            { label: 'Why this matters', value: 'Surface instruments and upper-air soundings are separate networks run for separate purposes — catching them measuring the same event simultaneously is the whole-system view', kind: 'interpretation' }
+          ],
+          sources: [src('SondeHub live balloon tracking', 'https://sondehub.org/'), src('NOAA buoy network', 'https://www.ndbc.noaa.gov/')],
+          related: ['weather-balloons-aloft-now', 'Wildest water', 'storm-deepening']
+        });
+      }
+    }
+  }
+
   // --- Orbital coincidence: the ISS passing over an active disaster. The crew
   // is closer to it than anyone on the ground in most directions — and they can
   // see it with naked eyes.
