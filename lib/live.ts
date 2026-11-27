@@ -173,7 +173,33 @@ async function wikiEditsSample(): Promise<{ rate: number; edits: WikiEdit[] } | 
   } catch { return null; }
 }
 
-type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waterTemp?: number; airTemp?: number; windSpeed?: number; pressure?: number; pressureDelta3h?: number; time: number };
+
+// --- Instrument memory: readings persist across feed generations in process
+// memory, turning snapshots into narratives. A buoy reading 5m means more
+// when we can also say "it was 2m three hours ago — the sea is building."
+const instrumentHistory: Record<string, Array<{ t: number; v: number }>> = {};
+
+function recordReading(key: string, v: number, t = Date.now()) {
+  if (!Number.isFinite(v)) return;
+  const arr = instrumentHistory[key] ?? (instrumentHistory[key] = []);
+  if (!arr.length || arr[arr.length - 1].v !== v) arr.push({ t, v });
+  const cutoff = t - 24 * 3600000;
+  while (arr.length && arr[0].t < cutoff) arr.shift();
+  if (arr.length > 400) arr.splice(0, arr.length - 400);
+}
+
+function deltaSince(key: string, hoursBack: number, now = Date.now()): { delta: number; hours: number } | null {
+  const arr = instrumentHistory[key];
+  if (!arr || arr.length < 4) return null;
+  const latest = arr[arr.length - 1];
+  const target = now - hoursBack * 3600000;
+  let best: { t: number; v: number } | null = null;
+  for (const row of arr) if (row.t <= target) best = row;
+  if (!best || (latest.t - best.t) < hoursBack * 3600000 * 0.5) return null;
+  return { delta: latest.v - best.v, hours: (latest.t - best.t) / 3600000 };
+}
+
+type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waveDelta3h?: number; waterTemp?: number; airTemp?: number; windSpeed?: number; pressure?: number; pressureDelta3h?: number; time: number };
 
 export async function buoyObservations(): Promise<BuoyObs[]> {
   const rows = await Promise.all(BUOY_STATIONS.map(async ([id, name, lat, lon]) => {
@@ -199,6 +225,7 @@ export async function buoyObservations(): Promise<BuoyObs[]> {
       // ~3h back. A fast fall is the atmosphere deepening overhead — the
       // signature of a storm organizing itself, measured before any model.
       let pressureDelta3h: number | undefined;
+      let waveDelta3h: number | undefined;
       if (Number.isFinite(pres)) {
         for (const line2 of t.split('\n').slice(1, 32)) {
           if (!line2.trim() || line2.startsWith('#')) continue;
@@ -212,7 +239,22 @@ export async function buoyObservations(): Promise<BuoyObs[]> {
           }
         }
       }
-      return { id, name, lat, lon, waveHeight: wvht, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, pressure: Number.isFinite(pres) ? pres : undefined, pressureDelta3h, time: ts };
+      {
+        let backRow: { ts: number; wvht: number } | null = null;
+        for (const line2 of t.split('\n').slice(1, 32)) {
+          if (!line2.trim() || line2.startsWith('#')) continue;
+          const c2 = line2.trim().split(/\s+/);
+          if (c2.length < 9) continue;
+          const ts2 = Date.UTC(+c2[0], +c2[1] - 1, +c2[2], +c2[3], +c2[4]);
+          const hoursBack = (ts - ts2) / 3600000;
+          if (hoursBack >= 2.5 && hoursBack <= 4.5) {
+            const w2 = parseFloat(c2[8]);
+            if (Number.isFinite(w2)) { backRow = { ts: ts2, wvht: w2 }; break; }
+          }
+        }
+        if (backRow) waveDelta3h = wvht - backRow.wvht;
+      }
+      return { id, name, lat, lon, waveHeight: wvht, waveDelta3h, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, pressure: Number.isFinite(pres) ? pres : undefined, pressureDelta3h, time: ts };
     }
     return null;
   }));
@@ -835,6 +877,14 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         wildest.windSpeed != null ? { label: 'Measured wind', value: `${Math.round(wildest.windSpeed)} m/s at the buoy`, kind: 'observed' } : null,
         wildest.waterTemp != null ? { label: 'Water temperature', value: `${wildest.waterTemp.toFixed(1)}°C`, kind: 'observed' } : null,
         wildest.waterTemp != null && wildest.airTemp != null ? { label: 'Air-sea heat exchange', value: Math.abs(wildest.waterTemp - wildest.airTemp) >= 2 ? `water ${(wildest.waterTemp - wildest.airTemp) >= 0 ? '+' : ''}${(wildest.waterTemp - wildest.airTemp).toFixed(1)}°C vs air — heat is flowing ${wildest.waterTemp > wildest.airTemp ? 'out of the ocean into the atmosphere' : 'out of the atmosphere into the ocean'} right now` : 'sea and air in near-equilibrium', kind: 'interpretation' } : null,
+        ...((() => {
+          recordReading(`buoy-${wildest.id}-waves`, wildest.waveHeight);
+          const direct = wildest.waveDelta3h != null && Math.abs(wildest.waveDelta3h) >= 0.3 ? { delta: wildest.waveDelta3h, hours: 3 } : null;
+          const mem = deltaSince(`buoy-${wildest.id}-waves`, 3);
+          const d = direct ?? (mem && Math.abs(mem.delta) >= 0.3 ? mem : null);
+          if (!d) return [];
+          return [{ label: 'The narrative', value: `seas ${d.delta > 0 ? 'building' : 'subsiding'} — ${d.delta > 0 ? '+' : ''}${d.delta.toFixed(1)} m over ~3 hours of continuous measurement`, kind: 'observed' as const }];
+        })()),
         { label: 'Roughest-to-calmest spread', value: ratio ? `${ratio.toFixed(1)}× across the buoy network right now` : 'not computable this hour', kind: 'interpretation' },
         { label: 'Network sample', value: ranked.map(b => `${b.id}: ${b.waveHeight.toFixed(1)} m`).join(' · '), kind: 'observed' },
         { label: 'Instrument', value: 'Physical moored buoy — measured, not modeled', kind: 'verified' }
@@ -923,6 +973,12 @@ export async function getDiscoveries(): Promise<Discovery[]> {
           { label: 'Measured water level', value: `${loudest.measured.toFixed(2)} m above MSL`, kind: 'observed' },
           { label: 'Astronomical prediction', value: `${loudest.predicted.toFixed(2)} m`, kind: 'verified' },
           { label: 'Anomaly', value: `${loudest.anomaly >= 0 ? '+' : '−'}${cm} cm`, kind: 'interpretation' },
+          ...((() => {
+            recordReading(`tide-${loudest.id}-anomaly`, loudest.anomaly);
+            const d = deltaSince(`tide-${loudest.id}-anomaly`, 3);
+            if (!d || Math.abs(d.delta) < 0.05) return [];
+            return [{ label: 'Trend', value: `the anomaly is ${d.delta > 0 ? 'growing' : 'easing'} — ${d.delta > 0 ? '+' : '−'}${Math.round(Math.abs(d.delta) * 100)} cm over ${d.hours.toFixed(1)} hours of continuous gauging`, kind: 'observed' as const }];
+          })()),
           { label: 'Network context', value: tides.map(t => `${t.name.split(',')[0]}: ${t.anomaly >= 0 ? '+' : ''}${Math.round(t.anomaly * 100)} cm`).join(' · '), kind: 'observed' },
           { label: 'Attribution', value: 'Wind stress, pressure and surge compete — the gauge alone cannot separate them', kind: 'question' }
         ],
