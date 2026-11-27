@@ -287,7 +287,8 @@ export default function DiscoverApp() {
       const templatePenalty = active && d.template === active.template ? 18 : 0;
       const distancePenalty = active && angularDistance(active.location.lat, active.location.lon, d.location.lat, d.location.lon) < 10 ? 10 : 0;
       // Watch mode is a lobby screen: live video and real imagery win over text-only cards.
-      const spectacleBoost = watching ? (d.mediaVideo ? 24 : d.mediaImage ? 8 : 0) : (d.mediaVideo ? 8 : 0);
+      const hasVideo = Boolean(d.mediaVideo) || d.visual === 'nasa-live';
+      const spectacleBoost = watching ? (hasVideo ? 24 : d.mediaImage ? 8 : 0) : (hasVideo ? 8 : 0);
       const weight = Math.max(1, Math.round((d.score + spectacleBoost - templatePenalty - distancePenalty) / 12));
       return Array(weight).fill(d);
     });
