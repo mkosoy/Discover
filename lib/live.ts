@@ -327,7 +327,22 @@ export async function buoyObservations(): Promise<BuoyObs[]> {
       }
       waveSeries.reverse();
       pressureSeries.reverse();
-      return { id, name, lat, lon, waveHeight: wvht, waveDelta3h, waveSeries, pressureSeries, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, pressure: Number.isFinite(pres) ? pres : undefined, pressureDelta3h, time: ts };
+      // Deltas and the current reading come from the series itself — every point
+      // carries its own timestamp, so a row missing wave data can't skew the
+      // pressure clock (and vice versa).
+      const deltaFromSeries = (series: Array<{ t: number; v: number }>): number | undefined => {
+        if (series.length < 4) return undefined;
+        const newest = series[series.length - 1];
+        const back = series.slice(0, -1).reverse().find(p => {
+          const hb = (newest.t - p.t) / 3600000;
+          return hb >= 2.5 && hb <= 4.5;
+        });
+        return back ? newest.v - back.v : undefined;
+      };
+      const waveDeltaS = deltaFromSeries(waveSeries);
+      const presDeltaS = deltaFromSeries(pressureSeries);
+      const latestPres = pressureSeries.length ? pressureSeries[pressureSeries.length - 1].v : (Number.isFinite(pres) ? pres : undefined);
+      return { id, name, lat, lon, waveHeight: wvht, waveDelta3h: waveDeltaS ?? waveDelta3h, waveSeries, pressureSeries, waterTemp: Number.isFinite(wtmp) ? wtmp : undefined, airTemp: Number.isFinite(atmp) ? atmp : undefined, windSpeed: Number.isFinite(wspd) ? wspd : undefined, pressure: latestPres, pressureDelta3h: presDeltaS ?? pressureDelta3h, time: ts };
     }
     return null;
   }));
@@ -690,12 +705,13 @@ async function regenerateDiscoveries() {
 export async function getCachedDiscoveries(): Promise<any[]> {
   const age = Date.now() - discoveriesCache.at;
   if (discoveriesCache.data && age < 60000) return discoveriesCache.data;
-  if (discoveriesCache.data) {
-    // stale but present — serve instantly, refresh in background
+  if (discoveriesCache.data && age < 4 * 60000) {
+    // stale but fresh enough — serve instantly, refresh in background
     void regenerateDiscoveries();
     return discoveriesCache.data;
   }
-  // cold cache — first ever request pays the generation cost
+  // cold or very stale — pay the generation cost inline, because a suspended
+  // background refresh (serverless) must not leave the feed frozen forever.
   await regenerateDiscoveries();
   return discoveriesCache.data ?? [];
 }
@@ -1093,12 +1109,12 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   // the body of the sea at points; this is the whole skin at once — the Gulf
   // Stream, El Niño's tongue, upwelling cold fingers, all visible in one frame.
   out.push({
-    id: 'ocean-skin-temp', template: 'ocean', title: 'The ocean\u2019s skin temperature, photographed from orbit today', kicker: 'Global sea surface — measured by satellite radiometers', visual: 'ocean', score: 71, freshness: 'daily composite, updated this UTC day',
-    mediaImage: 'https://www.ospo.noaa.gov/data/sst/contour/global_small.cf.gif', mediaAlt: 'Global sea surface temperature measured today — the Gulf Stream and equatorial Pacific clearly visible',
+    id: 'ocean-skin-temp', template: 'ocean', title: 'The ocean\u2019s skin temperature, measured from orbit today', kicker: 'Global sea surface — measured by satellite radiometers', visual: 'ocean', score: 71, freshness: 'daily composite, updated this UTC day',
+    mediaImage: 'https://www.ospo.noaa.gov/data/sst/contour/global_small.cf.gif', mediaAlt: 'Global sea surface temperature analysis for today — the Gulf Stream and equatorial Pacific clearly visible',
     location: { lat: 25, lon: -75, label: 'The Gulf Stream — visible as the warm river in the image' },
-    summary: `Every day, satellite radiometers measure the infrared glow of the ocean's skin and assemble this map — no model, thermal emission measured from orbit. Look for the Gulf Stream: a river of warm water visibly tearing away from the US coast toward Europe, carrying heat that decides the weather of a continent. The cold tongue along the equatorial Pacific is the breathing of El Niño and La Niña. Buoys measure the ocean at single points in meters; this is the whole skin of it in one frame.`,
+    summary: `Satellite radiometers measure the infrared glow of the ocean's skin, and NOAA blends those measurements into this daily analysis — thermal emission measured from orbit, then gap-filled where clouds blocked the view. Look for the Gulf Stream: a river of warm water visibly tearing away from the US coast toward Europe, carrying heat that decides the weather of a continent. The cold tongue along the equatorial Pacific is the breathing of El Niño and La Niña. Buoys measure the ocean at single points in meters; this is the whole skin of it in one frame.`,
     facts: [
-      { label: 'Measurement', value: 'Infrared radiometry from polar-orbiting satellites — thermal emission, not modeling', kind: 'verified' },
+      { label: 'Measurement', value: 'Infrared radiometry from polar-orbiting and geostationary satellites, blended into a daily analysis', kind: 'verified' },
       { label: 'Update cadence', value: 'Daily composite — clouds block infrared, so the map blends recent clear-sky passes', kind: 'verified' },
       { label: 'What to look for', value: 'The Gulf Stream off the US east coast; cold upwelling fingers off Peru and west Africa; the equatorial Pacific tongue', kind: 'interpretation' },
       { label: 'Complementary instrument', value: 'Buoys measure the body of the sea at points — see "the ocean, measured" for what the buoys feel right now', kind: 'interpretation' }
