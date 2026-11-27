@@ -2291,7 +2291,7 @@ export async function getInvestigations(): Promise<Investigation[]> {
         { label: 'Models used', value: 'zero', delta: 'all instruments' }
       ],
       visuals: bars, visualTitle: 'Measured wave heights across the buoy network right now', visualCaption: 'significant wave height, meters — physical instruments',
-      liveLinks: [{ label: 'The ocean, measured', discoveryId: 'ocean-measured-now' }, { label: 'Lightning from space', discoveryId: 'lightning-space-now' }],
+      liveLinks: [{ label: 'The ocean, measured', discoveryId: 'ocean-measured-now' }, { label: 'Lightning from space', discoveryId: 'lightning-space-now' }, { label: 'The sea vs the moon', discoveryId: 'sea-defies-moon' }],
       sources: [{ label: 'NOAA NDBC buoy network', url: 'https://www.ndbc.noaa.gov/' }, { label: 'NOAA CO-OPS tide gauges', url: 'https://tidesandcurrents.noaa.gov/' }, { label: 'NOAA GLM lightning mapper', url: 'https://www.star.nesdis.noaa.gov/GOES/' }]
     });
   }
