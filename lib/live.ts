@@ -846,6 +846,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       if (confirmations >= 2) {
         out.push({
           id: 'coastal-storm-synthesis', template: 'ocean', title: `${confirmations >= 3 ? 'Four' : 'Two'} independent instruments agree: a coastal storm is pushing the sea into ${surge.name.split(',')[0]} right now`, kicker: 'Event detected by instrument convergence', visual: 'storm', score: 90 + confirmations, freshness: 'instruments reporting within the hour',
+          mediaImage: earthImagery(surge.lat, surge.lon).url, mediaAlt: 'Live satellite view of the storm region — the clouds overhead right now',
           location: { lat: surge.lat, lon: surge.lon, label: surge.name },
           summary: `No single reading makes a storm — but independent instruments agreeing is as close to ground truth as public data gets. Right now: a tide gauge at ${surge.name} reads ${Math.round(surge.anomaly * 100)} cm above the moon's prediction${alert ? `; the National Weather Service has an active ${alert.properties.event} for this coast` : ''}${buoyWindy ? `; the nearest buoy measures ${Math.round((nearBuoy.windSpeed ?? 0) * 3.6)} km/h winds` : ''}${buoyLow ? ` with pressure down at ${nearBuoy.pressure?.toFixed(0)} mb` : ''}. Onshore wind piles water against the coast, low pressure lifts the sea surface itself, and the gauge measures the result. This card exists only while the instruments agree.`,
           facts: [
