@@ -540,7 +540,13 @@ export default function DiscoverApp() {
           // Round to ~1 km before coordinates ever leave the device: everything the place
           // probe reads (weather grid, aircraft within 100 nm, nearest cameras) is far coarser.
           pos => void probePlace({ lat: Math.round(pos.coords.latitude * 100) / 100, lon: Math.round(pos.coords.longitude * 100) / 100 }),
-          () => { setGeoNotice('Location permission was declined — tap anywhere on Earth instead'); window.setTimeout(() => setGeoNotice(undefined), 7000); },
+          (err) => {
+            const denied = err?.code === 1;
+            setGeoNotice(denied
+              ? 'Location permission was declined — tap anywhere on Earth instead'
+              : 'Could not fix your position just now — tap anywhere on Earth instead');
+            window.setTimeout(() => setGeoNotice(undefined), 7000);
+          },
           { timeout: 8000, maximumAge: 300000 }
         );
       }}><LocateFixed size={17} />My sky</button>
@@ -641,6 +647,15 @@ function CameraLookins({ videos }: { videos: any[] }) {
 function LiveImage({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [loop, setLoop] = useState(false);
+  const [loopFailed, setLoopFailed] = useState(false);
+  useEffect(() => { setLoop(false); setLoopFailed(false); }, [src]);
+  // NOAA publishes animated GeoColor loops for most GOES sectors — derive the loop URL
+  // from the static latest.jpg pattern and let the reader watch the last few hours move.
+  const goesMatch = src.match(/cdn\.star\.nesdis\.noaa\.gov\/(GOES\d+)\/ABI\/SECTOR\/([a-z]+)\/GEOCOLOR\/latest\.jpg/);
+  const loopUrl = goesMatch && !loopFailed
+    ? `https://cdn.star.nesdis.noaa.gov/${goesMatch[1]}/ABI/SECTOR/${goesMatch[2]}/GEOCOLOR/${goesMatch[1]}-${goesMatch[2].toUpperCase()}-GEOCOLOR-600x600.gif`
+    : null;
   useEffect(() => setFailed(false), [src, refreshTick]);
   useEffect(() => {
     if (!(src.includes('embed.skylinewebcams.com') || src.includes('images.webcamgalore.com'))) return;
@@ -649,12 +664,17 @@ function LiveImage({ src, alt }: { src: string; alt: string }) {
   }, [src]);
   const liveSrc = (src.includes('embed.skylinewebcams.com') || src.includes('images.webcamgalore.com')) ? `${src}${src.includes('?') ? '&' : '?'}t=${refreshTick}` : src;
   if (failed) return null;
-  return <img
+  const effectiveSrc = loop && loopUrl ? loopUrl : liveSrc;
+  return <span className="liveImageWrap">
+    {loopUrl && <button type="button" className={loop ? 'loopToggle active' : 'loopToggle'} onClick={() => setLoop(!loop)} aria-label="Toggle satellite time-lapse">{loop ? '◼ freeze' : '▶ time-lapse'}</button>}
+    {loop && loopUrl && <span className="loopNote">animated loop — last few hours</span>}
+  <img
     className="liveImage"
-    src={liveSrc}
+    key={effectiveSrc}
+    src={effectiveSrc}
     alt={alt}
     crossOrigin={src.includes('nesdis.noaa.gov') ? 'anonymous' : undefined}
-    onError={() => setFailed(true)}
+    onError={() => { if (loop) setLoopFailed(true); else setFailed(true); }}
     onLoad={event => {
       try {
         const image = event.currentTarget;
@@ -674,7 +694,8 @@ function LiveImage({ src, alt }: { src: string; alt: string }) {
         if (total / pixels < 5 && lit / pixels < .01) setFailed(true);
       } catch { /* imagery without readable pixels remains visible */ }
     }}
-  />;
+  />
+  </span>;
 }
 
 function VisualMotif({ kind }: { kind: Discovery['visual'] }) {
