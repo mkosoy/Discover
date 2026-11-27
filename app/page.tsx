@@ -4,15 +4,26 @@ import { getInvestigations, getDiscoveries } from '@/lib/live';
 import { publicCameras } from '@/lib/cameras';
 
 // Shared links carry ?d=<discovery-or-investigation-id>; resolve them into rich social previews.
-// Cached briefly in-process because getDiscoveries hits upstream feeds.
+// Cached briefly in-process because getDiscoveries hits upstream feeds. The in-flight promise is
+// shared so concurrent crawler misses can't multiply upstream requests, and empty results are
+// cached (shorter TTL) so an unknown-id spray doesn't hammer feeds either.
 let metaCache: { at: number; discoveries: any[]; investigations: any[] } = { at: 0, discoveries: [], investigations: [] };
+let inflight: Promise<typeof metaCache> | null = null;
 async function catalog() {
-  if (Date.now() - metaCache.at < 600000 && (metaCache.discoveries.length || metaCache.investigations.length)) return metaCache;
-  try {
-    const [discoveries, investigations] = await Promise.all([getDiscoveries().catch(() => []), getInvestigations().catch(() => [])]);
-    metaCache = { at: Date.now(), discoveries: discoveries ?? [], investigations: investigations ?? [] };
-  } catch { /* serve generic metadata */ }
-  return metaCache;
+  const fresh = metaCache.discoveries.length || metaCache.investigations.length;
+  const ttl = fresh ? 600000 : 60000;
+  if (Date.now() - metaCache.at < ttl && (fresh || metaCache.at)) return metaCache;
+  if (!inflight) {
+    inflight = (async () => {
+      try {
+        const [discoveries, investigations] = await Promise.all([getDiscoveries().catch(() => []), getInvestigations().catch(() => [])]);
+        metaCache = { at: Date.now(), discoveries: discoveries ?? [], investigations: investigations ?? [] };
+      } catch { /* serve generic metadata */ }
+      finally { inflight = null; }
+      return metaCache;
+    })();
+  }
+  return inflight;
 }
 
 export async function generateMetadata({ searchParams }: { searchParams: { d?: string } }): Promise<Metadata> {
