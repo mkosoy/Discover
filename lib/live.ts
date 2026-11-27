@@ -133,6 +133,46 @@ const BUOY_STATIONS: Array<[string, string, number, number]> = [
   ['46087', 'Neah Bay buoy, off Washington', 48.49, -124.73]
 ];
 
+
+type WikiEdit = { title: string; wiki: string; user: string; comment?: string; url: string };
+
+// Sample humanity editing its shared knowledge — a few seconds of the global
+// Wikimedia recent-changes stream, which is one of the most genuinely live
+// human signals on the public internet.
+async function wikiEditsSample(): Promise<{ rate: number; edits: WikiEdit[] } | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4200);
+    const res = await fetch('https://stream.wikimedia.org/v2/stream/recentchange', { signal: controller.signal, cache: 'no-store' });
+    if (!res.ok || !res.body) { clearTimeout(timer); return null; }
+    const reader = res.body.getReader();
+    let buf = '';
+    const started = Date.now();
+    while (Date.now() - started < 3900) {
+      const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true } as any));
+      if (done || !value) break;
+      buf += new TextDecoder().decode(value, { stream: true });
+    }
+    clearTimeout(timer);
+    try { reader.cancel(); } catch { /* ignore */ }
+    const edits: WikiEdit[] = [];
+    let total = 0;
+    for (const line of buf.split('\n')) {
+      if (!line.startsWith('data: {')) continue;
+      total++;
+      try {
+        const row = JSON.parse(line.slice(5));
+        if (row.type === 'edit' && row.namespace === 0 && !row.bot && typeof row.title === 'string' && row.meta?.domain && edits.length < 30) {
+          edits.push({ title: row.title, wiki: String(row.meta.domain), user: String(row.user ?? '').replace(/\s*\(talk\)\s*/g, ''), comment: typeof row.comment === 'string' ? row.comment.slice(0, 90) : undefined, url: String(row.meta.uri ?? '') });
+        }
+      } catch { /* partial line */ }
+    }
+    if (!total) return null;
+    const secs = Math.max(1, (Date.now() - started) / 1000);
+    return { rate: Math.round(total / secs * 60), edits };
+  } catch { return null; }
+}
+
 type BuoyObs = { id: string; name: string; lat: number; lon: number; waveHeight: number; waterTemp?: number; airTemp?: number; windSpeed?: number; pressure?: number; pressureDelta3h?: number; time: number };
 
 export async function buoyObservations(): Promise<BuoyObs[]> {
@@ -455,7 +495,7 @@ function connectDiscoveries(out: Discovery[]) {
 export async function getDiscoveries(): Promise<Discovery[]> {
   const retrieved = now();
   const featuredNow = featuredCamerasNow();
-  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, swpcAlerts] = await Promise.all([
+  const [iss, issTle, quakes, eonet, kp, launches, tokyo, swepam, aceMag, xrays, marine, tokyoAir, flights, carbon, generation, gdacsXml, namib, etna, goesHead, nwsAlerts, cameraWeather, epicImages, extremesRaw, inat, buoys, nhc, radio, tides, co2Csv, wikiPulse, swpcAlerts] = await Promise.all([
     json<any>('https://api.wheretheiss.at/v1/satellites/25544'),
     json<any>('https://api.wheretheiss.at/v1/satellites/25544/tles'),
     json<any>('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'),
@@ -486,6 +526,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     radioEarth(),
     tideAnomalies(),
     text('https://gml.noaa.gov/webdata/ccgg/trends/co2_mlo_weekly.csv'),
+    wikiEditsSample(),
     json<any[]>('https://services.swpc.noaa.gov/products/alerts.json', undefined, 6000)
   ]);
   const out: Discovery[] = [];
@@ -1338,6 +1379,30 @@ export async function getDiscoveries(): Promise<Discovery[]> {
       ],
       sources: [src('IRIS/EarthScope timeseries service', 'https://service.iris.edu/irisws/timeseriesplot/1/'), src('Global Seismographic Network', 'https://www.usgs.gov/programs/earthquake-hazards/monitoring/global-seismographic-network')],
       related: ['Seismic pulse', 'The measured planet', 'Significant earthquakes']
+    });
+  }
+
+  // --- Humanity editing its collective memory, live. The Wikipedia recent-changes
+  // stream is one of the few truly real-time windows into what humans are doing
+  // en masse at this exact second.
+  if (wikiPulse && wikiPulse.edits.length >= 3) {
+    const interesting = wikiPulse.edits.filter(e => e.wiki === 'en.wikipedia.org');
+    const pool = interesting.length >= 2 ? interesting : wikiPulse.edits;
+    const pick = pool[Math.floor(Date.now() / 60000) % pool.length];
+    const langCount = new Set(wikiPulse.edits.map(e => e.wiki)).size;
+    out.push({
+      id: 'humanity-editing-now', template: 'city', title: `Someone just edited the Wikipedia article "${pick.title.length > 60 ? pick.title.slice(0, 57) + '…' : pick.title}" — one of ~${wikiPulse.rate} edits this minute`, kicker: 'Humanity, live — the knowledge pulse', visual: 'city', score: 76, freshness: 'sampled seconds ago',
+      location: { lat: 0, lon: 0, label: 'The global Wikipedia network' },
+      summary: `Right now, all over the world, people are writing, correcting and arguing over humanity's shared reference work — roughly ${wikiPulse.rate} edits per minute across every language, measured by sampling the live stream just now. In the last few seconds the edits touched ${langCount} different language editions${pick.comment ? `; the most recent one carries the edit note "${pick.comment}"` : ''}. This is not traffic statistics — it is individual humans, at this exact moment, trying to get the record straight.`,
+        facts: [
+        { label: 'Measured edit rate', value: `~${wikiPulse.rate} edits/minute across all Wikipedias, sampled live`, kind: 'observed' },
+        { label: 'Latest example', value: `"${pick.title}" — ${pick.wiki}`, kind: 'observed' },
+        ...(pick.comment ? [{ label: 'What they changed', value: pick.comment, kind: 'observed' as const }] : []),
+        { label: 'Languages active in seconds', value: String(langCount), kind: 'observed' },
+        { label: 'Signal type', value: 'Human activity, not sensor data — the other half of a living planet', kind: 'interpretation' }
+      ],
+      sources: [src('Wikimedia recent changes stream', 'https://stream.wikimedia.org/v2/stream/recentchange'), ...(pick.url ? [src(`"${pick.title}"`, pick.url)] : [])],
+      related: ['Radio Earth', 'The measured planet', 'Humanity day/night split']
     });
   }
 
