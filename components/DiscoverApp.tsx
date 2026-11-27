@@ -564,7 +564,7 @@ export default function DiscoverApp() {
         <button className="panelClose" aria-label="Hide discovery" onClick={() => setPanelOpen(false)}><X size={17} /></button>
         <div className="panelMedia">{active.visual === 'nasa-live' ?
           <LiveVideo title="NASA live video" src="https://www.youtube.com/embed/ROboUHfPUrU?rel=0&autoplay=1&mute=1&playsinline=1" /> : active.mediaVideo ?
-          <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} autoPlay={active.id.startsWith('camera-pin-') || watching} /> :
+          <LiveVideo title={`${active.title} live video`} src={active.mediaVideo} autoPlay /> :
           <><VisualMotif kind={active.visual} />{active.mediaImage && <LiveImage src={active.mediaImage} alt={active.mediaAlt ?? active.title} />}</>}
           {active.visual !== 'nasa-live' && !active.mediaVideo && <div className="mediaTag"><Radio size={13} />{active.mediaImage ? (active.mediaImage.includes('nesdis.noaa.gov') ? 'Near-real-time satellite imagery' : active.mediaImage.includes('embed.skylinewebcams.com') ? 'Live camera image · refreshing' : 'Latest public Earth imagery') : 'Animated evidence visualization'}</div>}
         </div>
@@ -629,7 +629,8 @@ function LiveVideo({ src, title, autoPlay = false }: { src: string; title: strin
   const [playing, setPlaying] = useState(autoPlay);
   useEffect(() => setPlaying(autoPlay), [src, autoPlay]);
   const id = src.match(/embed\/([^?]+)/)?.[1];
-  if (playing || !id) return <iframe title={title} src={src} allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen />;
+  const embedSrc = playing && id && !src.includes('autoplay=1') ? `${src}${src.includes('?') ? '&' : '?'}autoplay=1&mute=1&playsinline=1` : src;
+  if (playing || !id) return <iframe title={title} src={embedSrc} allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen />;
   return <button className="videoPoster" onClick={() => setPlaying(true)} aria-label={`Play ${title}`}>
     <img src={`https://img.youtube.com/vi/${id}/hqdefault.jpg`} alt="" />
     <span><Play size={18} />Open live stream</span>
