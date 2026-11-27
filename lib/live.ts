@@ -230,6 +230,22 @@ function recordReading(key: string, v: number, t = Date.now()) {
   if (arr.length > 400) arr.splice(0, arr.length - 400);
 }
 
+// Statistical novelty: how extreme is the newest reading against the
+// instrument's own recent history (z-score). This is the core of honest
+// "is this interesting right now" detection — the instrument's own
+// baseline decides, not an arbitrary threshold.
+function noveltyZ(series: Array<{ t: number; v: number }> | undefined): number | null {
+  if (!series || series.length < 12) return null;
+  const vs = series.map(r => r.v).filter(Number.isFinite);
+  if (vs.length < 12) return null;
+  const latest = vs[vs.length - 1];
+  const mean = vs.reduce((a, b) => a + b, 0) / vs.length;
+  const variance = vs.reduce((a, b) => a + (b - mean) ** 2, 0) / vs.length;
+  const sd = Math.sqrt(variance);
+  if (sd < 1e-9) return null;
+  return (latest - mean) / sd;
+}
+
 function deltaSince(key: string, hoursBack: number, now = Date.now()): { delta: number; hours: number } | null {
   const arr = instrumentHistory[key];
   if (!arr || arr.length < 4) return null;
@@ -935,16 +951,16 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const flareScore = flareActive ? (flareX ? 97 : 93) : flareRecent ? 88 : 86 + Math.max(0, Math.min(8, (speed - 400) / 50));
     out.push({
       id: 'solar-wind-stream', template: 'atmosphere', title: flareTitle, kicker: flareActive ? 'Solar flare in progress — GOES X-ray monitor' : flareRecent ? 'Recent solar flare — GOES X-ray monitor' : 'NOAA real-time space weather', visual: 'orbital', score: flareScore, freshness: plasma?.time_tag ? ago(plasma.time_tag) : 'minutes ago',
-      mediaImage: `https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png?v=${Date.now()}`, mediaAlt: 'Latest NOAA GOES solar ultraviolet image',
+      mediaImage: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193.jpg', mediaAlt: 'The Sun right now in extreme ultraviolet — NASA Solar Dynamics Observatory, updated every 15 minutes',
       location: { lat: 72, lon: -40, label: 'Sun–Earth L1 → polar magnetosphere' },
-      summary: 'ACE measures solar-wind particles and magnetic fields upstream of Earth while GOES watches the Sun in X-rays. The map marker represents the downstream polar impact region, not the spacecraft position.',
+      summary: `The image is the Sun as it looks right now in extreme ultraviolet light, photographed minutes ago by NASA's Solar Dynamics Observatory — the brightest knots are active regions where magnetic energy is concentrated${flareActive || flareRecent ? ', and the flare itself erupted from one of them' : ''}. Meanwhile ACE measures solar-wind particles upstream of Earth and GOES monitors the X-ray flux. The map marker represents the downstream polar impact region, not the spacecraft position.`,
       facts: [
         { label: 'Solar wind', value: plasma ? `${Math.round(plasma.speed)} km/s` : '—', kind: 'observed' },
         { label: 'Magnetic Bz', value: bz != null ? `${bz.toFixed(1)} nT` : '—', kind: 'observed' },
         { label: 'X-ray class', value: xrayClass(xray?.flux), kind: 'observed' },
         { label: 'Coupling', value: bz != null && bz < -3 ? 'Potentially enhanced' : 'Not established', kind: 'interpretation' }
       ],
-      sources: [src('NOAA ACE SWEPAM', 'https://services.swpc.noaa.gov/json/ace/swepam/ace_swepam_1h.json'), src('NOAA ACE MAG', 'https://services.swpc.noaa.gov/json/ace/mag/ace_mag_1h.json'), src('NOAA GOES X-rays', 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json')],
+      sources: [src('NOAA ACE SWEPAM', 'https://services.swpc.noaa.gov/json/ace/swepam/ace_swepam_1h.json'), src('NOAA ACE MAG', 'https://services.swpc.noaa.gov/json/ace/mag/ace_mag_1h.json'), src('NOAA GOES X-rays', 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json'), src('NASA Solar Dynamics Observatory', 'https://sdo.gsfc.nasa.gov/')],
       related: ['Solar wind speed', 'Aurora watch', 'Upcoming launches']
     });
   }
@@ -985,7 +1001,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
     const feet = wildest.waveHeight * 3.281;
     const ratio = calmest.waveHeight > 0.3 ? wildest.waveHeight / calmest.waveHeight : null;
     out.push({
-      id: 'ocean-measured-now', template: 'ocean', title: `The ${wildest.name.split(',')[0]} is measuring ${wildest.waveHeight.toFixed(1)} m waves right now`, kicker: 'The ocean, physically measured', visual: 'ocean', score: 76 + Math.min(14, Math.round(wildest.waveHeight * 2)), freshness: ageMin != null ? (ageMin < 90 ? `${ageMin} min ago` : `${Math.round(ageMin / 60)}h ago`) : 'measurement time unknown',
+      id: 'ocean-measured-now', template: 'ocean', title: `The ${wildest.name.split(',')[0]} is measuring ${wildest.waveHeight.toFixed(1)} m waves right now`, kicker: 'The ocean, physically measured', visual: 'ocean', score: 76 + Math.min(14, Math.round(wildest.waveHeight * 2)) + Math.max(0, Math.min(8, Math.round((noveltyZ(wildest.waveSeries) ?? 0) * 3))), freshness: ageMin != null ? (ageMin < 90 ? `${ageMin} min ago` : `${Math.round(ageMin / 60)}h ago`) : 'measurement time unknown',
       mediaImage: buildSeriesChartSvg(`wave height at ${wildest.name.split(',')[0]} — now ${wildest.waveHeight.toFixed(1)} m`, 'significant wave height, meters', wildest.waveSeries ?? []) ?? undefined, mediaAlt: 'Measured wave heights — the instrument record',
       location: { lat: wildest.lat, lon: wildest.lon, label: wildest.name },
       summary: `Moored instruments don't model the ocean — they ride it. Across ${ranked.length} NOAA buoys reporting right now, the roughest measured sea is at ${wildest.name}: ${wildest.waveHeight.toFixed(1)} m significant wave height (${Math.round(feet)} feet)${wildest.windSpeed ? ` with ${Math.round(wildest.windSpeed * 3.6)} km/h winds` : ''}${wildest.waterTemp != null ? ` and ${wildest.waterTemp.toFixed(1)}°C water` : ''}.${ratio && ratio > 1.6 ? ` Meanwhile the calmest reporting buoy, off ${calmest.name.split(',')[0]}, reads ${calmest.waveHeight.toFixed(1)} m — the same planet's ocean is ${ratio.toFixed(1)}× rougher in one place than another, at the same moment.` : ''}`,
@@ -1001,6 +1017,12 @@ export async function getDiscoveries(): Promise<Discovery[]> {
           const d = direct ?? (mem && Math.abs(mem.delta) >= 0.3 ? mem : null);
           if (!d) return [];
           return [{ label: 'The narrative', value: `seas ${d.delta > 0 ? 'building' : 'subsiding'} — ${d.delta > 0 ? '+' : ''}${d.delta.toFixed(1)} m over ~3 hours of continuous measurement`, kind: 'observed' as const }];
+        })()),
+        ...((() => {
+          const z = noveltyZ(wildest.waveSeries);
+          if (z == null || Math.abs(z) < 1) return [];
+          const pct = z > 0 ? 'higher' : 'lower';
+          return [{ label: 'How unusual is this', value: `${Math.abs(z).toFixed(1)} standard deviations ${pct} than this buoy's own last ~30 hours${Math.abs(z) >= 2 ? ' — statistically exceptional for this exact spot' : ' — noticeable but not extreme'}`, kind: 'interpretation' as const }];
         })()),
         { label: 'Roughest-to-calmest spread', value: ratio ? `${ratio.toFixed(1)}× across the buoy network right now` : 'not computable this hour', kind: 'interpretation' },
         { label: 'Network sample', value: ranked.map(b => `${b.id}: ${b.waveHeight.toFixed(1)} m`).join(' · '), kind: 'observed' },
