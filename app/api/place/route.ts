@@ -77,6 +77,22 @@ function distanceKm(latA: number, lonA: number, latB: number, lonB: number) {
   return 2 * 6371 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
+
+function oceanBasinName(lat: number, lon: number): string {
+  if (Math.abs(lat) > 66) return lat > 0 ? 'the Arctic Ocean' : 'the Southern Ocean';
+  const absLat = Math.abs(lat);
+  const zone = absLat < 15 ? 'equatorial' : lat > 0 ? (lat < 45 ? 'the North' : 'the far North') : (lat > -45 ? 'the South' : 'the far South');
+  if (lon > -80 && lon < 20) {
+    if (lat > 0 && lat < 35 && lon > -20 && lon < 45) return zone + ' Atlantic';
+    return `${zone} Atlantic`;
+  }
+  if (lon >= 20 && lon < 120) {
+    if (lat < 15 && lat > -45) return 'the Indian Ocean';
+    return `${zone} Pacific`;
+  }
+  return `${zone} Pacific`;
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const lat = Number(url.searchParams.get('lat'));
@@ -95,7 +111,7 @@ export async function GET(request: Request) {
   ]);
   const current = weather?.current;
   const address = place?.address ?? {};
-  const placeName = place?.display_name || [address.city, address.town, address.village, address.municipality, address.county, address.state, address.country].filter(Boolean).join(', ') || (Math.abs(lat) > 66 ? 'Polar region' : 'Open ocean / unpopulated area');
+  const placeName = place?.display_name || [address.city, address.town, address.village, address.municipality, address.county, address.state, address.country].filter(Boolean).join(', ') || (Math.abs(lat) > 66 ? 'the polar ocean' : oceanBasinName(lat, lon) + ' — open water');
   const nearbyQuakes = (quakes?.features ?? [])
     .map((feature: any) => ({ feature, distance: distanceKm(lat, lon, feature.geometry?.coordinates?.[1], feature.geometry?.coordinates?.[0]) }))
     .filter((row: any) => Number.isFinite(row.distance) && row.distance <= 500)
@@ -134,7 +150,9 @@ export async function GET(request: Request) {
               ? `This is high terrain at roughly ${Math.round(weather.elevation)} m; sunlight, cloud shadows, thin air and satellite texture make the landscape itself the signal.`
               : current?.is_day === 0
                 ? `It is night here right now; darkness, aircraft motion, cloud cover and the nearest sky or city cameras become the strongest live evidence.`
-                : nearestCamera
+                : nearestBuoy && nearestBuoy.distance <= 500 && !place?.address?.country
+                  ? `Out here the most honest witness is an instrument: ${Math.round(nearestBuoy.distance)} km away a moored buoy is physically riding ${nearestBuoy.waveHeight.toFixed(1)} m waves${nearestBuoy.waterTemp != null ? ` in ${nearestBuoy.waterTemp.toFixed(1)}°C water` : ''} — the real state of this ocean right now, not a model of it.`
+                  : nearestCamera
                   ? `The clearest visual way into this place is the nearest curated public look-in around ${nearestCamera.place}, while local weather, daylight, seismicity and aircraft motion supply the surrounding evidence.`
                   : 'This point is quiet in the public alert feeds, so Elsewhere reads weather, daylight, terrain, seismicity and human motion to reveal what is distinctive without inventing an event.';
   let imagery = earthImagery(lat, lon);
