@@ -3196,24 +3196,7 @@ export async function getDiscoveries(): Promise<Discovery[]> {
         { label: 'Why it matters', value: 'The Southern Ocean absorbs more heat and carbon than any other — and it is the least directly observed major ocean', kind: 'verified' },
         { label: 'Why the hole exists', value: 'No land, no shipping lanes worth serving, brutal conditions that destroy instruments — nobody is there to maintain them', kind: 'interpretation' },
         { label: 'What fills the gap', value: 'Satellite altimetry, a sparse fleet of autonomous Argo floats, and a handful of research expeditions per year', kind: 'verified' },
-          ...((() => {
-            // Doubly blind: radiosondes launch almost entirely from land. Count how many
-            // active balloons are currently over open ocean — usually almost none.
-            if (!sondesNow || typeof sondesNow !== 'object') return [];
-            let overOcean = 0, total = 0;
-            for (const v of Object.values(sondesNow as Record<string, any>)) {
-              if (!v || typeof v !== 'object' || v.lat == null || v.lon == null || !v.datetime) continue;
-              const t = new Date(String(v.datetime).replace('Z', '+00:00')).getTime();
-              if (!Number.isFinite(t) || (Date.now() - t) / 60000 > 180) continue;
-              total++;
-              // crude ocean test: no land within ~2 degrees using a coarse landmass sample
-              const la = Number(v.lat), lo = Number(v.lon);
-              const nearLand = [[36,-116],[29,47],[14,40],[63,142],[-78,106],[-90,15],[71,-156],[72,-38],[-66,142],[-41,174],[-53,-70],[27,86],[-23,-68],[23,5],[1,103],[55,37],[-55,-60],[51,-0.1],[35,139],[-33,151],[40,-74],[60,25]].some(([x,y]) => Math.hypot((la-x)*111,(lo-y)*90) < 900);
-              if (!nearLand) overOcean++;
-            }
-            if (total < 20) return [];
-            return [{ label: 'Doubly blind', value: `And it is not just the sea surface: of ${total} weather balloons aloft right now, only ~${overOcean} are over open ocean — the atmosphere above these waters is nearly as unmeasured as the water itself`, kind: 'interpretation' as const }];
-          })())
+
       ],
       sources: [src('NOAA buoy network', 'https://www.ndbc.noaa.gov/'), src('Argo float program', 'https://argo.ucsd.edu/')],
       related: ['Wildest water', 'ocean-measured-now', 'antarctic-polar-day-live']
