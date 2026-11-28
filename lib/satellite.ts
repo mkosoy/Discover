@@ -43,6 +43,7 @@ export function earthImagery(lat: number, lon: number): EarthImagery {
     { latMin: 30, latMax: 43, lonMin: -117, lonMax: -100, satellite: 'GOES19', sector: 'sr', label: 'NOAA GOES-East Southern Rockies GeoColor sector imagery' },
     { latMin: 15, latMax: 24, lonMin: -70, lonMax: -60, satellite: 'GOES19', sector: 'pr', label: 'NOAA GOES-East Puerto Rico and Caribbean GeoColor sector imagery' },
     { latMin: 40, latMax: 55, lonMin: -132, lonMax: -110, satellite: 'GOES18', sector: 'pnw', label: 'NOAA GOES-West Pacific Northwest GeoColor sector imagery' },
+    { latMin: 32, latMax: 42, lonMin: -127, lonMax: -113, satellite: 'GOES18', sector: 'psw', label: 'NOAA GOES-West Pacific Southwest GeoColor sector imagery' },
     { latMin: 50, latMax: 72, lonMin: -180, lonMax: -128, satellite: 'GOES18', sector: 'ak', label: 'NOAA GOES-West Alaska GeoColor sector imagery' },
     { latMin: 15, latMax: 30, lonMin: -170, lonMax: -150, satellite: 'GOES18', sector: 'hi', label: 'NOAA GOES-West Hawaii GeoColor sector imagery' }
   ];
