@@ -1638,13 +1638,14 @@ export async function getDiscoveries(): Promise<Discovery[]> {
   // warnings, the buoy winds and the barometers independently agree, that
   // convergence IS the event — no single instrument tells the story alone.
   if (tides?.length && buoys?.length) {
-    const surge = tides.filter(t => Math.abs(t.anomaly) >= 0.3 && t.anomaly > 0).sort((a, b) => b.anomaly - a.anomaly)[0];
+    const surge = tides.filter(t => Math.abs(t.anomaly) >= 0.25 && t.anomaly > 0).sort((a, b) => b.anomaly - a.anomaly)[0];
     if (surge) {
       const features = Array.isArray((nwsAlerts as any)?.features) ? (nwsAlerts as any).features : [];
+      const city = surge.name.split(',')[0]?.trim() ?? '';
       const state = surge.name.split(',').pop()?.trim() ?? '';
       const alert = features.find((f: any) => {
         const pr = f?.properties ?? {};
-        return /coastal flood|storm surge|high surf/i.test(`${pr.event ?? ''} ${pr.headline ?? ''}`) && (!state || String(pr.areaDesc ?? '').includes(state));
+        return /coastal flood|storm surge|high surf/i.test(`${pr.event ?? ''} ${pr.headline ?? ''}`) && (!state || String(pr.areaDesc ?? '').includes(state) || (city && String(pr.areaDesc ?? '').includes(city)));
       });
       const nearBuoy = buoys.map(b => ({ ...b, dist: Math.hypot(b.lat - surge.lat, b.lon - surge.lon) })).sort((a, b) => a.dist - b.dist)[0];
       const buoyWindy = nearBuoy && nearBuoy.dist < 5 && (nearBuoy.windSpeed ?? 0) >= 8;
